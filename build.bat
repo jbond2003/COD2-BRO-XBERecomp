@@ -17,6 +17,9 @@ set "OUT=%CD%\out\build\release"
 
 if not exist assets\%GAME_XBE% goto :nogame
 
+rem the SDK submodule at the commit this checkout names (a plain git pull leaves it behind)
+if exist .git if exist sdk\.git git submodule update --init --recursive >nul 2>&1
+
 rem toolchain
 echo [1/3] Toolchain
 for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSDIR=%%i"
