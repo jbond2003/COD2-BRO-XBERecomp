@@ -12,6 +12,9 @@ library = "CoD2BRO.dll"  # <exe>.dll, which the executable delay loads
 
 # extra entry points
 [functions]
+0x14370 = "Scr_RandomIntRange"  # by hand: engine interface slot 61, only stored by 0x30ADB0
+0x72E50 = ""  # by hand: stored at +0x2F0 by 0x5EBEC
+0x6F6500 = ""  # by hand: pushed as a callback by 0x7380A4
 
 # functions the host replaces or calls by name, 0 where the image has none
 [symbols]
