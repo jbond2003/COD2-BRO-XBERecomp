@@ -2,7 +2,7 @@
 
 ## MOHRS-XBERecomp
 
-Parts of `src/common` (mouse_keyboard, menu, menu_pointer, options, software_cursor, game_info) and `cursor.png`
+Parts of `src/common` (mouse_keyboard, menu, menu_pointer, options, software_cursor, game_info)
 come from MOHRS-XBERecomp by neonoxd: https://github.com/neonoxd/MOHRS-XBERecomp, through the Medal of Honor: Rising
 Sun port built with the same toolkit.
 

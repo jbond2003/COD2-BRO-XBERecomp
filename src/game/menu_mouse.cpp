@@ -343,7 +343,7 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
     }
     bool on_item = hit != nullptr;
     if (pointer.left_clicks || pointer.right_clicks)
-        LOGI("menu click at %.0f,%.0f: item %d of %zu shown, value %.0f, selected %d, locked %d", x, y,
+        LOGI("menu click at %.0f,%.0f: screen %08x, %d items, picker %d: item %d of %zu shown, value %.0f, selected %d, locked %d", x, y, menu ? R32(menu) : 0, menu ? R16s(menu + 0x26) : 0, menu ? int(Horizontal(menu)) : 0,
              hit ? hit->index : -1, items.size(), value_x, R16s(menu + 0x22), R8(menu + 0x30));
     int16_t selected = R16s(menu + 0x22);
     if (on_item && !R8(menu + 0x30) && (pointer.moved || pointer.left_clicks) && hit->index != selected)
@@ -361,7 +361,8 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
     bool no_items = !menu || R16s(menu + 0x26) <= 0;
     bool picker = menu && Horizontal(menu);
     constexpr float kPickerMiddle = 64.0f;
-    if (pointer.left_clicks && picker && items.empty() && std::abs(x - 320.0f) > kPickerMiddle)
+    // a picker's arrows are pictures, beside its middle (difficulty, chapter select): left or right of it steps
+    if (pointer.left_clicks && picker && !on_item && std::abs(x - 320.0f) > kPickerMiddle)
         TapDpad(x < 320.0f ? kDpadLeft : kDpadRight);
     else if (pointer.left_clicks && (on_item || no_items || (picker && items.empty())))
         TapA();

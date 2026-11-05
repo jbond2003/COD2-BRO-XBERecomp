@@ -166,9 +166,11 @@ bool ReadFont() {
 #ifdef _WIN32
     const char* windir = std::getenv("WINDIR");
     std::string fonts = std::string(windir ? windir : "C:\\Windows") + "\\Fonts\\";
-    for (const char* f : {"segoeuib.ttf", "arialbd.ttf", "tahomabd.ttf", "arial.ttf"}) candidates.push_back(fonts + f);
+    for (const char* f : {"courbd.ttf", "segoeuib.ttf", "arialbd.ttf", "arial.ttf"}) candidates.push_back(fonts + f);
 #else
-    candidates = {"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    candidates = {"/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf",
+                  "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
+                  "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
                   "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"};
 #endif
     for (const std::string& path : candidates) {
@@ -342,35 +344,55 @@ void Text(Canvas& canvas, float cx, float cy, float max_w, float max_h, const st
     }
 }
 
-constexpr Color kInk{1.0f, 1.0f, 1.0f, 1.0f};
-constexpr Color kOutline{0.86f, 0.86f, 0.86f, 1.0f};
-constexpr Color kCapTop{0.24f, 0.24f, 0.26f, 1.0f};
-constexpr Color kCapBottom{0.10f, 0.10f, 0.11f, 1.0f};
-constexpr Color kLit{0.95f, 0.75f, 0.25f, 1.0f};
+// The port's own look: ivory keys like the typewriter's paper, a Big Red One crimson rim, a dark skirt below for
+// depth and the names in typewriter ink.
+constexpr Color kInk{0.15f, 0.09f, 0.07f, 1.0f};
+constexpr Color kRim{0.62f, 0.11f, 0.12f, 1.0f};
+constexpr Color kSkirt{0.30f, 0.05f, 0.06f, 1.0f};
+constexpr Color kIvoryTop{0.96f, 0.93f, 0.84f, 1.0f};
+constexpr Color kIvoryBottom{0.82f, 0.76f, 0.63f, 1.0f};
+constexpr Color kLit{0.78f, 0.14f, 0.15f, 1.0f};
+
+Color Mix(Color a, Color b, float t) {
+    return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t};
+}
+
+// a rounded shape filled top to bottom from one colour to another
+template <typename Shape>
+void Shade(Canvas& canvas, float top, float bottom, float left, float right, Color from, Color to, Shape shape) {
+    for (int y = int(top) - 1; y <= int(bottom) + 1; y++) {
+        Color c = Mix(from, to, std::clamp((float(y) + 0.5f - top) / std::max(1.0f, bottom - top), 0.0f, 1.0f));
+        canvas.Fill(left, float(y), right, float(y), c, [&](float px, float py) {
+            return std::max(shape(px, py), std::abs(py - (float(y) + 0.5f)) - 0.5f);
+        });
+    }
+}
 
 // a mouse with one button lit: 0 left, 1 right, 2 middle
 void Mouse(Canvas& canvas, float left, float top, float w, float h, int button) {
     float size = std::min(w, h);
-    float cx = left + w / 2, cy = top + h / 2;
-    float line = std::max(1.0f, size * 0.07f);
-    float hw = size * 0.31f, hh = size * 0.46f, radius = hw * 0.95f;
-    canvas.Fill(cx - hw, cy - hh, cx + hw, cy + hh, kCapBottom,
-                [&](float px, float py) { return RoundedRect(px, py, cx, cy, hw, hh, radius); });
-    float split_y = cy - hh * 0.15f;  // where the buttons end
+    float cx = left + w / 2, cy = top + h / 2 - size * 0.02f;
+    float line = std::max(1.0f, size * 0.065f);
+    float hw = size * 0.30f, hh = size * 0.43f, radius = hw * 0.95f, drop = size * 0.05f;
+    auto body = [&](float px, float py) { return RoundedRect(px, py, cx, cy, hw, hh, radius); };
+    canvas.Fill(cx - hw, cy - hh + drop, cx + hw, cy + hh + drop, kSkirt,
+                [&](float px, float py) { return body(px, py - drop); });
+    Shade(canvas, cy - hh, cy + hh, cx - hw, cx + hw, kIvoryTop, kIvoryBottom, body);
+    float split_y = cy - hh * 0.12f;  // where the buttons end
     canvas.Fill(cx - hw, cy - hh, cx + hw, split_y, kLit, [&](float px, float py) {
         float d = std::max(RoundedRect(px, py, cx, cy, hw - line, hh - line, radius - line), py - split_y);
-        if (button == 0) d = std::max(d, px - cx);
-        if (button == 1) d = std::max(d, cx - px);
-        if (button == 2) d = std::max(d, std::abs(px - cx) - size * 0.06f);
+        if (button == 0) d = std::max(d, px - cx + line * 0.5f);
+        if (button == 1) d = std::max(d, cx - px + line * 0.5f);
+        if (button == 2) d = std::max(d, std::abs(px - cx) - size * 0.055f);
         return d;
     });
-    // the outline, the line between the buttons and the one under them
-    canvas.Fill(cx - hw, cy - hh, cx + hw, cy + hh, kOutline, [&](float px, float py) {
+    // the rim, the seam between the buttons and the one under them
+    canvas.Fill(cx - hw, cy - hh, cx + hw, cy + hh, kRim, [&](float px, float py) {
         float inside = RoundedRect(px, py, cx, cy, hw - line / 2, hh - line / 2, radius);
-        float body = std::abs(inside) - line / 2;
-        float middle = std::max(std::abs(px - cx) - line * 0.35f, std::max(py - split_y, inside));
-        float under = std::max(std::abs(py - split_y) - line * 0.35f, inside);
-        return std::min(body, std::min(middle, under));
+        float rim = std::abs(inside) - line / 2;
+        float seam = std::max(std::abs(px - cx) - line * 0.3f, std::max(py - split_y, inside));
+        float under = std::max(std::abs(py - split_y) - line * 0.3f, inside);
+        return std::min(rim, std::min(seam, under));
     });
 }
 
@@ -380,22 +402,20 @@ void Keycap(Canvas& canvas, float left, float top, float w, float h, const std::
         return;
     }
     float size = std::min(w, h);
-    float margin = size * 0.05f, line = std::max(1.0f, size * 0.06f);
-    float cx = left + w / 2, cy = top + h / 2, hw = w / 2 - margin, hh = h / 2 - margin;
-    float radius = size * 0.2f;
-    for (int y = int(cy - hh) - 1; y <= int(cy + hh) + 1; y++) {  // the cap, lit from the top
-        float t = std::clamp((float(y) + 0.5f - (cy - hh)) / (2 * hh), 0.0f, 1.0f);
-        Color c{kCapTop.r + (kCapBottom.r - kCapTop.r) * t, kCapTop.g + (kCapBottom.g - kCapTop.g) * t,
-                kCapTop.b + (kCapBottom.b - kCapTop.b) * t, 1.0f};
-        canvas.Fill(cx - hw, float(y), cx + hw, float(y), c, [&](float px, float py) {
-            return std::max(RoundedRect(px, py, cx, cy, hw, hh, radius), std::abs(py - (float(y) + 0.5f)) - 0.5f);
-        });
-    }
-    canvas.Fill(cx - hw, cy - hh, cx + hw, cy + hh, kOutline, [&](float px, float py) {
+    float margin = size * 0.05f, line = std::max(1.0f, size * 0.07f), drop = size * 0.08f;
+    float cx = left + w / 2, hw = w / 2 - margin, hh = (h - drop) / 2 - margin;
+    float cy = top + margin + hh;
+    float radius = size * 0.16f;
+    auto cap = [&](float px, float py) { return RoundedRect(px, py, cx, cy, hw, hh, radius); };
+    // the skirt showing under the cap, then the cap lit from the top, then its rim
+    canvas.Fill(cx - hw, cy - hh + drop, cx + hw, cy + hh + drop, kSkirt,
+                [&](float px, float py) { return cap(px, py - drop); });
+    Shade(canvas, cy - hh, cy + hh, cx - hw, cx + hw, kIvoryTop, kIvoryBottom, cap);
+    canvas.Fill(cx - hw, cy - hh, cx + hw, cy + hh, kRim, [&](float px, float py) {
         return std::abs(RoundedRect(px, py, cx, cy, hw - line / 2, hh - line / 2, radius - line / 2)) - line / 2;
     });
-    float inner_w = 2 * (hw - line) * 0.88f, inner_h = 2 * (hh - line);
-    float a = size * 0.42f;  // arrow size
+    float inner_w = 2 * (hw - line) * 0.86f, inner_h = 2 * (hh - line);
+    float a = size * 0.40f;  // arrow size
     if (label == "@up" || label == "@down" || label == "@left" || label == "@right") {
         Arrow(canvas, cx, cy, a, label == "@left" ? -1 : label == "@right" ? 1 : 0,
               label == "@up" ? -1 : label == "@down" ? 1 : 0, kInk);
@@ -413,7 +433,7 @@ void Keycap(Canvas& canvas, float left, float top, float w, float h, const std::
         Arrow(canvas, cx + o, cy, s, 1, 0, kInk);
     } else {
         // one letter at about half the cap's height, longer names as wide as fits
-        Text(canvas, cx, cy, inner_w, label.size() == 1 ? inner_h * 0.5f : inner_h * 0.42f, label, kInk);
+        Text(canvas, cx, cy, inner_w, label.size() == 1 ? inner_h * 0.52f : inner_h * 0.44f, label, kInk);
     }
 }
 
