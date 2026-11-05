@@ -25,6 +25,7 @@ namespace game {
 
 void RemapToLayout(const input::Pad& from, input::Pad& to);  // src/game/mouse_look.cpp
 void InitPrompts();  // src/game/prompts.cpp
+void OptionsPad(input::Pad& pad);  // src/game/menu_mouse.cpp: PC OPTIONS in the Options menu
 
 namespace {
 
@@ -95,8 +96,10 @@ void Pad(int port, input::Pad& pad) {
     if (out.ly) pad.ly = out.ly;
     if (out.rx) pad.rx = out.rx;
     if (out.ry) pad.ry = out.ry;
+    OptionsPad(pad);
 #else
     if (port == 0) input::ApplyMenuTap(pad);  // the harness: the menu mouse's presses
+    if (port == 0) OptionsPad(pad);
 #endif
 }
 

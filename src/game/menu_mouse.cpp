@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "app/app.h"
+#include "common/menu.h"
 #include "common/menu_pointer.h"
 #include "common/menu_state.h"
 #include "common/mouse_keyboard.h"
@@ -295,12 +296,112 @@ Pointer TakePointer() {
     return out;
 }
 
+// ---- strings and PC Options --------------------------------------------------------------------------------------
+
+// a game string: u16 capacity, u16 length, u16 references, then the text
+bool SameText(uint32_t str, const char* want) {
+    for (uint32_t i = 0;; i++) {
+        char c = char(R8(str + 6 + i));
+        if (c != want[i]) return false;
+        if (!c) return true;
+    }
+}
+
+// a string of ours the game can draw; never freed (its reference count stays above the game's)
+uint32_t GameString(const char* text) {
+    uint32_t len = uint32_t(std::strlen(text));
+    uint32_t at = mem::AllocSystem(8 + len + 1);
+    if (!at) return 0;
+    kernel::G<uint16_t>(at) = uint16_t(len + 1);
+    kernel::G<uint16_t>(at + 2) = uint16_t(len);
+    kernel::G<uint16_t>(at + 4) = 1;
+    for (uint32_t i = 0; i <= len; i++) kernel::G<uint8_t>(at + 6 + i) = uint8_t(text[i]);
+    return at;
+}
+
+// The Options menu (screen vtable 0x829348: GAMEPLAY, CONTROLLER, SOUND) gets a fourth line, PC OPTIONS, which opens
+// the PC settings panel. It is not one of the screen's items: a copy of the last item's text widget (0x68 bytes) is
+// drawn one line further down right after it, and our selection of it is kept here. While it is selected the game's
+// own selection stays on SOUND, drawn unselected (colour +0x50, alpha 0xFF selected, 0x8C not), and the pad's
+// up/down/A go to it instead of the screen (OptionsPad).
+constexpr uint32_t kOptionsVtable = 0x829348;
+constexpr uint32_t kWidgetBytes = 0x68;
+constexpr uint32_t kSelectedAlpha = 0xFF000000, kIdleAlpha = 0x8C000000;
+struct PcEntry {
+    uint32_t screen = 0;  // the Options screen it was made for
+    uint32_t anchor = 0;  // the last item's widget, SOUND
+    uint32_t widget = 0;  // our copy, saying PC OPTIONS
+    uint32_t frame = 0;   // the last frame the Options screen was up
+    bool selected = false;
+    bool sound = false;         // play the move sound at the next poll
+    bool select_first = false;  // down from PC OPTIONS wraps to the first item
+} g_pc;
+
+bool PcEntryUp() { return g_pc.screen && g_pc.widget && Frame() - g_pc.frame <= 2; }
+
+void OpenPcOptions() {
+    LOGR("PC Options opened from the Options menu");
+#ifdef _WIN32
+    if (!app::MenuOpen()) app::ToggleMenu();
+#endif
+}
+
+// each poll of a manager whose active screen is the Options menu: the copy follows SOUND's place and look
+void UpdatePcEntry(uint32_t menu) {
+    int16_t count = R16s(menu + 0x26);
+    uint32_t items = R32(menu + 4);
+    if (count < 2 || !items) return;
+    uint32_t last = R32(items + uint32_t(count - 1) * 4), above = R32(items + uint32_t(count - 2) * 4);
+    uint32_t anchor = last ? R32(last + 0x10) : 0, prev = above ? R32(above + 0x10) : 0;
+    if (!anchor || !prev || R32(anchor) != kTextWidgetVtable) return;
+    static uint32_t text = 0, second = 0;
+    if (!text) text = GameString("PC OPTIONS");
+    if (!g_pc.widget) g_pc.widget = mem::AllocSystem(kWidgetBytes);
+    if (!text || !g_pc.widget) return;
+    if (menu != g_pc.screen || anchor != g_pc.anchor) {
+        g_pc.screen = menu;
+        g_pc.anchor = anchor;
+        g_pc.selected = false;
+        // the second string the widget holds is shared: one more reference keeps it for our copy
+        second = R32(anchor + 0x54);
+        if (second) kernel::G<uint16_t>(second + 4) = uint16_t(kernel::G<uint16_t>(second + 4) + 1);
+    }
+    for (uint32_t k = 0; k < kWidgetBytes; k += 4) W32(g_pc.widget + k, R32(anchor + k));
+    W32(g_pc.widget + 0x14, 0);
+    W32(g_pc.widget + 0x1C, text);
+    W32(g_pc.widget + 0x54, second);
+    kernel::G<float>(g_pc.widget + 0x30) = 2 * RF(anchor + 0x30) - RF(prev + 0x30);
+    uint32_t color = R32(anchor + 0x50) & 0xFFFFFF;
+    W32(g_pc.widget + 0x50, color | (g_pc.selected ? kSelectedAlpha : kIdleAlpha));
+    g_pc.frame = Frame();
+}
+
+void PlayMoveSound(X86Context& ctx, uint32_t menu) {
+    uint32_t ecx = ctx.ecx;
+    ctx.ecx = menu;
+    kernel::CallGuest(ctx, R32(R32(menu) + kSoundSlot), {});
+    ctx.ecx = ecx;
+}
+
 void MenuPointer(X86Context& ctx, uint32_t manager) {
     uint32_t screens = R32(manager + 4);
     int32_t active = int32_t(R32(manager + 0xC));
     uint32_t menu = screens && active >= 0 ? R32(screens + uint32_t(active) * 4) : 0;
     uint32_t frame = Frame();
+    {
+        static uint32_t shown[2] = {};
+        int m = manager == R32(kFrontEnd) ? 0 : manager == R32(kInGame) ? 1 : -1;
+        uint32_t vt = menu ? R32(menu) : 0;
+        if (m >= 0 && vt != shown[m]) LOGI("menu screen %d: %08x", m, shown[m] = vt);  // for the harness's scripts
+    }
     if (manager == R32(kFrontEnd) || manager == R32(kInGame)) Typewriter(ctx, menu);
+    bool options = menu && R32(menu) == kOptionsVtable && (manager == R32(kFrontEnd) || manager == R32(kInGame));
+    if (options) {
+        UpdatePcEntry(menu);
+        if (g_pc.sound && menu == g_pc.screen) PlayMoveSound(ctx, menu);
+        if (g_pc.select_first && menu == g_pc.screen) Select(ctx, menu, 0);
+        g_pc.sound = g_pc.select_first = false;
+    }
     std::vector<ItemBox> items = menu ? ShownItems(ctx, menu) : std::vector<ItemBox>{};
     if (manager == R32(kDialogs)) {
         if (items.empty()) return;
@@ -316,7 +417,13 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
     g_cursor = true;
     input::SetMenuInput(true);
     Pointer pointer = TakePointer();
+#ifdef _WIN32
+    if (app::MenuOpen()) return;  // the settings panel has the mouse
+#endif
     if (!pointer.inside) return;
+    // between screens the front end has none (a level loading): nothing to point at. Reading the missing screen's
+    // fields here crashed the game on a click while the first mission loaded.
+    if (!menu) return;
     float x = pointer.x, y = pointer.y;
     // a click that could not select its item yet (the screen was locked) waits a little
     static int held_clicks = 0;
@@ -341,6 +448,20 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
         uint32_t row = hit ? R32(R32(menu + 4) + uint32_t(hit->index) * 4) : 0;
         if (row && (R16s(row + 0xC) >= 0 || R16s(row + 0xE) >= 0)) hit = nullptr;
         if (hit && (value_x = ValueMiddle(ctx, items, *hit)) < 0) hit = nullptr;
+    }
+    // PC OPTIONS under the Options menu's items
+    if (options && menu == g_pc.screen && PcEntryUp()) {
+        game::menu::Rect box;
+        if (WidgetBox(ctx, g_pc.widget, box) && box.Contains(x, y)) {
+            if ((pointer.moved || pointer.left_clicks) && !g_pc.selected && !R8(menu + 0x30)) {
+                g_pc.selected = true;
+                PlayMoveSound(ctx, menu);
+            }
+            if (pointer.left_clicks && g_pc.selected) OpenPcOptions();
+            else if (pointer.right_clicks) TapB();
+            return;
+        }
+        if (hit && pointer.moved) g_pc.selected = false;
     }
     bool on_item = hit != nullptr;
     if (pointer.left_clicks || pointer.right_clicks)
@@ -390,33 +511,65 @@ namespace game {
 bool MenuMouseCursorVisible() { return g_cursor && Frame() - g_pointer_frame <= 4; }
 bool MenuHasPointer() { return Frame() - g_pointer_frame <= 2; }
 
+// the pad as the game is about to see it: on the Options menu, down from its last item selects PC OPTIONS, and while
+// that is selected up, down and A are its own; a direction or A it took stays hidden from the game until released
+void OptionsPad(input::Pad& pad) {
+    constexpr uint16_t kUp = 1, kDown = 2;
+    constexpr int16_t kStick = 16000;
+    constexpr uint8_t kPressed = 0x20;
+    static bool was_up = false, was_down = false, was_a = false, was_b = false;
+    static uint8_t hidden = 0;  // 1 up, 2 down, 4 A: taken, hidden until released
+    bool up = (pad.buttons & kUp) || pad.ly > kStick, down = (pad.buttons & kDown) || pad.ly < -kStick;
+    bool a = pad.analog[0] > kPressed, b = pad.analog[1] > kPressed;
+    bool up_edge = up && !was_up, down_edge = down && !was_down, a_edge = a && !was_a, b_edge = b && !was_b;
+    was_up = up, was_down = down, was_a = a, was_b = b;
+    if (PcEntryUp()) {
+        uint32_t menu = g_pc.screen;
+        bool last = R16s(menu + 0x22) == R16s(menu + 0x26) - 1, locked = R8(menu + 0x30);
+        if (!g_pc.selected) {
+            if (down_edge && last && !locked) {
+                g_pc.selected = g_pc.sound = true;
+                hidden |= 2;
+            }
+        } else if (up_edge) {
+            g_pc.selected = false;
+            g_pc.sound = true;
+            hidden |= 1;
+        } else if (down_edge) {
+            g_pc.selected = false;
+            g_pc.select_first = true;
+            hidden |= 2;
+        } else if (a_edge) {
+            hidden |= 4;
+            OpenPcOptions();
+        } else if (b_edge) {
+            g_pc.selected = false;
+        }
+        if (g_pc.selected) hidden |= (up ? 1 : 0) | (down ? 2 : 0) | (a ? 4 : 0);
+    } else {
+        g_pc.selected = false;
+    }
+    if (!up) hidden &= uint8_t(~1);
+    if (!down) hidden &= uint8_t(~2);
+    if (!a) hidden &= uint8_t(~4);
+    if (hidden & 1) {
+        pad.buttons &= uint16_t(~kUp);
+        if (pad.ly > 0) pad.ly = 0;
+    }
+    if (hidden & 2) {
+        pad.buttons &= uint16_t(~kDown);
+        if (pad.ly < 0) pad.ly = 0;
+    }
+    if (hidden & 4) pad.analog[0] = 0;
+}
+
 }  // namespace game
 
 X86_EXTERN_FUNC(__imp__sub_0031FC10);
 namespace {
 
-// a game string: u16 capacity, u16 length, u16 references, then the text
-bool SameText(uint32_t str, const char* want) {
-    for (uint32_t i = 0;; i++) {
-        char c = char(R8(str + 6 + i));
-        if (c != want[i]) return false;
-        if (!c) return true;
-    }
-}
-
 uint32_t ClickToStart() {
-    static uint32_t str = 0;
-    if (!str) {
-        static const char kText[] = "Click anywhere to start";
-        uint32_t len = uint32_t(sizeof(kText) - 1);
-        uint32_t at = mem::AllocSystem(8 + len + 1);
-        if (!at) return 0;
-        kernel::G<uint16_t>(at) = uint16_t(len + 1);
-        kernel::G<uint16_t>(at + 2) = uint16_t(len);
-        kernel::G<uint16_t>(at + 4) = 1;
-        for (uint32_t i = 0; i <= len; i++) kernel::G<uint8_t>(at + 6 + i) = uint8_t(kText[i]);
-        str = at;
-    }
+    static uint32_t str = GameString("Click anywhere to start");
     return str;
 }
 
@@ -452,8 +605,18 @@ X86_FUNC(sub_00321160) {
     uint32_t text = R32(widget + 0x1C);
     uint32_t shown = text && StartPrompt() && SameText(text, "Press START") ? ClickToStart() : 0;
     if (shown) W32(widget + 0x1C, shown);
+    // SOUND looks unselected while PC OPTIONS is, and PC OPTIONS is drawn right after it
+    bool anchor = widget == g_pc.anchor && PcEntryUp();
+    uint32_t color = R32(widget + 0x50);
+    if (anchor && g_pc.selected) W32(widget + 0x50, (color & 0xFFFFFF) | kIdleAlpha);
     __imp__sub_00321160(ctx, base);
+    if (anchor && g_pc.selected) W32(widget + 0x50, color);
     if (shown) W32(widget + 0x1C, text);
+    if (anchor) {
+        ctx.ecx = g_pc.widget;
+        kernel::CallGuest(ctx, 0x321160, {});
+        ctx.ecx = widget;
+    }
 }
 
 // the typewriter types key eax: the layout's character for that key
