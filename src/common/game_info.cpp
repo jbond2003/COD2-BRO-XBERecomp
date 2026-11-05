@@ -1,23 +1,211 @@
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+
+#ifdef _WIN32
+#include <imgui.h>
+#endif
+#include <algorithm>
+#include <iterator>
+
+#include <toml++/toml.hpp>
+
 #include "app/app.h"
+#include "common/menu.h"
+#include "common/mouse_keyboard.h"
+#include "common/options.h"
+#include "common/software_cursor.h"
+#include "core/input.h"
+
+namespace game {
+
+void RemapToLayout(const input::Pad& from, input::Pad& to);  // src/game/mouse_look.cpp
+
+namespace {
+
+// window thread, each message after ImGui's
+bool Message(void*, uint32_t msg, uintptr_t wp, intptr_t lp, intptr_t* result) {
+#ifdef _WIN32
+    constexpr intptr_t kKeyWasDown = 1 << 30;
+    // F10 arrives as a system key: it would open the window menu
+    if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && !(lp & kKeyWasDown)) {
+        if (wp == VK_F10 || (wp == VK_ESCAPE && app::MenuOpen() && !app::Capturing())) {
+            app::ToggleMenu();
+            *result = 0;
+            return true;
+        }
+    }
+    if (msg == WM_SYSKEYUP && wp == VK_F10) {
+        *result = 0;
+        return true;
+    }
+    // a bound Alt must not open the window menu
+    if (msg == WM_SYSCOMMAND && (wp & 0xFFF0) == SC_KEYMENU) {
+        *result = 0;
+        return true;
+    }
+    if (msg == WM_INPUT) input::OnRawInput(reinterpret_cast<void*>(lp));
+    if (msg == WM_CHAR) input::OnChar(unsigned(wp));
+    if ((msg == WM_ACTIVATE && LOWORD(wp) == WA_INACTIVE) || msg == WM_KILLFOCUS) input::ReleaseCursor();
+    // the game's menus draw their own pointer (software_cursor.cpp), the F10 panel ImGui's: no Windows arrow
+    if (msg == WM_SETCURSOR && LOWORD(lp) == HTCLIENT) {
+        SetCursor(nullptr);
+        *result = TRUE;
+        return true;
+    }
+#else
+    (void)msg;
+    (void)wp;
+    (void)lp;
+    (void)result;
+#endif
+    return false;
+}
+
+// the keyboard and mouse join the first controller, and port 0 is connected without one;
+// the game sees no pad while the settings panel is open
+void Pad(int port, input::Pad& pad) {
+#ifdef _WIN32
+    if (port != 0) return;
+    input::SeenPad(pad);
+    pad.connected = true;
+    if (app::MenuOpen()) {
+        pad = {};
+        pad.connected = true;
+        return;
+    }
+    // the keys press the default layout's controls; in play they follow the layout picked in the game's options
+    input::Pad keys;
+    input::Keyboard(keys);
+    input::Pad out = keys;
+    if (input::Playing()) {
+        constexpr uint16_t kStartBack = 0x30;
+        out.buttons = keys.buttons & kStartBack;
+        std::fill(std::begin(out.analog), std::end(out.analog), uint8_t(0));
+        RemapToLayout(keys, out);
+    }
+    pad.buttons |= out.buttons;
+    for (int i = 0; i < 8; i++) pad.analog[i] = std::max(pad.analog[i], out.analog[i]);
+    if (out.lx) pad.lx = out.lx;
+    if (out.ly) pad.ly = out.ly;
+    if (out.rx) pad.rx = out.rx;
+    if (out.ry) pad.ry = out.ry;
+#else
+    if (port == 0) input::ApplyMenuTap(pad);  // the harness: the menu mouse's presses
+#endif
+}
+
+// no rumble while the keyboard and mouse play: a controller left on the desk would buzz at every shot
+void Rumble(int port, uint16_t& left, uint16_t& right) {
+#ifdef _WIN32
+    if (port == 0 && input::KeyboardActive()) left = right = 0;
+#else
+    (void)port;
+    (void)left;
+    (void)right;
+#endif
+}
+
+// the game window is up, on its thread: ImGui's backend sets the arrow on every frame, so the cursor is hidden
+// for the thread outright and the menus draw their own
+void Window(void* hwnd) {
+#ifdef _WIN32
+    ShowCursor(FALSE);
+    ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+    input::StartMouse(hwnd);
+    cursor::Init(hwnd);
+#else
+    (void)hwnd;
+#endif
+}
+
+void Ui(double fps) {
+#ifdef _WIN32
+    app::DrawUi(fps);
+    if (!app::MenuOpen()) cursor::Draw();
+#else
+    (void)fps;
+#endif
+}
+
+float ReadFloat(const toml::table& t, const char* key, float fallback) {
+    return float(t[key].value_or(double(fallback)));
+}
+
+// what the options list cannot hold
+void Load(const void* table) {
+    const toml::table& t = *static_cast<const toml::table*>(table);
+    Options& o = Opt();
+    o.fov = ClampFov(o.fov);
+    o.mouse_sensitivity = ReadFloat(t, "mouse_sensitivity", o.mouse_sensitivity);
+    o.mouse_vertical_sensitivity = ReadFloat(t, "mouse_vertical_sensitivity", o.mouse_vertical_sensitivity);
+    o.keys.clear();
+    if (const toml::table* keys = t["keys"].as_table())
+        for (auto&& [id, value] : *keys)
+            if (auto v = value.value<std::string>()) o.keys[std::string(id.str())] = *v;
+}
+
+// each action's keys, the defaults written out so the file shows what can be bound
+void Save(void* table) {
+    toml::table& t = *static_cast<toml::table*>(table);
+    const Options& o = Opt();
+    t.insert_or_assign("mouse_sensitivity", double(o.mouse_sensitivity));
+    t.insert_or_assign("mouse_vertical_sensitivity", double(o.mouse_vertical_sensitivity));
+    size_t count;
+    const input::Action* actions = input::Actions(&count);
+    toml::table keys;
+    for (size_t i = 0; i < count; i++) {
+        auto it = o.keys.find(actions[i].id);
+        keys.insert(actions[i].id, it != o.keys.end() ? it->second : std::string(actions[i].defaults));
+    }
+    t.insert_or_assign("keys", keys);
+}
+
+// after the settings load, before the window and boot
+void Init() {
+    input::LoadBindings();
+    // the frame rate is 30 or 60 for now and vsync is off, whatever an older settings file says
+    app::Settings& s = app::Get();
+    if (s.fps_cap != 30) s.fps_cap = 60;
+    s.vsync = false;
+}
+
+}  // namespace
+
+Options& Opt() {
+    static Options o;
+    return o;
+}
+
+}  // namespace game
 
 // what the runtime asks of the game; strings must be set, hooks may stay null
 const app::GameInfo app::kGame = {
-    .title = L"Call of Duty 2: Big Red One",               // window and splash
-    .short_title = L"Big Red One",               // message boxes
-    .name = L"CoD2BRO",                      // window classes, crash dumps, handover event
-    .log = "cod2bro",                        // log file prefix
-    .settings = "settings.toml",          // settings file beside the exe
-    .splash = L"splash",                  // optional splash.png or splash.bmp beside the exe
+    .title = L"Call of Duty 2: Big Red One",  // window and splash
+    .short_title = L"Big Red One",  // message boxes
+    .name = L"CoD2BRO",  // window classes, crash dumps, handover event
+    .log = "cod2bro",  // log file prefix
+    .settings = "settings.toml",  // settings file beside the exe
+    .splash = L"splash",  // optional splash.png or splash.bmp beside the exe
     .missing = L"Put the game in the assets folder: its disc image (.iso), or default.xbe with its folders beside it.",
     .images = {{"default.xbe", "CoD2BRO"}},  // each recompiled xbe and its exe, for title launches
-    .options = {},                        // game settings kept in the settings file
-    .load = nullptr,                      // reads more from the settings file's toml::table
-    .save = nullptr,                      // writes more into it
-    .init = nullptr,                      // after the settings load, before the window and boot
-    .loaded = nullptr,                    // image in memory, before its entry point runs
-    .window = nullptr,                    // the game window is up
-    .message = nullptr,                   // window messages first; true takes one
-    .ui = nullptr,                        // ImGui drawing each frame
-    .pad = nullptr,                       // changes a polled pad
-    .rumble = nullptr,                    // changes a rumble before it is set
+    .options = {{"fps_counter", &game::Opt().fps_counter, nullptr},
+                {"fov", nullptr, &game::Opt().fov},
+                {"invert_mouse", &game::Opt().invert_mouse, nullptr},
+                {"invert_mouse_x", &game::Opt().invert_mouse_x, nullptr},
+                {"qwerty_typewriter", &game::Opt().qwerty_typewriter, nullptr},
+                {"walk_speed", nullptr, &game::Opt().walk_speed}},  // game settings kept in the settings file
+    .load = game::Load,  // reads more from the settings file's toml::table: mouse sensitivities, [keys]
+    .save = game::Save,  // writes more into it
+    .init = game::Init,  // after the settings load, before the window and boot
+    .loaded = nullptr,  // image in memory, before its entry point runs
+    .window = game::Window,  // the game window is up
+    .message = game::Message,  // window messages first; true takes one
+    .ui = game::Ui,  // ImGui drawing each frame: the F10 panel, FPS counter and the menus' pointer
+    .pad = game::Pad,  // changes a polled pad
+    .rumble = game::Rumble,  // changes a rumble before it is set
 };

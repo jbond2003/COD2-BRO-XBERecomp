@@ -296,3 +296,8 @@ D3DDevice_SetTransform = ["eax", "edx"]  # 0x3E5BB8 eax*64 is the state, 0x3E5BC
 D3D_BlockOnResource = ["ecx"]
 D3D_BlockOnTime = ["eax", "stack"]  # 0x3EB538 eax the time, 0x3EB5AA the flag at [esp+0x14]
 D3D_InternalRelease = ["esi"]
+
+# R_RenderView: the gun scene's fov_y, just loaded from viewParms (0x2475DE), narrowed back at a wide fov (src/game/fov.cpp)
+[[hook]]
+at = 0x002475E4
+call = "GunFov"
