@@ -26,6 +26,7 @@
 #include <cstdio>
 #include <cstring>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -52,6 +53,7 @@ constexpr uint32_t kWidgetWidth = 0x321090, kWidgetHeight = 0x321030;
 constexpr uint32_t kSoundSlot = 0x10, kSelectSlot = 0x88;
 constexpr uint32_t kPressStartVtable = 0x8295A0;  // in game, after a level loads: "Press A to start"
 constexpr uint32_t kTypewriterVtable = 0x82A068;
+constexpr uint32_t kProfilesVtable = 0x828ED0;  // Profile Manager
 constexpr uint32_t kTypewriterActivate = 0x338C40;
 constexpr int16_t kSpaceKey = 38;
 
@@ -337,12 +339,83 @@ struct PcEntry {
     bool select_first = false;  // down from PC OPTIONS wraps to the first item
 } g_pc;
 
+// Menu lines that are gone: the main menu's Multiplayer (screen vtable 0x829B80: Single Player, Multiplayer,
+// Options, Bonus Materials, and a hidden DISABLED item) and the pause menu's Xbox Live Options. The item is marked
+// disabled (+0x16), which the screen's own up/down and the mouse skip, its text is not drawn, and the lines under it
+// move up into its place. The multiplayer and Live code is left as it is.
+constexpr uint32_t kMainMenuVtable = 0x829B80;
+std::unordered_map<uint32_t, uint32_t> g_hidden;  // a hidden line's text widget -> engine frame last seen
+std::unordered_map<uint32_t, float> g_moved_y;   // widget -> the y we gave it
+
+bool Hidden(uint32_t widget) {
+    std::lock_guard lock(g_drawn_lock);
+    return g_hidden.count(widget) != 0;
+}
+
+void HideItem(X86Context& ctx, uint32_t menu, const char* label) {
+    uint32_t items = R32(menu + 4);
+    int16_t count = R16s(menu + 0x26);
+    int16_t gone = -1;
+    float gap = 0;
+    for (int16_t i = 0; items && i < count; i++) {
+        uint32_t item = R32(items + uint32_t(i) * 4), widget = item ? R32(item + 0x10) : 0;
+        uint32_t text = widget && R32(widget) == kTextWidgetVtable ? R32(widget + 0x1C) : 0;
+        if (gone < 0 && text && SameText(text, label)) {
+            gone = i;
+            {
+                std::lock_guard lock(g_drawn_lock);
+                if (g_hidden.size() > 64) g_hidden.clear();
+                g_hidden[widget] = Frame();
+            }
+            kernel::G<uint8_t>(item + 0x16) = 1;
+            uint32_t above = i > 0 ? R32(items + uint32_t(i - 1) * 4) : 0;
+            uint32_t above_widget = above ? R32(above + 0x10) : 0;
+            if (above_widget) gap = RF(widget + 0x30) - RF(above_widget + 0x30);
+            continue;
+        }
+        if (gone < 0 || !widget || R8(item + 0x16) || !(gap > 0 && gap < 100)) continue;
+        // the game may lay the line out again: move whatever it last put there
+        float y = RF(widget + 0x30);
+        auto it = g_moved_y.find(widget);
+        if (it == g_moved_y.end() || it->second != y) {
+            if (g_moved_y.size() > 256) g_moved_y.clear();
+            kernel::G<float>(widget + 0x30) = y - gap;
+            g_moved_y[widget] = y - gap;
+        }
+    }
+    // never left on it (a screen made with it selected)
+    if (gone >= 0 && R16s(menu + 0x22) == gone && !R8(menu + 0x30))
+        Select(ctx, menu, int16_t(gone > 0 ? gone - 1 : gone + 1));
+}
+
+// The Xbox Live corner of the front end: "Not signed in" / "Sign-in failed" left, and right the Y "Xbox Live"
+// button prompt (sub_0030F900) with an empty text widget under it whose button (+0x54) is "ybutton". None of it is
+// drawn, and Y does nothing while it would be up (in OptionsPad).
+uint32_t g_live_frame = 0;  // the corner was last up
+
+bool XboxLiveText(uint32_t text) {
+    static constexpr const char* kTexts[] = {"Not signed in", "Sign-in failed", "Signed in", "Signing in"};
+    for (const char* t : kTexts)
+        if (SameText(text, t)) return true;
+    // the button picture's code, then the words
+    // (the button picture's code first, and the length field is not kept: up to the capacity)
+    uint32_t len = kernel::G<uint16_t>(text);
+    const char* want = "Xbox Live";
+    if (len < 9 || len > 64) return false;
+    for (uint32_t at = 0; at + 9 <= len; at++) {
+        bool same = true;
+        for (uint32_t k = 0; k < 9 && same; k++) same = char(R8(text + 6 + at + k)) == want[k];
+        if (same) return true;
+    }
+    return false;
+}
+
 bool PcEntryUp() { return g_pc.screen && g_pc.widget && Frame() - g_pc.frame <= 2; }
 
 void OpenPcOptions() {
     LOGR("PC Options opened from the Options menu");
 #ifdef _WIN32
-    if (!app::MenuOpen()) app::ToggleMenu();
+    app::OpenPcOptions();
 #endif
 }
 
@@ -395,6 +468,8 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
         if (m >= 0 && vt != shown[m]) LOGI("menu screen %d: %08x", m, shown[m] = vt);  // for the harness's scripts
     }
     if (manager == R32(kFrontEnd) || manager == R32(kInGame)) Typewriter(ctx, menu);
+    if (menu && manager == R32(kFrontEnd) && R32(menu) == kMainMenuVtable) HideItem(ctx, menu, "Multiplayer");
+    if (menu && manager == R32(kInGame)) HideItem(ctx, menu, "Xbox Live Options");
     bool options = menu && R32(menu) == kOptionsVtable && (manager == R32(kFrontEnd) || manager == R32(kInGame));
     if (options) {
         UpdatePcEntry(menu);
@@ -519,6 +594,14 @@ void OptionsPad(input::Pad& pad) {
     constexpr uint8_t kPressed = 0x20;
     static bool was_up = false, was_down = false, was_a = false, was_b = false;
     static uint8_t hidden = 0;  // 1 up, 2 down, 4 A: taken, hidden until released
+    // Y signs in to Xbox Live where its corner would be up; the profile screens keep theirs
+    if (Frame() - g_live_frame <= 2) {
+        uint32_t fe = R32(kFrontEnd), screens = fe ? R32(fe + 4) : 0;
+        int32_t active = fe ? int32_t(R32(fe + 0xC)) : -1;
+        uint32_t screen = screens && active >= 0 ? R32(screens + uint32_t(active) * 4) : 0;
+        uint32_t vt = screen ? R32(screen) : 0;
+        if (vt != kTypewriterVtable && vt != kProfilesVtable) pad.analog[3] = 0;
+    }
     bool up = (pad.buttons & kUp) || pad.ly > kStick, down = (pad.buttons & kDown) || pad.ly < -kStick;
     bool a = pad.analog[0] > kPressed, b = pad.analog[1] > kPressed;
     bool up_edge = up && !was_up, down_edge = down && !was_down, a_edge = a && !was_a, b_edge = b && !was_b;
@@ -592,6 +675,19 @@ X86_FUNC(sub_0031FC10) {
     __imp__sub_0031FC10(ctx, base);
 }
 
+X86_EXTERN_FUNC(__imp__sub_0030F900);
+// a button prompt's draw (ecx prompt, vtable 0x82A450: a button picture and words, as "Press A to select"). The
+// front end's top right one is Y and "Xbox Live" (made at 0x32A660, at 603,52 in 640x480): not drawn
+X86_FUNC(sub_0030F900) {
+    uint32_t prompt = ctx.ecx;
+    if (R32(prompt) == 0x82A450 && RF(prompt + 0x2C) > 560.0f && RF(prompt + 0x30) < 80.0f) {
+        g_live_frame = Frame();
+        ctx.esp += 4;  // the draw's own ret, skipped with it
+        return;
+    }
+    __imp__sub_0030F900(ctx, base);
+}
+
 // a text widget's draw (ecx widget)
 X86_FUNC(sub_00321160) {
     uint32_t widget = ctx.ecx;
@@ -600,6 +696,14 @@ X86_FUNC(sub_00321160) {
         std::lock_guard lock(g_drawn_lock);
         if (g_drawn.size() > 1024) std::erase_if(g_drawn, [frame](const auto& e) { return frame - e.second > 2; });
         g_drawn[widget] = frame;
+    }
+    // Multiplayer and the Xbox Live corner are not drawn
+    uint32_t drawn_text = R32(widget + 0x1C);
+    uint32_t button = R32(widget + 0x54);
+    bool live_corner = button && SameText(button, "ybutton") && RF(widget + 0x30) < 80;
+    if (live_corner || Hidden(widget) || (drawn_text && XboxLiveText(drawn_text))) {
+        ctx.esp += 4;  // the draw's own ret, skipped with it
+        return;
     }
     // the title screen's "Press START" says what the mouse does while the keyboard and mouse are in use
     uint32_t text = R32(widget + 0x1C);

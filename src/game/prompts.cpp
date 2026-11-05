@@ -428,9 +428,8 @@ void Keycap(Canvas& canvas, float left, float top, float w, float h, const std::
         Arrow(canvas, cx - o, cy, s, -1, 0, kInk);
         Arrow(canvas, cx + o, cy, s, 1, 0, kInk);
     } else {
-        // a letter as big as the typewriter's, lower case like its keys; longer names as wide as fits
+        // a letter as big as the typewriter's, a capital as on a keyboard; longer names as wide as fits
         std::string text = label;
-        for (char& c : text) c = char(std::tolower(static_cast<unsigned char>(c)));
         // names fill the face edge to edge, a few letters still read at icon size
         Text(canvas, cx, cy, text.size() == 1 ? inner : face * 1.92f, text.size() == 1 ? face * 0.95f : face * 0.9f,
              text, kInk);
