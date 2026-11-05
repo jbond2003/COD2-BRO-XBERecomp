@@ -3,7 +3,7 @@
 // start and back) and four footer icons (Xbox_A/B/X/YButton.dds), all in sp/global.cod. While the keyboard and mouse
 // are in use the renderer draws keycaps and mouse pictures in their place (gpu/texture_override.h), labelled with the
 // keys that give each button in the controller layout picked in the game's options; the controller's icons come back
-// the moment a controller is used. After CoD2-BRO-Native-Loader's text/key_prompts.cpp (GPL-2.0-or-later,
+// the moment a controller is used, with LB and RB in place of the original's white and black buttons. After CoD2-BRO-Native-Loader's text/key_prompts.cpp (GPL-2.0-or-later,
 // THIRD_PARTY_NOTICES.md).
 
 #include <algorithm>
@@ -52,6 +52,9 @@ enum Icon {
 // a key's name ("F", "Space", "Esc"), or a picture: "@lmb" "@rmb" "@mmb" a mouse with that button lit, "@up" "@down"
 // "@left" "@right" "@leftright" "@updown" "@arrows" arrow keys. Empty: an empty keycap.
 using Labels = std::array<std::string, kIconCount>;
+// labels[kA] saying this: a controller is in use, its pictures stay but for those labelled ("@lb" "@rb": the white
+// and black buttons, a pad's LB and RB)
+constexpr const char* kControllerSet = "@controller";
 
 constexpr const char* kPack = "D:\\sp\\global.cod";
 constexpr const char* kIconFonts[] = {"i_button_icons_xb_en", "i_button_icons_xb_fr", "i_button_icons_xb_it",
@@ -238,6 +241,10 @@ public:
         d.g = (c.g * a + d.g * d.a * (1.0f - a)) / out;
         d.b = (c.b * a + d.b * d.a * (1.0f - a)) / out;
         d.a = out;
+    }
+
+    void Set(int x, int y, Color c) {
+        if (x >= 0 && y >= 0 && x < int(width_) && y < int(height_)) pixels_[size_t(y) * width_ + size_t(x)] = c;
     }
 
     // fills where distance(px, py) (pixel centres) is negative
@@ -436,9 +443,88 @@ void Keycap(Canvas& canvas, float left, float top, float w, float h, const std::
     }
 }
 
+// a DXT3 texture's texels (straight alpha)
+std::vector<Color> DecodeDxt3(const std::vector<uint8_t>& data, uint32_t width, uint32_t height) {
+    std::vector<Color> out(size_t(width) * height);
+    auto rgb = [](uint16_t c) {
+        return Color{float((c >> 11) & 31) / 31.0f, float((c >> 5) & 63) / 63.0f, float(c & 31) / 31.0f, 1.0f};
+    };
+    size_t at = 0;
+    for (uint32_t by = 0; by < height; by += 4)
+        for (uint32_t bx = 0; bx < width; bx += 4, at += 16) {
+            if (at + 16 > data.size()) return out;
+            const uint8_t* b = data.data() + at;
+            Color c0 = rgb(uint16_t(b[8] | b[9] << 8)), c1 = rgb(uint16_t(b[10] | b[11] << 8));
+            Color pal[4] = {c0, c1,
+                            {(2 * c0.r + c1.r) / 3, (2 * c0.g + c1.g) / 3, (2 * c0.b + c1.b) / 3, 1},
+                            {(c0.r + 2 * c1.r) / 3, (c0.g + 2 * c1.g) / 3, (c0.b + 2 * c1.b) / 3, 1}};
+            uint32_t bits = uint32_t(b[12] | b[13] << 8 | b[14] << 16 | uint32_t(b[15]) << 24);
+            for (int i = 0; i < 16; i++) {
+                uint32_t x = bx + uint32_t(i & 3), y = by + uint32_t(i >> 2);
+                if (x >= width || y >= height) continue;
+                Color c = pal[(bits >> (2 * i)) & 3];
+                c.a = float((b[i / 2] >> (4 * (i & 1))) & 15) / 15.0f;
+                out[size_t(y) * width + x] = c;
+            }
+        }
+    return out;
+}
+
+// a pad's shoulder button: a dark rounded bar lit along its top, LB or RB on it in white
+void Bumper(Canvas& canvas, float left, float top, float w, float h, const std::string& name) {
+    float size = std::min(w, h);
+    float cx = left + w / 2, cy = top + h / 2;
+    float hw = std::min(w * 0.47f, size * 0.62f), hh = size * 0.30f, radius = hh * 0.9f;
+    auto bar = [&](float grow) {
+        return [&, grow](float px, float py) { return RoundedRect(px, py, cx, cy, hw + grow, hh + grow, radius + grow); };
+    };
+    float rim = std::max(1.0f, size * 0.05f), drop = size * 0.04f;
+    canvas.Fill(cx - hw, cy - hh + drop, cx + hw, cy + hh + drop, kShadow, [&](float px, float py) {
+        return RoundedRect(px, py, cx, cy + drop, hw, hh, radius);
+    });
+    Shade(canvas, cy - hh, cy + hh, cx - hw, cx + hw, Color{0.78f, 0.78f, 0.80f, 1}, Color{0.32f, 0.32f, 0.35f, 1},
+          bar(0));
+    Shade(canvas, cy - hh + rim, cy + hh - rim, cx - hw + rim, cx + hw - rim, Color{0.22f, 0.22f, 0.24f, 1},
+          Color{0.08f, 0.08f, 0.09f, 1}, bar(-rim));
+    Text(canvas, cx, cy, (hw - rim) * 1.7f, (hh - rim) * 1.5f, name, Color{0.97f, 0.97f, 0.97f, 1});
+}
+
 std::shared_ptr<const Picture> Draw(const IconTexture& t, const Labels& labels, int scale) {
     Canvas canvas(t.width * uint32_t(scale), t.height * uint32_t(scale));
     float s = float(scale);
+    if (labels[kA] == kControllerSet) {
+        // the game's own pictures, bilinear to the new size, then the shoulder buttons over the white and black
+        std::vector<Color> texels = DecodeDxt3(t.level0, t.width, t.height);
+        auto at = [&](int x, int y) {
+            x = std::clamp(x, 0, int(t.width) - 1), y = std::clamp(y, 0, int(t.height) - 1);
+            return texels[size_t(y) * t.width + size_t(x)];
+        };
+        for (uint32_t y = 0; y < t.height * uint32_t(scale); y++)
+            for (uint32_t x = 0; x < t.width * uint32_t(scale); x++) {
+                float fx = (float(x) + 0.5f) / s - 0.5f, fy = (float(y) + 0.5f) / s - 0.5f;
+                int x0 = int(std::floor(fx)), y0 = int(std::floor(fy));
+                float ax = fx - float(x0), ay = fy - float(y0);
+                Color c{0, 0, 0, 0};
+                float wsum = 0;
+                for (int k = 0; k < 4; k++) {
+                    Color p = at(x0 + (k & 1), y0 + (k >> 1));
+                    float wgt = ((k & 1) ? ax : 1 - ax) * ((k >> 1) ? ay : 1 - ay) * p.a;  // alpha weighted
+                    c.r += p.r * wgt, c.g += p.g * wgt, c.b += p.b * wgt, wsum += wgt;
+                    c.a += p.a * ((k & 1) ? ax : 1 - ax) * ((k >> 1) ? ay : 1 - ay);
+                }
+                if (wsum > 0) c.r /= wsum, c.g /= wsum, c.b /= wsum;
+                canvas.Set(int(x), int(y), c);
+            }
+        for (const Box& b : t.boxes) {
+            const std::string& l = labels[b.icon];
+            if (l != "@lb" && l != "@rb") continue;
+            for (int y = int(float(b.y) * s); y < int(float(b.y + b.height) * s); y++)
+                for (int x = int(float(b.x) * s); x < int(float(b.x + b.width) * s); x++) canvas.Set(x, y, Color{1, 1, 1, 0});
+            Bumper(canvas, float(b.x) * s, float(b.y) * s, float(b.width) * s, float(b.height) * s,
+                   l == "@lb" ? "LB" : "RB");
+        }
+        return canvas.Finish();
+    }
     for (const Box& b : t.boxes)
         Keycap(canvas, float(b.x) * s, float(b.y) * s, float(b.width) * s, float(b.height) * s, labels[b.icon]);
     return canvas.Finish();
@@ -455,6 +541,12 @@ std::shared_ptr<const Picture> Provide(const gpu::TextureDesc& d, const uint8_t*
     if (!found) return nullptr;
     std::lock_guard lock(g_lock);
     if (!g_labels) return nullptr;
+    // a controller's pictures change only in the icon font (DXT3), where the white and black buttons are
+    if ((*g_labels)[kA] == kControllerSet && (found->level0.size() != size_t(found->width) * found->height ||
+                                              std::none_of(found->boxes.begin(), found->boxes.end(), [](const Box& b) {
+                                                  return b.icon == kWhite || b.icon == kBlack;
+                                              })))
+        return nullptr;
     // drawn at the output's resolution: at least 2, at most 8 times the original
     int scale = std::clamp(int(std::ceil(render_scale - 0.01f)), 2, 8);
     auto& cached = g_cache[{found, scale}];
@@ -466,8 +558,9 @@ void SetLabels(const std::optional<Labels>& labels) {
     {
         std::lock_guard lock(g_lock);
         if (labels == g_labels) return;
-        if (labels.has_value() != g_labels.has_value())
-            LOGR("button prompts: %s", labels ? "keyboard and mouse" : "controller");
+        auto pad = [](const std::optional<Labels>& l) { return !l || (*l)[kA] == kControllerSet; };
+        if (!g_labels || pad(labels) != pad(g_labels))
+            LOGR("button prompts: %s", pad(labels) ? "controller" : "keyboard and mouse");
         g_labels = labels;
         g_cache.clear();
     }
@@ -501,7 +594,12 @@ void Update() {
     uint32_t mode = game::Opt().button_prompts;
     bool keyboard = mode == 1 || (mode != 2 && input::KeyboardActive());
     if (!keyboard) {
-        SetLabels(std::nullopt);
+        // a pad's LB and RB for the original's white and black buttons
+        Labels pad;
+        pad[kA] = kControllerSet;
+        pad[kWhite] = "@lb";
+        pad[kBlack] = "@rb";
+        SetLabels(pad);
         return;
     }
     Labels labels;
