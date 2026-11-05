@@ -1,7 +1,8 @@
 # Call of Duty 2: Big Red One - XBE Recomp
 
 An unofficial native PC port of the original Xbox version of Call of Duty 2: Big Red One, built with
-[Xbox XBE Recomp](https://github.com/TGP482/XboxXBE-Recomp). Work in progress: it does not run yet.
+[Xbox XBE Recomp](https://github.com/TGP482/XboxXBE-Recomp). Work in progress: the campaign boots and plays, PC features are still to come. See
+[ISSUES.md](ISSUES.md) for the problems found so far and how they were fixed.
 
 > [!NOTE]
 > This project does not include any game files or recompiled game code. You need your own legally acquired copy of
