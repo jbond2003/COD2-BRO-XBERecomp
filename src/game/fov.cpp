@@ -48,6 +48,7 @@ X86_EXTERN_FUNC(__imp__sub_002F1E60);
 
 namespace game {
 void UpdatePrompts();  // src/game/prompts.cpp
+void UpdateHints();    // src/game/hints.cpp
 }
 
 // the client frame, once a frame from the main loop, in menus and in play
@@ -56,6 +57,7 @@ X86_FUNC(sub_002F1E60) {
     X86HostFp host_fp;
     ApplyFov(ctx);
     game::UpdatePrompts();
+    game::UpdateHints();
     // the front end (its UI manager, null in a level) runs at 30 fps like its movies and backdrops, so the menus do
     // not change speed from screen to screen
     if (kernel::R32(0x95F8F8)) app::LimitNextFrame(30);

@@ -3,8 +3,8 @@
 // start and back) and four footer icons (Xbox_A/B/X/YButton.dds), all in sp/global.cod. While the keyboard and mouse
 // are in use the renderer draws keycaps and mouse pictures in their place (gpu/texture_override.h), labelled with the
 // keys that give each button in the controller layout picked in the game's options; the controller's icons come back
-// the moment a controller is used, with LB and RB in place of the original's white and black buttons. After CoD2-BRO-Native-Loader's text/key_prompts.cpp (GPL-2.0-or-later,
-// THIRD_PARTY_NOTICES.md).
+// the moment a controller is used, with LB and RB in place of the original's white and black buttons. After
+// CoD2-BRO-Native-Loader's text/key_prompts.cpp (GPL-2.0-or-later, THIRD_PARTY_NOTICES.md).
 
 #include <algorithm>
 #include <array>
