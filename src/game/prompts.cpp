@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -162,14 +163,17 @@ uint32_t Level0Size(const std::vector<uint8_t>& dds, uint32_t width, uint32_t he
 }
 
 bool ReadFont() {
+    // the game's own Garamond, the face its typewriter keys are lettered in
+    if (kernel::ReadGameFile("D:\\media\\GARA.TTF", g_ttf) && !g_ttf.empty() &&
+        stbtt_InitFont(&g_font, g_ttf.data(), stbtt_GetFontOffsetForIndex(g_ttf.data(), 0)))
+        return true;
     std::vector<std::string> candidates;
 #ifdef _WIN32
     const char* windir = std::getenv("WINDIR");
     std::string fonts = std::string(windir ? windir : "C:\\Windows") + "\\Fonts\\";
-    for (const char* f : {"courbd.ttf", "segoeuib.ttf", "arialbd.ttf", "arial.ttf"}) candidates.push_back(fonts + f);
+    for (const char* f : {"georgiab.ttf", "timesbd.ttf", "arialbd.ttf", "arial.ttf"}) candidates.push_back(fonts + f);
 #else
-    candidates = {"/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf",
-                  "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
+    candidates = {"/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf",
                   "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
                   "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"};
 #endif
@@ -344,20 +348,21 @@ void Text(Canvas& canvas, float cx, float cy, float max_w, float max_h, const st
     }
 }
 
-// The port's own look: ivory keys like the typewriter's paper, a Big Red One crimson rim, a dark skirt below for
-// depth and the names in typewriter ink.
-constexpr Color kInk{0.15f, 0.09f, 0.07f, 1.0f};
-constexpr Color kRim{0.62f, 0.11f, 0.12f, 1.0f};
-constexpr Color kSkirt{0.30f, 0.05f, 0.06f, 1.0f};
-constexpr Color kIvoryTop{0.96f, 0.93f, 0.84f, 1.0f};
-constexpr Color kIvoryBottom{0.82f, 0.76f, 0.63f, 1.0f};
-constexpr Color kLit{0.78f, 0.14f, 0.15f, 1.0f};
+// The look of the profile name typewriter's keys: round, a bright metal ring around a near black face, the name in
+// off-white in the game's own Garamond (d:\media\GARA.TTF), a soft shadow below.
+constexpr Color kInk{0.95f, 0.93f, 0.88f, 1.0f};
+constexpr Color kShadow{0.0f, 0.0f, 0.0f, 0.55f};
+constexpr Color kRingTop{0.88f, 0.87f, 0.84f, 1.0f};
+constexpr Color kRingBottom{0.36f, 0.35f, 0.33f, 1.0f};
+constexpr Color kFaceTop{0.27f, 0.26f, 0.25f, 1.0f};
+constexpr Color kFaceBottom{0.07f, 0.07f, 0.07f, 1.0f};
+constexpr Color kLit{0.80f, 0.16f, 0.15f, 1.0f};
 
 Color Mix(Color a, Color b, float t) {
     return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t};
 }
 
-// a rounded shape filled top to bottom from one colour to another
+// a shape filled top to bottom from one colour to another
 template <typename Shape>
 void Shade(Canvas& canvas, float top, float bottom, float left, float right, Color from, Color to, Shape shape) {
     for (int y = int(top) - 1; y <= int(bottom) + 1; y++) {
@@ -368,26 +373,19 @@ void Shade(Canvas& canvas, float top, float bottom, float left, float right, Col
     }
 }
 
-// a mouse with one button lit: 0 left, 1 right, 2 middle
-void Mouse(Canvas& canvas, float left, float top, float w, float h, int button) {
-    float size = std::min(w, h);
-    float cx = left + w / 2, cy = top + h / 2 - size * 0.02f;
-    float line = std::max(1.0f, size * 0.065f);
-    float hw = size * 0.30f, hh = size * 0.43f, radius = hw * 0.95f, drop = size * 0.05f;
-    auto body = [&](float px, float py) { return RoundedRect(px, py, cx, cy, hw, hh, radius); };
-    canvas.Fill(cx - hw, cy - hh + drop, cx + hw, cy + hh + drop, kSkirt,
-                [&](float px, float py) { return body(px, py - drop); });
-    Shade(canvas, cy - hh, cy + hh, cx - hw, cx + hw, kIvoryTop, kIvoryBottom, body);
+// a small mouse in ink with one button lit: 0 left, 1 right, 2 middle
+void Mouse(Canvas& canvas, float cx, float cy, float size, int button) {
+    float line = std::max(1.0f, size * 0.09f);
+    float hw = size * 0.30f, hh = size * 0.44f, radius = hw * 0.95f;
     float split_y = cy - hh * 0.12f;  // where the buttons end
     canvas.Fill(cx - hw, cy - hh, cx + hw, split_y, kLit, [&](float px, float py) {
         float d = std::max(RoundedRect(px, py, cx, cy, hw - line, hh - line, radius - line), py - split_y);
         if (button == 0) d = std::max(d, px - cx + line * 0.5f);
         if (button == 1) d = std::max(d, cx - px + line * 0.5f);
-        if (button == 2) d = std::max(d, std::abs(px - cx) - size * 0.055f);
+        if (button == 2) d = std::max(d, std::abs(px - cx) - size * 0.07f);
         return d;
     });
-    // the rim, the seam between the buttons and the one under them
-    canvas.Fill(cx - hw, cy - hh, cx + hw, cy + hh, kRim, [&](float px, float py) {
+    canvas.Fill(cx - hw, cy - hh, cx + hw, cy + hh, kInk, [&](float px, float py) {
         float inside = RoundedRect(px, py, cx, cy, hw - line / 2, hh - line / 2, radius);
         float rim = std::abs(inside) - line / 2;
         float seam = std::max(std::abs(px - cx) - line * 0.3f, std::max(py - split_y, inside));
@@ -397,43 +395,45 @@ void Mouse(Canvas& canvas, float left, float top, float w, float h, int button) 
 }
 
 void Keycap(Canvas& canvas, float left, float top, float w, float h, const std::string& label) {
-    if (label == "@lmb" || label == "@rmb" || label == "@mmb") {
-        Mouse(canvas, left, top, w, h, label == "@lmb" ? 0 : label == "@rmb" ? 1 : 2);
-        return;
-    }
     float size = std::min(w, h);
-    float margin = size * 0.05f, line = std::max(1.0f, size * 0.07f), drop = size * 0.08f;
-    float cx = left + w / 2, hw = w / 2 - margin, hh = (h - drop) / 2 - margin;
-    float cy = top + margin + hh;
-    float radius = size * 0.16f;
-    auto cap = [&](float px, float py) { return RoundedRect(px, py, cx, cy, hw, hh, radius); };
-    // the skirt showing under the cap, then the cap lit from the top, then its rim
-    canvas.Fill(cx - hw, cy - hh + drop, cx + hw, cy + hh + drop, kSkirt,
-                [&](float px, float py) { return cap(px, py - drop); });
-    Shade(canvas, cy - hh, cy + hh, cx - hw, cx + hw, kIvoryTop, kIvoryBottom, cap);
-    canvas.Fill(cx - hw, cy - hh, cx + hw, cy + hh, kRim, [&](float px, float py) {
-        return std::abs(RoundedRect(px, py, cx, cy, hw - line / 2, hh - line / 2, radius - line / 2)) - line / 2;
-    });
-    float inner_w = 2 * (hw - line) * 0.86f, inner_h = 2 * (hh - line);
-    float a = size * 0.40f;  // arrow size
-    if (label == "@up" || label == "@down" || label == "@left" || label == "@right") {
+    float cx = left + w / 2, cy = top + h / 2 - size * 0.02f;
+    float r = size * 0.46f, ring = std::max(1.0f, size * 0.085f), drop = size * 0.04f;
+    auto disc = [&](float rr) { return [&, rr](float px, float py) { return std::hypot(px - cx, py - cy) - rr; }; };
+    // the shadow, the metal ring lit from the top, the face dark below
+    canvas.Fill(cx - r, cy - r + drop, cx + r, cy + r + drop, kShadow,
+                [&](float px, float py) { return std::hypot(px - cx, py - cy - drop) - r; });
+    Shade(canvas, cy - r, cy + r, cx - r, cx + r, kRingTop, kRingBottom, disc(r));
+    float face = r - ring;
+    Shade(canvas, cy - face, cy + face, cx - face, cx + face, kFaceTop, kFaceBottom, disc(face));
+    // a thin dark line inside the ring, as the game's keys have
+    canvas.Fill(cx - face, cy - face, cx + face, cy + face, Color{0, 0, 0, 0.7f},
+                [&](float px, float py) { return std::abs(std::hypot(px - cx, py - cy) - face) - std::max(0.5f, size * 0.012f); });
+    float inner = face * 2 * 0.80f;  // the text's width inside the face
+    float a = face * 0.95f;          // arrow size
+    if (label == "@lmb" || label == "@rmb" || label == "@mmb") {
+        Mouse(canvas, cx, cy, face * 1.25f, label == "@lmb" ? 0 : label == "@rmb" ? 1 : 2);
+    } else if (label == "@up" || label == "@down" || label == "@left" || label == "@right") {
         Arrow(canvas, cx, cy, a, label == "@left" ? -1 : label == "@right" ? 1 : 0,
               label == "@up" ? -1 : label == "@down" ? 1 : 0, kInk);
     } else if (label == "@leftright") {
-        Arrow(canvas, cx - a * 0.45f, cy, a * 0.7f, -1, 0, kInk);
-        Arrow(canvas, cx + a * 0.45f, cy, a * 0.7f, 1, 0, kInk);
+        Arrow(canvas, cx - a * 0.42f, cy, a * 0.62f, -1, 0, kInk);
+        Arrow(canvas, cx + a * 0.42f, cy, a * 0.62f, 1, 0, kInk);
     } else if (label == "@updown") {
-        Arrow(canvas, cx, cy - a * 0.45f, a * 0.7f, 0, -1, kInk);
-        Arrow(canvas, cx, cy + a * 0.45f, a * 0.7f, 0, 1, kInk);
+        Arrow(canvas, cx, cy - a * 0.42f, a * 0.62f, 0, -1, kInk);
+        Arrow(canvas, cx, cy + a * 0.42f, a * 0.62f, 0, 1, kInk);
     } else if (label == "@arrows") {
-        float s = a * 0.5f, o = a * 0.42f;
+        float s = a * 0.45f, o = a * 0.4f;
         Arrow(canvas, cx, cy - o, s, 0, -1, kInk);
         Arrow(canvas, cx, cy + o, s, 0, 1, kInk);
         Arrow(canvas, cx - o, cy, s, -1, 0, kInk);
         Arrow(canvas, cx + o, cy, s, 1, 0, kInk);
     } else {
-        // one letter at about half the cap's height, longer names as wide as fits
-        Text(canvas, cx, cy, inner_w, label.size() == 1 ? inner_h * 0.52f : inner_h * 0.44f, label, kInk);
+        // a letter as big as the typewriter's, lower case like its keys; longer names as wide as fits
+        std::string text = label;
+        for (char& c : text) c = char(std::tolower(static_cast<unsigned char>(c)));
+        // names fill the face edge to edge, a few letters still read at icon size
+        Text(canvas, cx, cy, text.size() == 1 ? inner : face * 1.92f, text.size() == 1 ? face * 0.95f : face * 0.9f,
+             text, kInk);
     }
 }
 

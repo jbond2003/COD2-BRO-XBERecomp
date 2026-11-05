@@ -37,6 +37,7 @@
 #include "core/log.h"
 #include "cpu/x86_ops.h"
 #include "kernel/kernel.h"
+#include "kernel/memory.h"
 
 using kernel::R32;
 using kernel::W32;
@@ -346,8 +347,16 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
         LOGI("menu click at %.0f,%.0f: screen %08x, %d items, picker %d: item %d of %zu shown, value %.0f, selected %d, locked %d", x, y, menu ? R32(menu) : 0, menu ? R16s(menu + 0x26) : 0, menu ? int(Horizontal(menu)) : 0,
              hit ? hit->index : -1, items.size(), value_x, R16s(menu + 0x22), R8(menu + 0x30));
     int16_t selected = R16s(menu + 0x22);
-    if (on_item && !R8(menu + 0x30) && (pointer.moved || pointer.left_clicks) && hit->index != selected)
+    // a hover the screen could not take while its highlight moved (locked) is taken once it can: a fast sweep over
+    // the typewriter's keys ends on the key under the pointer
+    static bool hover_pending = false;
+    if (pointer.moved) hover_pending = true;
+    if (!on_item) hover_pending = false;
+    if (on_item && hit->index == selected) hover_pending = false;
+    if (on_item && !R8(menu + 0x30) && (hover_pending || pointer.left_clicks) && hit->index != selected) {
         Select(ctx, menu, hit->index);
+        hover_pending = false;
+    }
     if (pointer.left_clicks && on_item && hit->index != R16s(menu + 0x22)) {
         if (!was_held) held_since = frame;
         held_clicks = pointer.left_clicks;
@@ -384,6 +393,40 @@ bool MenuHasPointer() { return Frame() - g_pointer_frame <= 2; }
 }  // namespace game
 
 X86_EXTERN_FUNC(__imp__sub_0031FC10);
+namespace {
+
+// a game string: u16 capacity, u16 length, u16 references, then the text
+bool SameText(uint32_t str, const char* want) {
+    for (uint32_t i = 0;; i++) {
+        char c = char(R8(str + 6 + i));
+        if (c != want[i]) return false;
+        if (!c) return true;
+    }
+}
+
+uint32_t ClickToStart() {
+    static uint32_t str = 0;
+    if (!str) {
+        static const char kText[] = "Click anywhere to start";
+        uint32_t len = uint32_t(sizeof(kText) - 1);
+        uint32_t at = mem::AllocSystem(8 + len + 1);
+        if (!at) return 0;
+        kernel::G<uint16_t>(at) = uint16_t(len + 1);
+        kernel::G<uint16_t>(at + 2) = uint16_t(len);
+        kernel::G<uint16_t>(at + 4) = 1;
+        for (uint32_t i = 0; i <= len; i++) kernel::G<uint8_t>(at + 6 + i) = uint8_t(kText[i]);
+        str = at;
+    }
+    return str;
+}
+
+bool StartPrompt() {
+    uint32_t mode = game::Opt().button_prompts;
+    return mode == 1 || (mode != 2 && input::KeyboardActive());
+}
+
+}  // namespace
+
 X86_EXTERN_FUNC(__imp__sub_00321160);
 X86_EXTERN_FUNC(__imp__sub_00325980);
 
@@ -405,7 +448,12 @@ X86_FUNC(sub_00321160) {
         if (g_drawn.size() > 1024) std::erase_if(g_drawn, [frame](const auto& e) { return frame - e.second > 2; });
         g_drawn[widget] = frame;
     }
+    // the title screen's "Press START" says what the mouse does while the keyboard and mouse are in use
+    uint32_t text = R32(widget + 0x1C);
+    uint32_t shown = text && StartPrompt() && SameText(text, "Press START") ? ClickToStart() : 0;
+    if (shown) W32(widget + 0x1C, shown);
     __imp__sub_00321160(ctx, base);
+    if (shown) W32(widget + 0x1C, text);
 }
 
 // the typewriter types key eax: the layout's character for that key
