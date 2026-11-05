@@ -18,6 +18,7 @@ struct Options {
     bool invert_mouse_x = false;
     bool qwerty_typewriter = true;
     uint32_t button_prompts = 0;  // 0 follow the last device used, 1 always keys and mouse, 2 always the controller  // the profile name typewriter's letters in QWERTY order, not ABC
+    bool modern_layout = true;  // the Modern controller configuration (src/game/pad_layout.cpp), else the game's own
     uint32_t walk_speed = 50;  // percent of running, while the walk key is held
     std::map<std::string, std::string> keys;  // action id to key names, absent is the default
 };

@@ -19,6 +19,10 @@ bool Playing();                  // the game took mouse counts in the last momen
 // raw mouse counts since the last call, scaled by the settings; false when there are none. Asked by the game's look
 // update, which runs in play only: being asked is what Playing reports.
 bool TakeMouse(float& dx, float& dy);
+// console commands for the game (src/game/pad_layout.cpp runs them each client frame): stance keys, controls the
+// controller layout has no button for. Any thread
+void QueueCommand(const std::string& command);
+bool TakeCommand(std::string& command);
 
 struct MenuPointer {
     bool active = false;

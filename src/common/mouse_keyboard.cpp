@@ -64,8 +64,10 @@ struct Target {
     Action action;
     int button;
     int game = -1;  // the game's own action, pressed directly in play whatever controller layout is picked
+    const char* command = nullptr;  // kCommand: run when the key goes down in play
 };
 constexpr int kWalk = -3;
+constexpr int kCommand = -4;
 constexpr int kFirstButtonBit = 8;
 constexpr int kStart = 12;
 constexpr int kFirstMoveKey = 16;
@@ -83,7 +85,8 @@ constexpr Target kActions[] = {
     {{"fire", "LMB"}, 7},                 // right trigger
     {{"aim", "RMB"}, 6},                  // left trigger: aim down the sights
     {{"use", "F"}, 0},                    // A
-    {{"crouch", "C,Ctrl"}, 1},            // B: lower stance
+    {{"crouch", "C"}, kCommand, -1, "togglecrouch"},  // crouch, again to stand
+    {{"prone", "Z"}, kCommand, -1, "toggleprone"},    // prone, again to stand
     {{"reload", "R"}, 2},                 // X
     {{"jump", "Space"}, 3},               // Y: raise stance, climb
     {{"melee", "V,MMB"}, 4},              // black
@@ -233,6 +236,7 @@ struct Held {
     bool used = false;
     bool walk = false;
     uint32_t game = 0;      // the game's actions held, bit per action id (all under 32)
+    uint32_t commands = 0;  // kCommand actions held, bit per action index
     int stick[8] = {};  // move forward back left right, look up down left right
 };
 
@@ -252,6 +256,8 @@ Held PressActions(const Binds& binds, bool play, Pad& p) {
         held.used = true;
         if (b == kWalk) {
             held.walk = true;
+        } else if (b == kCommand) {
+            if (play) held.commands |= 1u << i;
         } else if (play && kActions[i].game >= 0) {
             held.game |= 1u << kActions[i].game;
         } else if (b >= kFirstLookKey && !play) {
@@ -358,6 +364,10 @@ void Keyboard(Pad& p) {
     bool fixed_down = std::any_of(std::begin(kFixed), std::end(kFixed), Down);
     Held held = PressActions(binds, play, p);
     g_game_actions = held.game;
+    static uint32_t commands_held = 0;
+    for (size_t i = 0; i < kCount; i++)
+        if ((held.commands >> i & 1) && !(commands_held >> i & 1)) QueueCommand(kActions[i].command);
+    commands_held = held.commands;
     // Enter and Backspace act in menus as A and B (the button prompts say so); in play they do what they are bound to.
     // On a name entry screen they type (TakeTyped), and Escape backs out
     if (typing) {
@@ -479,7 +489,7 @@ namespace {
 // the F10 panel's names for the actions, in kActions' order
 constexpr const char* kLabels[] = {
     "MOVE FORWARD", "MOVE BACK", "STRAFE LEFT", "STRAFE RIGHT", "WALK", "FIRE", "AIM DOWN SIGHTS", "USE",
-    "CROUCH / PRONE", "RELOAD", "JUMP / STAND", "MELEE", "THROW GRENADE", "SPRINT", "RIGHT STICK CLICK",
+    "CROUCH", "PRONE", "RELOAD", "JUMP / STAND", "MELEE", "THROW GRENADE", "SPRINT", "RIGHT STICK CLICK",
     "NEXT WEAPON", "D-PAD DOWN", "LEAN LEFT", "LEAN RIGHT", "OBJECTIVES", "PAUSE", "LOOK UP", "LOOK DOWN",
     "LOOK LEFT", "LOOK RIGHT",
 };
@@ -678,7 +688,7 @@ int PressedKey() { return 0; }
 std::string KeyName(const char* id) {
     constexpr std::pair<const char*, const char*> kDefaults[] = {
         {"use", "F"},        {"fire", "LMB"},       {"jump", "Space"}, {"crouch", "C"}, {"pause", "Escape"},
-        {"objectives", "Tab"}, {"grenade", "G"},   {"aim", "RMB"},    {"reload", "R"}, {"melee", "V"},
+        {"objectives", "Tab"}, {"prone", "Z"}, {"grenade", "G"},   {"aim", "RMB"},    {"reload", "R"}, {"melee", "V"},
         {"sprint", "Shift"},  {"next_weapon", "1"}, {"lean_left", "Q"}, {"lean_right", "E"}};
     if (!std::getenv("COD2_KBM")) return {};
     for (const auto& [name, key] : kDefaults)
@@ -712,5 +722,25 @@ void ApplyMenuTap(Pad& p) {
     p.buttons |= uint16_t(g_tap_buttons);
     for (int i = 0; i < 8; i++)
         if (g_tap_analog & (1u << i)) p.analog[i] = 0xFF;
+}
+}  // namespace input
+
+namespace input {
+namespace {
+std::mutex g_command_lock;
+std::vector<std::string> g_commands;  // under g_command_lock, oldest first
+}  // namespace
+
+void QueueCommand(const std::string& command) {
+    std::lock_guard lock(g_command_lock);
+    if (g_commands.size() < 64) g_commands.push_back(command);
+}
+
+bool TakeCommand(std::string& command) {
+    std::lock_guard lock(g_command_lock);
+    if (g_commands.empty()) return false;
+    command = g_commands.front();
+    g_commands.erase(g_commands.begin());
+    return true;
 }
 }  // namespace input

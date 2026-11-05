@@ -301,3 +301,18 @@ D3D_InternalRelease = ["esi"]
 [[hook]]
 at = 0x002475E4
 call = "GunFov"
+
+# Options > Controller: a fifth configuration, Modern (src/game/pad_layout.cpp). 0x336118 keeps the choice to 3,
+# 0x338FD5 turns a 4 into 0 on opening, 0x3362DB (Reset to Defaults) sets 0
+[[hook]]
+at = 0x00336118
+call = "ControllerChoiceMax"
+
+[[hook]]
+at = 0x00338FD5
+call = "ControllerChoiceOpen"
+on_true = 0x00338FE1
+
+[[hook]]
+at = 0x003362E5
+call = "ControllerChoiceDefault"

@@ -27,6 +27,7 @@ namespace game {
 void RemapToLayout(const input::Pad& from, input::Pad& to);  // src/game/mouse_look.cpp
 void InitPrompts();  // src/game/prompts.cpp
 void OptionsPad(input::Pad& pad);  // src/game/menu_mouse.cpp: PC OPTIONS in the Options menu
+void ModernPad(input::Pad& pad, bool keys_back);  // src/game/pad_layout.cpp: B to crouch, held to go prone
 
 namespace {
 
@@ -83,12 +84,14 @@ void Pad(int port, input::Pad& pad) {
         return;
     }
     // the keys press the default layout's controls; in play they follow the layout picked in the game's options
+    ModernPad(pad, false);  // the controller's own buttons
     input::Pad keys;
     input::Keyboard(keys);
     input::Pad out = keys;
     if (input::Playing()) {
         constexpr uint16_t kStartBack = 0x30;
         out.buttons = keys.buttons & kStartBack;
+        ModernPad(out, true);  // Back is the pause menu in Modern: the objectives key keeps its job
         std::fill(std::begin(out.analog), std::end(out.analog), uint8_t(0));
         RemapToLayout(keys, out);
     }
@@ -207,6 +210,7 @@ const app::GameInfo app::kGame = {
                 {"invert_mouse_x", &game::Opt().invert_mouse_x, nullptr},
                 {"qwerty_typewriter", &game::Opt().qwerty_typewriter, nullptr},
                 {"button_prompts", nullptr, &game::Opt().button_prompts},
+                {"modern_layout", &game::Opt().modern_layout, nullptr},
                 {"walk_speed", nullptr, &game::Opt().walk_speed}},  // game settings kept in the settings file
     .load = game::Load,  // reads more from the settings file's toml::table: mouse sensitivities, [keys]
     .save = game::Save,  // writes more into it

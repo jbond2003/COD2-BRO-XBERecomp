@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstring>
 #include <iterator>
+#include <string>
 
 #include "common/menu_state.h"
 #include "common/mouse_keyboard.h"
@@ -125,9 +126,11 @@ void RemapToLayout(const input::Pad& from, input::Pad& to) {
             if (uint8_t v = Value(from, c)) Press(to, c, v);
         return;
     }
-    for (const PadControl& c : kPadControls) {
+    // a control the layout has no button for (leaning in Modern) runs its command itself
+    static bool commanded[std::size(kPadControls)] = {};
+    for (size_t k = 0; k < std::size(kPadControls); k++) {
+        const PadControl& c = kPadControls[k];
         uint8_t v = Value(from, c);
-        if (!v) continue;
         const PadControl* target = nullptr;
         for (const char* command : {c.command, Similar(c.command)}) {
             if (!command || !*command) continue;
@@ -135,7 +138,13 @@ void RemapToLayout(const input::Pad& from, input::Pad& to) {
                 if (SameCommand(bound[i], command)) target = &kPadControls[i];
             if (target) break;
         }
-        if (target) Press(to, *target, v);
+        bool direct = v && !target && *c.command && c.key_code != 0xD5;  // not lower stance: the stance keys send theirs
+        if (direct != commanded[k]) {
+            if (c.command[0] == '+') input::QueueCommand((direct ? "" : "-") + std::string(direct ? c.command : c.command + 1));
+            else if (direct) input::QueueCommand(c.command);
+            commanded[k] = direct;
+        }
+        if (v && target) Press(to, *target, v);
     }
 }
 
