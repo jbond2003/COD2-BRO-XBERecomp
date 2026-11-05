@@ -248,6 +248,7 @@ WSASendTo                                            = 0x399FFD
 WSAStartup                                           = 0x39A248
 XAudioDownloadEffectsImage                           = 0x3C7881
 XInitDevices                                         = 0x7AA976
+XGetFilePhysicalSortKey                              = 0x1E843A  # by hand: the loader notes (xapilib filehops.obj), stdcall (file), called at 0xCBB1A
 XInputClose                                          = 0x7ABF63
 XInputGetState                                       = 0x7AC147
 XInputOpen                                           = 0x7ABF0D
@@ -266,6 +267,7 @@ XNetStartup                                          = 0
 XNetUnregisterKey                                    = 0x399F2D
 XNetXnAddrToInAddr                                   = 0
 XOnlineCleanup                                       = 0x37A4DD
+XOnlineGetUsers                                      = 0x379E96  # by hand: thunk on the XOnline object 0x921640; (users, count) at CLiveEngine_UpdateLocalUserList 0xD385B
 XOnlineStartup                                       = 0x37A3E0
 
 [data]
