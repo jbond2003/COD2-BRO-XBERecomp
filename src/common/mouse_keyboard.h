@@ -37,6 +37,7 @@ void ApplyMenuTap(Pad& pad);   // port 0's report: the tap joins it
 // a name entry keyboard screen (passwords, profile and save names) is up: the keys type into it, Enter finishes,
 // Backspace deletes and Escape backs out, instead of acting as bound
 void SetTextEntry(bool on);
+bool TextEntry();             // ... and a menu has the keys
 void OnChar(unsigned ch);      // window thread, WM_CHAR
 char TakeTyped();              // the next character typed for the screen, upper case, '\b' delete, '\r' finish; 0 none
 void TypeAccept();             // A tapped as the controller would, for the key TakeTyped's caller focused

@@ -139,6 +139,28 @@ void RemapToLayout(const input::Pad& from, input::Pad& to) {
     }
 }
 
+// where RemapToLayout sends default control i (kPadControls' order: A B X Y black white LT RT, right and left stick
+// clicks, dpad up down left right): the index of the control it presses now, -1 for none
+int PadTarget(size_t i) {
+    if (i >= std::size(kPadControls)) return -1;
+    char bound[std::size(kPadControls)][64];
+    bool any = false;
+    for (size_t k = 0; k < std::size(kPadControls); k++) {
+        Binding(kPadControls[k].key_code, bound[k]);
+        any = any || bound[k][0];
+    }
+    if (!any) return int(i);
+    const PadControl& c = kPadControls[i];
+    for (const char* command : {c.command, Similar(c.command)}) {
+        if (!command || !*command) continue;
+        int target = -1;
+        for (size_t k = 0; k < std::size(kPadControls); k++)
+            if (SameCommand(bound[k], command)) target = int(k);
+        if (target >= 0) return target;
+    }
+    return -1;
+}
+
 }  // namespace game
 
 X86_EXTERN_FUNC(__imp__sub_002B39E0);

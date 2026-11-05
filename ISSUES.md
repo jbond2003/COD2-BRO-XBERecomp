@@ -75,6 +75,27 @@ code runs. Host code (HLE functions, kernel exports, the renderers) is switched 
 **Lesson.** If geometry or physics is slightly or badly wrong while everything else works, test the game's math helpers
 directly from a hook against known values, and grep the disassembly for `ldmxcsr` and `fldcw`.
 
+## 7. Keyboard and mouse: what had to be found
+
+Not bugs, but things another port will meet.
+
+- **Mouse look.** The Xbox build feeds its right stick through Quake 3's mouse path (CL_MouseMove 0x2B39E0, with
+  stick acceleration and a turn limit), so a real mouse cannot go through it. `src/game/mouse_look.cpp` adds the mouse
+  to cl.viewangles before CL_MouseMove runs, under the same conditions (view locks, vehicles, freelook, invert).
+- **Controller layouts.** The keyboard gives the default layout's buttons; the layouts in the game's options bind
+  them to other commands, so each key's button is moved to the one bound to its command now (key bindings at
+  0x93425C).
+- **Menu pointer.** The menus have no mouse support at all. Every drawn text widget (draw 0x321160) is recorded with
+  its box, and the pad poll (0x31FC10) selects the item under the pointer and taps A, B, up/down or left/right as a
+  controller would. Picture-only buttons (the typewriter's backspace, shift, space and done) have no text, so they
+  get fixed boxes.
+- **Typewriter.** Its key caps are background art, and the letter typed comes from the key's index (0x325980), not
+  its label. QWERTY order therefore needs the index remapped as well as the labels swapped.
+- **Button prompts.** The buttons are pictures: an icon font (`i_button_icons_xb_<lang>`, glyphs 33-49) and four
+  footer icons (`Xbox_A/B/X/YButton.dds`) in `sp/global.cod`. The SDK now lets a game draw its own picture in place of
+  a texture (`gpu/texture_override.h`). `src/game/prompts.cpp` matches those textures by their bytes and draws
+  keycaps with the bound keys' names while the keyboard and mouse are in use.
+
 ## Build and setup issues
 
 - **`no member named LimitNextFrame` when building.** `git pull` does not update the `sdk` submodule. `build.bat` now

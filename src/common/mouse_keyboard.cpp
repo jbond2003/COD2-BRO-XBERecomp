@@ -358,13 +358,13 @@ void Keyboard(Pad& p) {
     bool fixed_down = std::any_of(std::begin(kFixed), std::end(kFixed), Down);
     Held held = PressActions(binds, play, p);
     g_game_actions = held.game;
-    // Enter, Space and Backspace act in menus; in play they do what they are bound to. On a name entry screen they
-    // type (TakeTyped), and Escape backs out
+    // Enter and Backspace act in menus as A and B (the button prompts say so); in play they do what they are bound to.
+    // On a name entry screen they type (TakeTyped), and Escape backs out
     if (typing) {
         if (Down(VK_ESCAPE)) p.analog[1] = 0xFF;
         if (NowMs() < g_accept_until) p.analog[0] = 0xFF;
     } else {
-        if (!play && (Down(VK_RETURN) || Down(VK_SPACE))) p.analog[0] = 0xFF;
+        if (!play && Down(VK_RETURN)) p.analog[0] = 0xFF;
         if (!play && Down(VK_BACK)) p.analog[1] = 0xFF;
     }
     if (NowMs() < g_resume_until) p.buttons |= 0x10;
@@ -431,6 +431,8 @@ void SetMenuInput(bool active) {
 }
 
 void UseMenuMouse() { SetKeyboard(true); }
+
+bool TextEntry() { return g_text_entry && g_menu; }
 
 void SetTextEntry(bool on) {
     if (g_text_entry.exchange(on) == on) return;
@@ -647,6 +649,7 @@ void UseMenuMouse() {}
 std::atomic<bool> g_text_entry{false};
 double g_entry_since = 0;
 size_t g_typed_at = 0;
+bool TextEntry() { return g_text_entry; }
 void SetTextEntry(bool on) {
     if (on && !g_text_entry) g_entry_since = Seconds();
     g_text_entry = on;

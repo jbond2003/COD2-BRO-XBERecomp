@@ -24,6 +24,7 @@
 namespace game {
 
 void RemapToLayout(const input::Pad& from, input::Pad& to);  // src/game/mouse_look.cpp
+void InitPrompts();  // src/game/prompts.cpp
 
 namespace {
 
@@ -168,6 +169,7 @@ void Save(void* table) {
 // after the settings load, before the window and boot
 void Init() {
     input::LoadBindings();
+    InitPrompts();
     // the frame rate is 30 or 60 for now and vsync is off, whatever an older settings file says
     app::Settings& s = app::Get();
     if (s.fps_cap != 30) s.fps_cap = 60;
@@ -198,6 +200,7 @@ const app::GameInfo app::kGame = {
                 {"invert_mouse", &game::Opt().invert_mouse, nullptr},
                 {"invert_mouse_x", &game::Opt().invert_mouse_x, nullptr},
                 {"qwerty_typewriter", &game::Opt().qwerty_typewriter, nullptr},
+                {"button_prompts", nullptr, &game::Opt().button_prompts},
                 {"walk_speed", nullptr, &game::Opt().walk_speed}},  // game settings kept in the settings file
     .load = game::Load,  // reads more from the settings file's toml::table: mouse sensitivities, [keys]
     .save = game::Save,  // writes more into it

@@ -115,7 +115,7 @@ const std::vector<Mode>& Modes() {
 }
 
 enum RowId { kSection, kDisplayMode, kResolution, kRenderResolution, kFov, kMaxFps, kVsync, kFpsCounter, kAniso,
-             kTextureReplacement, kTextureDumping, kDumpFormat, kMouseX, kMouseY, kInvertY, kInvertX, kQwerty };
+             kTextureReplacement, kTextureDumping, kDumpFormat, kMouseX, kMouseY, kInvertY, kInvertX, kQwerty, kPrompts };
 
 struct Row {
     RowId id;
@@ -142,6 +142,7 @@ constexpr Row kRows[] = {
     {kInvertX, "INVERT HORIZONTAL LOOK"},
     {kSection, "MENUS"},
     {kQwerty, "PROFILE NAME KEYS"},
+    {kPrompts, "BUTTON PROMPTS"},
 };
 
 bool DisplayRow(RowId id) { return id == kDisplayMode || id == kResolution; }
@@ -236,6 +237,13 @@ std::string RowText(RowId id, int step, Settings& s) {
         case kQwerty:
             if (step) game::Opt().qwerty_typewriter = !game::Opt().qwerty_typewriter;
             return game::Opt().qwerty_typewriter ? "QWERTY" : "ABC (ORIGINAL)";
+        case kPrompts: {
+            static constexpr const char* kModes[] = {"AUTOMATIC", "KEYBOARD AND MOUSE", "CONTROLLER"};
+            uint32_t& m = game::Opt().button_prompts;
+            if (m > 2) m = 0;
+            if (step) m = uint32_t((int(m) + step + 3) % 3);
+            return kModes[m];
+        }
         default:
             break;
     }
@@ -323,6 +331,7 @@ void Defaults() {
     o.invert_mouse = false;
     o.invert_mouse_x = false;
     o.qwerty_typewriter = true;
+    o.button_prompts = 0;
     g_held = s;
     g_held.display_mode = d.display_mode;
     g_held.width = d.width;

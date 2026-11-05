@@ -45,11 +45,16 @@ void ApplyFov(X86Context& ctx) {
 
 X86_EXTERN_FUNC(__imp__sub_002F1E60);
 
-// the client frame, once a frame from the main loop
+namespace game {
+void UpdatePrompts();  // src/game/prompts.cpp
+}
+
+// the client frame, once a frame from the main loop, in menus and in play
 X86_FUNC(sub_002F1E60) {
     __imp__sub_002F1E60(ctx, base);
     X86HostFp host_fp;
     ApplyFov(ctx);
+    game::UpdatePrompts();
 }
 
 // R_RenderView, the gun scene's fov_y just loaded into ecx
