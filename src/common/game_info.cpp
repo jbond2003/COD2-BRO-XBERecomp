@@ -18,6 +18,7 @@
 #include "common/menu.h"
 #include "common/mouse_keyboard.h"
 #include "common/options.h"
+#include "common/paper_page.h"
 #include "common/software_cursor.h"
 #include "core/input.h"
 
@@ -76,6 +77,7 @@ void Pad(int port, input::Pad& pad) {
     input::SeenPad(pad);
     pad.connected = true;
     if (app::MenuOpen()) {
+        app::PcOptionsPad(pad);
         pad = {};
         pad.connected = true;
         return;
@@ -121,6 +123,7 @@ void Window(void* hwnd) {
     ShowCursor(FALSE);
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
     input::StartMouse(hwnd);
+    ::ui::paper::LoadFonts();  // before cursor::Init builds the font atlas
     cursor::Init(hwnd);
 #else
     (void)hwnd;
@@ -130,7 +133,7 @@ void Window(void* hwnd) {
 void Ui(double fps) {
 #ifdef _WIN32
     app::DrawUi(fps);
-    if (!app::MenuOpen()) cursor::Draw();
+    if (!app::MenuOpen() || app::PcOptionsOpen()) cursor::Draw();
 #else
     (void)fps;
 #endif

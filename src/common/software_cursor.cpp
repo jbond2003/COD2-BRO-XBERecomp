@@ -20,6 +20,7 @@
 
 #include "app/app.h"
 #include "common/mouse_keyboard.h"
+#include "common/menu.h"
 #include "common/menu_state.h"
 #include "core/log.h"
 
@@ -98,8 +99,10 @@ bool Ready() { return g_rect >= 0; }
 
 void Draw() {
     // a controller used last hides it until the mouse moves or clicks in a menu again
-    if (!Ready() || !MenuMouseCursorVisible() || input::Playing() || !input::KeyboardActive() ||
-        GetForegroundWindow() != g_hwnd) return;
+    // the PC Options page always has it
+    bool page = app::PcOptionsOpen();
+    if (!Ready() || GetForegroundWindow() != g_hwnd) return;
+    if (!page && (!MenuMouseCursorVisible() || input::Playing() || !input::KeyboardActive())) return;
     POINT point;
     RECT client;
     if (!GetCursorPos(&point) || WindowFromPoint(point) != g_hwnd ||

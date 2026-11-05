@@ -6,6 +6,7 @@ float app::g_zoom = 1.0f;
 #ifdef _WIN32
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cstdio>
 #include <iterator>
 #include <map>
@@ -27,6 +28,7 @@ float app::g_zoom = 1.0f;
 #include "common/menu.h"
 #include "common/mouse_keyboard.h"
 #include "common/options.h"
+#include "common/paper_page.h"
 
 namespace app {
 
@@ -478,6 +480,240 @@ void DrawPanel() {
     ImGui::PopStyleColor(int(std::size(kPanelColors)));
 }
 
+// ---- the PC Options page: the same settings on one of the game's own paper option pages (paper_page.h) ----
+
+std::atomic<bool> g_paper{false};
+std::atomic<uint32_t> g_paper_pad{0};  // the controller as kPad* bits, from the game thread's poll
+
+constexpr uint32_t kPadUp = 1, kPadDown = 2, kPadLeft = 4, kPadRight = 8, kPadA = 0x100, kPadB = 0x200,
+                   kPadX = 0x400;
+
+struct PaperState {
+    int selected = -1;  // a line index
+    float scroll = 0;
+    bool follow = true;  // keep the selection in view: the keys moved it
+    ImVec2 mouse{-1, -1};
+    uint32_t pad_prev = 0;
+    double pad_repeat = 0;
+    std::vector<ui::paper::Hit> hits;
+} g_page;
+
+// what each line of the page is
+struct PaperRow {
+    enum Kind { kSetting, kBind, kResetAll, kApplyExit } kind;
+    RowId row = kSection;
+    size_t action = 0;
+};
+
+// the page's words in the game's own case: "Field of view", "On"; short names stay capitals
+std::string Sentence(const std::string& text) {
+    static constexpr const char* kKeep[] = {"PNG", "DDS", "QWERTY", "ABC", "FPS", "FOV", "D-PAD"};
+    std::string out;
+    size_t i = 0;
+    while (i < text.size()) {
+        size_t j = i;
+        while (j < text.size() && text[j] != ' ' && text[j] != '(' && text[j] != ')' && text[j] != '/') j++;
+        std::string word = text.substr(i, j - i);
+        bool keep = std::any_of(std::begin(kKeep), std::end(kKeep), [&](const char* k) { return word == k; });
+        if (!keep)
+            for (char& c : word) c = char(std::tolower(static_cast<unsigned char>(c)));
+        out += word;
+        if (j < text.size()) out += text[j];
+        i = j + 1;
+    }
+    for (char& c : out)
+        if (std::isalpha(static_cast<unsigned char>(c))) {
+            c = char(std::toupper(static_cast<unsigned char>(c)));
+            break;
+        }
+    return out;
+}
+
+void BuildPage(std::vector<ui::paper::Line>& lines, std::vector<PaperRow>& rows) {
+    using ui::paper::Line;
+    lines.clear();
+    rows.clear();
+    for (const Row& r : kRows) {
+        Line l;
+        if (r.id == kSection) {
+            l.kind = Line::kHeading;
+            l.label = Sentence(r.label);
+        } else {
+            l.kind = Line::kOption;
+            l.label = Sentence(r.label);
+            l.value = Sentence(RowText(r.id, 0, Shown(r.id)));
+        }
+        lines.push_back(l);
+        rows.push_back({PaperRow::kSetting, r.id});
+    }
+    lines.push_back({Line::kHeading, "Key bindings"});
+    rows.push_back({PaperRow::kSetting, kSection});
+    size_t count = 0;
+    input::Actions(&count);
+    for (size_t i = 0; i < count; i++) {
+        Line l;
+        l.kind = Line::kBinding;
+        l.label = Sentence(input::Label(i));
+        l.value = input::Binding(i, 0);
+        l.value2 = input::Binding(i, 1);
+        lines.push_back(l);
+        rows.push_back({PaperRow::kBind, kSection, i});
+    }
+    lines.push_back({Line::kAction, "Reset to Defaults"});
+    rows.push_back({PaperRow::kResetAll});
+    lines.push_back({Line::kAction, "Apply and Exit"});
+    rows.push_back({PaperRow::kApplyExit});
+}
+
+int g_slot = 0;  // the key box the selection is on, on a binding line
+
+void StepSetting(RowId id, int step) {
+    if (DisplayRow(id)) {
+        if (!g_held_set) g_held = Get();
+        g_held_set = true;
+        RowText(id, step, g_held);
+    } else {
+        RowText(id, step, Get());
+        Save();
+    }
+}
+
+void ClosePaper() {
+    if (g_paper.load(std::memory_order_relaxed) && MenuOpen()) ToggleMenu();
+}
+
+// a line's job: step an option, wait for a key, or the page's actions
+void Activate(const PaperRow& r, int step) {
+    switch (r.kind) {
+        case PaperRow::kSetting:
+            if (r.row != kSection) StepSetting(r.row, step ? step : 1);
+            break;
+        case PaperRow::kBind:
+            g_capture = {int(r.action), g_slot, false};
+            break;
+        case PaperRow::kResetAll:
+            Defaults();
+            g_capture = {};
+            input::ResetBindings();
+            break;
+        case PaperRow::kApplyExit:
+            Apply();
+            Save();
+            ClosePaper();
+            break;
+    }
+}
+
+bool Inside(ImVec2 p, ImVec2 min, ImVec2 max) {
+    return max.x > min.x && p.x >= min.x && p.x < max.x && p.y >= min.y && p.y < max.y;
+}
+
+// the next line the selection can stop on, from line index from going dir (wraps)
+int NextLine(const std::vector<ui::paper::Line>& lines, int from, int dir) {
+    int n = int(lines.size());
+    for (int k = 1; k <= n; k++) {
+        int i = ((from + dir * k) % n + n) % n;
+        if (lines[size_t(i)].kind != ui::paper::Line::kHeading) return i;
+    }
+    return from;
+}
+
+void DrawPaper() {
+    std::vector<ui::paper::Line> lines;
+    std::vector<PaperRow> rows;
+    BuildPage(lines, rows);
+    PaperState& p = g_page;
+    if (p.selected < 0 || p.selected >= int(lines.size()) || lines[size_t(p.selected)].kind == ui::paper::Line::kHeading)
+        p.selected = NextLine(lines, -1, 1), p.follow = true;
+
+    bool was_capturing = g_capture.action >= 0;
+    UpdateCapture();
+    bool capturing = g_capture.action >= 0;
+
+    // the controller: edges, and the dpad repeating while held
+    uint32_t pad = g_paper_pad.load(std::memory_order_relaxed);
+    uint32_t pressed = pad & ~p.pad_prev;
+    double now = ImGui::GetTime();
+    constexpr uint32_t kDirs = kPadUp | kPadDown | kPadLeft | kPadRight;
+    if (pressed & kDirs) p.pad_repeat = now + 0.4;
+    else if ((pad & kDirs) && now >= p.pad_repeat) {
+        pressed |= pad & kDirs;
+        p.pad_repeat = now + 0.12;
+    }
+    p.pad_prev = pad;
+
+    // capture takes every key until it ends; a key that ended it does nothing else this frame
+    if (!capturing && !was_capturing) {
+        auto key = [](ImGuiKey k) { return ImGui::IsKeyPressed(k, true); };
+        int move = 0, step = 0;
+        if (key(ImGuiKey_UpArrow) || (pressed & kPadUp)) move = -1;
+        if (key(ImGuiKey_DownArrow) || (pressed & kPadDown)) move = 1;
+        if (key(ImGuiKey_LeftArrow) || (pressed & kPadLeft)) step = -1;
+        if (key(ImGuiKey_RightArrow) || (pressed & kPadRight)) step = 1;
+        bool enter = ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false) ||
+                     (pressed & kPadA);
+        bool back = ImGui::IsKeyPressed(ImGuiKey_Backspace, false) || (pressed & kPadB);
+        bool clear = ImGui::IsKeyPressed(ImGuiKey_Delete, false) || (pressed & kPadX);
+        if (move) {
+            p.selected = NextLine(lines, p.selected, move);
+            p.follow = true;
+        }
+        const PaperRow& r = rows[size_t(p.selected)];
+        if (step) {
+            if (r.kind == PaperRow::kBind) g_slot = step < 0 ? 0 : 1;
+            else if (r.kind == PaperRow::kSetting) Activate(r, step);
+        }
+        if (enter) Activate(r, 0);
+        if (clear && r.kind == PaperRow::kBind) input::Bind(r.action, 0, g_slot);
+        if (back) {
+            ClosePaper();
+            return;
+        }
+
+        // the mouse: hovering selects, a click does the line's job, the wheel scrolls
+        const ImGuiIO& io = ImGui::GetIO();
+        ImVec2 m = io.MousePos;
+        bool moved = m.x != p.mouse.x || m.y != p.mouse.y;
+        p.mouse = m;
+        int over = -1;
+        for (size_t i = 0; i < p.hits.size() && i < lines.size(); i++)
+            if (Inside(m, p.hits[i].min, p.hits[i].max)) over = int(i);
+        bool left = ImGui::IsMouseClicked(ImGuiMouseButton_Left), right = ImGui::IsMouseClicked(ImGuiMouseButton_Right);
+        if (over >= 0 && (moved || left || right)) {
+            const ui::paper::Hit& h = p.hits[size_t(over)];
+            const PaperRow& o = rows[size_t(over)];
+            p.selected = over;
+            if (o.kind == PaperRow::kBind) {
+                if (Inside(m, h.left_min, h.left_max)) g_slot = 0;
+                if (Inside(m, h.right_min, h.right_max)) g_slot = 1;
+            }
+            bool on_box = Inside(m, h.left_min, h.left_max) || Inside(m, h.right_min, h.right_max);
+            if (left) {
+                if (o.kind == PaperRow::kSetting)
+                    Activate(o, Inside(m, h.left_min, h.left_max) ? -1 : 1);
+                else if (o.kind != PaperRow::kBind || on_box)
+                    Activate(o, 0);
+            }
+            if (right) {
+                if (o.kind == PaperRow::kBind && on_box) input::Bind(o.action, 0, g_slot);
+                if (o.kind == PaperRow::kSetting) Activate(o, -1);
+            }
+        }
+        if (io.MouseWheel != 0) {
+            p.scroll -= io.MouseWheel * 2.0f;
+            p.follow = false;
+        }
+        BuildPage(lines, rows);  // the values as they are now
+    }
+    lines[size_t(p.selected)].slot = g_slot;
+    lines[size_t(p.selected)].waiting = capturing;
+    const char* note = capturing ? "Press a key for it, Escape to keep the old one" :
+                       g_held_set ? "Display changes take effect on Apply and Exit" :
+                       "Arrows or the mouse to change, Delete or right click clears a key, Escape goes back";
+    ui::paper::Draw("PC OPTIONS", lines, p.selected, p.scroll, p.follow, note, p.hits);
+    p.follow = false;
+}
+
 // top right, over the game
 void DrawFpsCounter(double fps) {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
@@ -501,7 +737,10 @@ bool Capturing() { return g_capture.action >= 0; }
 void ToggleMenu() {
     bool open = !MenuOpen();
     g_open.store(open, std::memory_order_relaxed);
-    if (!open) g_bindings_only.store(false, std::memory_order_relaxed);
+    if (!open) {
+        g_bindings_only.store(false, std::memory_order_relaxed);
+        g_paper.store(false, std::memory_order_relaxed);
+    }
     g_held_set = false;
     g_capture = {};
     if (open) input::ReleaseCursor();
@@ -513,15 +752,40 @@ void OpenBindings() {
     ToggleMenu();
 }
 
+void OpenPcOptions() {
+    if (MenuOpen()) return;
+    g_page = {};
+    g_paper.store(true, std::memory_order_relaxed);
+    ToggleMenu();
+}
+
+bool PcOptionsOpen() { return MenuOpen() && g_paper.load(std::memory_order_relaxed); }
+
+void PcOptionsPad(const input::Pad& pad) {
+    uint32_t bits = pad.buttons & 0xF;  // dpad up, down, left, right
+    constexpr int16_t kStick = 16000;
+    if (pad.ly > kStick) bits |= kPadUp;
+    if (pad.ly < -kStick) bits |= kPadDown;
+    if (pad.lx < -kStick) bits |= kPadLeft;
+    if (pad.lx > kStick) bits |= kPadRight;
+    if (pad.analog[0] > 0x40) bits |= kPadA;
+    if (pad.analog[1] > 0x40) bits |= kPadB;
+    if (pad.analog[2] > 0x40) bits |= kPadX;
+    g_paper_pad.store(pad.connected ? bits : 0, std::memory_order_relaxed);
+}
+
 void DrawUi(double fps) {
     ImGuiIO& io = ImGui::GetIO();
     // the arrow is ImGui's own, drawn only while the panel is open; Windows' stays hidden
     io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange | ImGuiConfigFlags_NavEnableKeyboard;
-    io.MouseDrawCursor = MenuOpen();
+    bool paper = PcOptionsOpen();
+    io.MouseDrawCursor = MenuOpen() && !paper;  // the PC Options page has the game's own pointer
     io.KeyRepeatRate = 0.1f;
     io.FontGlobalScale = std::max(1.0f, io.DisplaySize.y / 720.0f);
     if (game::Opt().fps_counter) DrawFpsCounter(fps);
-    if (MenuOpen()) {
+    if (paper) {
+        DrawPaper();
+    } else if (MenuOpen()) {
         UpdateCapture();
         DrawPanel();
     }
@@ -533,5 +797,8 @@ void DrawUi(double fps) {
 #ifndef _WIN32
 namespace app {
 void OpenBindings() {}
+void OpenPcOptions() {}
+bool PcOptionsOpen() { return false; }
+void PcOptionsPad(const input::Pad&) {}
 }  // namespace app
 #endif
