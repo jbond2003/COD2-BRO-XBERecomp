@@ -344,7 +344,7 @@ void Defaults() {
     o.invert_mouse_x = false;
     o.qwerty_typewriter = true;
     o.button_prompts = 0;
-    o.pc_crosshair = true;
+    o.pc_crosshair = false;
     g_held = s;
     g_held.display_mode = d.display_mode;
     g_held.width = d.width;
