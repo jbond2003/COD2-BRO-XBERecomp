@@ -5,9 +5,9 @@
 // rewritten in place to the keys (within the room each entry has), and put back when a controller is used. The prone
 // hint ("press crouch again") follows the new controls: Z on the keys, B held with the Modern layout.
 //
-// Two lines of our own in the first mission: sprint, 5 seconds after the game's first hint ("to look around", set by
-// the level script during the opening scene, a minute before its next), and on the keyboard and mouse leaning 5 seconds
-// after that. The script's hint (0x2FEF80: the text's key hash) goes to the HUD (0x32CED0, esi the HUD [0x95F8F0], eax
+// Two lines of our own in the first mission: sprint, 5 seconds after the game's "to move around" hint (the level
+// script's, as the player gains control after the opening scene), and on the keyboard and mouse leaning 5 seconds
+// after that; a hint of the game's own in the meantime ends them. The script's hint (0x2FEF80: the text's key hash) goes to the HUD (0x32CED0, esi the HUD [0x95F8F0], eax
 // the hash): the text found in the global table is given to the hint widget ([HUD+0x3C], vtable +0x140 = 0x32EE50:
 // text, 400, -1.0) and the HUD's timer at +0x60 restarted. Ours go the same way, so they look and move like the game's.
 
@@ -123,7 +123,7 @@ constexpr uint32_t kSetHint = 0x32EE50;       // hint widget's (ecx) text, with 
 constexpr uint32_t kSetHintArgs[] = {0x190, 0xBF800000u};
 constexpr double kLineAfter = 5.0;  // seconds after the previous line
 
-double g_first = 0;  // when the game's first hint was set, 0 outside the sequence
+double g_first = 0;  // when the game's move hint was set, 0 outside the sequence
 int g_lines = 0;     // our lines shown since
 uint32_t g_text = 0;
 
@@ -150,7 +150,7 @@ void ShowLine(X86Context& ctx, const std::string& text) {
     LOGR("hint line: \"%s\"", text.c_str());
 }
 
-// our lines, in their time after the game's first hint (each client frame)
+// our lines, in their time after the game's move hint (each client frame)
 void UpdateLines(X86Context& ctx) {
     if (!g_first) return;
     if (!InLevel()) {
@@ -173,8 +173,8 @@ void UpdateLines(X86Context& ctx) {
 
 X86_EXTERN_FUNC(__imp__sub_0032CED0);
 
-// the HUD's hint from the level script (esi the HUD, eax the text's key hash, -1 none): the game's first starts our
-// lines, any other ends them
+// the HUD's hint from the level script (esi the HUD, eax the text's key hash, -1 none): the game's move hint starts
+// our lines, any other ends them
 X86_FUNC(sub_0032CED0) {
     uint32_t hash = ctx.eax;
     __imp__sub_0032CED0(ctx, base);
@@ -186,7 +186,7 @@ X86_FUNC(sub_0032CED0) {
     ctx.eax = eax;
     uint32_t text = entry ? kernel::R32(entry + 8) : 0;
     if (!text || text < mem::kContiguousBase) return;
-    if (std::strstr(static_cast<const char*>(kernel::HostPtr(text)), "to look around")) {
+    if (std::strstr(static_cast<const char*>(kernel::HostPtr(text)), "to move around")) {
         g_first = Now();
         g_lines = 0;
     }
