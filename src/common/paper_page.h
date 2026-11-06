@@ -28,6 +28,8 @@ struct Hit {
 
 // before the font atlas is built: ImGui's own font first (the F10 panel's), then a serif face for the page
 void LoadFonts();
+// after the atlas is built (cursor::Init): the game's paper into it
+void Upload();
 
 // the page over the whole screen. selected is a line index; scroll is in rows, and with follow it is moved so the
 // selection is in view. hits gets one entry per line

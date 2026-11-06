@@ -127,6 +127,7 @@ void Window(void* hwnd) {
     input::StartMouse(hwnd);
     ::ui::paper::LoadFonts();  // before cursor::Init builds the font atlas
     cursor::Init(hwnd);
+    ::ui::paper::Upload();  // the game's paper into the built atlas
 #else
     (void)hwnd;
 #endif

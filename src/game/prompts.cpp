@@ -677,6 +677,32 @@ namespace game {
 
 void InitPrompts() { gpu::texture_override::SetProvider(Provide); }
 
+// a DXT3 picture of the front end's pack (sp/frontend.cod) as straight RGBA bytes, for the PC Options page
+bool ReadFrontEndPicture(const std::string& name, std::vector<uint8_t>& rgba, uint32_t& width, uint32_t& height) {
+    constexpr const char* kFrontEnd = "D:\\sp\\frontend.cod";
+    std::map<std::string, Entry> files = ReadDirectory(kFrontEnd);
+    auto it = files.find(name);
+    std::vector<uint8_t> dds;
+    if (it == files.end() || !kernel::ReadGameFile(kFrontEnd, it->second.offset, it->second.size, dds)) return false;
+    if (dds.size() <= 128 || std::memcmp(dds.data(), "DDS ", 4) != 0 || std::memcmp(dds.data() + 84, "DXT3", 4) != 0)
+        return false;
+    height = U32(dds, 12);
+    width = U32(dds, 16);
+    uint32_t size = Level0Size(dds, width, height);
+    if (!width || !height || width > 1024 || height > 1024 || !size || 128 + size > dds.size()) return false;
+    std::vector<Color> texels = DecodeDxt3(std::vector<uint8_t>(dds.begin() + 128, dds.begin() + 128 + size), width,
+                                           height);
+    rgba.resize(texels.size() * 4);
+    auto byte = [](float v) { return uint8_t(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f); };
+    for (size_t i = 0; i < texels.size(); i++) {
+        rgba[i * 4] = byte(texels[i].r);
+        rgba[i * 4 + 1] = byte(texels[i].g);
+        rgba[i * 4 + 2] = byte(texels[i].b);
+        rgba[i * 4 + 3] = byte(texels[i].a);
+    }
+    return true;
+}
+
 // each client frame, in menus and in play
 void UpdatePrompts() { Update(); }
 

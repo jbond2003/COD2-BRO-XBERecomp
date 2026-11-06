@@ -5,16 +5,35 @@
 #if defined(_WIN32) || defined(PAPER_PREVIEW)
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <string>
+#include <vector>
+
+#ifdef _WIN32
+#include "kernel/kernel.h"
+
+namespace game {
+bool ReadFrontEndPicture(const std::string& name, std::vector<uint8_t>& rgba, uint32_t& width,
+                         uint32_t& height);  // src/game/prompts.cpp
+}
+#endif
 
 namespace ui::paper {
 
 namespace {
 
 ImFont* g_serif = nullptr;
+// the game's own option page (single_options_misc.dds of sp/frontend.cod, the Sound page's), in the font atlas
+int g_paper_rect = -1;
+std::vector<uint8_t> g_paper_pixels;
+uint32_t g_paper_w = 0, g_paper_h = 0;
+// the sheet in that picture (alpha over half), its printed frame's top and bottom lines and the rule under the title
+constexpr float kSheetLeft = 12, kSheetTop = 81, kSheetRight = 499, kSheetBottom = 430;
+constexpr float kRuleY = 143;
 int g_rows = 8;
 
 // the game's paper and ink
@@ -41,8 +60,39 @@ void Text(ImDrawList* dl, float size, ImVec2 at, ImU32 color, const std::string&
         size *= max_w / m.x;
         m = Measure(size, text.c_str());
     }
-    dl->AddText(Serif(), size, ImVec2(std::floor(at.x - m.x * align), std::floor(at.y - m.y * 0.5f)), color,
-                text.c_str());
+    ImVec2 pos(std::floor(at.x - m.x * align), std::floor(at.y - m.y * 0.5f));
+    dl->AddText(Serif(), size, pos, color, text.c_str());
+    // the game's print is heavier than the face: drawn again a little to the right
+    if (g_paper_rect >= 0) dl->AddText(Serif(), size, ImVec2(pos.x + std::max(1.0f, size * 0.03f), pos.y), color, text.c_str());
+}
+
+// the game's own pages write their lines as titles ("Reset to Defaults"), ours are in capitals: as the game's
+std::string Titled(const std::string& text) {
+    static const char* const kKeep[] = {"PC", "FPS", "FOV", "HUD", "ABC", "QWERTY", "DDS", "PNG", "TGA", "MSAA", "VSYNC"};
+    static const char* const kSmall[] = {"AND", "OF", "TO", "THE", "IN", "A", "OR", "PER"};
+    std::string out;
+    size_t i = 0;
+    bool first = true;
+    while (i < text.size()) {
+        size_t j = i;
+        while (j < text.size() && std::isalpha(uint8_t(text[j]))) j++;
+        if (j == i) {
+            out += text[i++];
+            continue;
+        }
+        std::string word = text.substr(i, j - i);
+        bool keep = std::any_of(std::begin(kKeep), std::end(kKeep), [&](const char* k) { return word == k; });
+        bool small = !first && std::any_of(std::begin(kSmall), std::end(kSmall), [&](const char* k) { return word == k; });
+        bool caps = std::none_of(word.begin(), word.end(), [](char c) { return std::islower(uint8_t(c)); });
+        if (caps && !keep && !(word.size() == 1 && !small)) {
+            for (size_t k = 0; k < word.size(); k++)
+                word[k] = char(k == 0 && !small ? std::toupper(uint8_t(word[k])) : std::tolower(uint8_t(word[k])));
+        }
+        out += word;
+        first = false;
+        i = j;
+    }
+    return out;
 }
 
 void Arrow(ImDrawList* dl, ImVec2 c, float s, int dir, ImU32 color) {
@@ -66,6 +116,21 @@ void KeyBox(ImDrawList* dl, ImVec2 min, ImVec2 max, float u, const std::string& 
 void LoadFonts() {
     ImGuiIO& io = ImGui::GetIO();
     if (io.Fonts->Fonts.empty()) io.Fonts->AddFontDefault();
+#ifdef _WIN32
+    // the game's paper, and its typeface from the disc (media/GARA.TTF)
+    if (game::ReadFrontEndPicture("single_options_misc.dds", g_paper_pixels, g_paper_w, g_paper_h))
+        g_paper_rect = io.Fonts->AddCustomRectRegular(int(g_paper_w), int(g_paper_h));
+    std::vector<uint8_t> ttf;
+    if (kernel::ReadGameFile("D:\\media\\GARA.TTF", ttf) && ttf.size() > 1024) {
+        void* data = IM_ALLOC(ttf.size());  // the atlas owns it
+        std::memcpy(data, ttf.data(), ttf.size());
+        ImFontConfig cfg;
+        cfg.OversampleH = 2;
+        cfg.OversampleV = 2;
+        g_serif = io.Fonts->AddFontFromMemoryTTF(data, int(ttf.size()), 56.0f, &cfg);
+        if (g_serif) return;
+    }
+#endif
     std::vector<std::string> candidates;
 #ifdef _WIN32
     const char* windir = std::getenv("WINDIR");
@@ -84,6 +149,25 @@ void LoadFonts() {
     }
 }
 
+void Upload() {
+    if (g_paper_rect < 0) return;
+    ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+    unsigned char* texture = nullptr;
+    int tw = 0, th = 0;
+    atlas->GetTexDataAsRGBA32(&texture, &tw, &th);
+    const ImFontAtlasCustomRect* rect = atlas->GetCustomRectByIndex(g_paper_rect);
+    if (!texture || !rect->IsPacked()) {
+        g_paper_rect = -1;
+        return;
+    }
+    for (uint32_t y = 0; y < g_paper_h; y++)
+        std::memcpy(texture + (size_t(rect->Y + y) * size_t(tw) + rect->X) * 4,
+                    g_paper_pixels.data() + size_t(y) * g_paper_w * 4, size_t(g_paper_w) * 4);
+    atlas->TexPixelsUseColors = true;
+    g_paper_pixels.clear();
+    g_paper_pixels.shrink_to_fit();
+}
+
 int VisibleRows() { return g_rows; }
 
 void Draw(const char* title, const std::vector<Line>& lines, int selected, float& scroll, bool follow,
@@ -97,6 +181,18 @@ void Draw(const char* title, const std::vector<Line>& lines, int selected, float
     ImVec2 p0(ds.x * 0.14f, ds.y * 0.155f), p1(ds.x * 0.86f, ds.y * 0.845f);
     float u = (p1.y - p0.y) / 100.0f;  // a hundredth of the sheet's height
     float w = p1.x - p0.x;
+    float rule_y = p0.y + u * 19.0f;
+    ImVec2 f0(p0.x + u * 4.2f, p0.y + u * 4.2f), f1(p1.x - u * 4.2f, p1.y - u * 4.2f);
+    if (g_paper_rect >= 0) {
+        // the game's own page, its sheet over p0..p1
+        ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+        ImVec2 uv0, uv1;
+        atlas->CalcCustomRectUV(atlas->GetCustomRectByIndex(g_paper_rect), &uv0, &uv1);
+        float sx = w / (kSheetRight - kSheetLeft), sy = (p1.y - p0.y) / (kSheetBottom - kSheetTop);
+        ImVec2 o(p0.x - kSheetLeft * sx, p0.y - kSheetTop * sy);
+        dl->AddImage(atlas->TexID, o, ImVec2(o.x + float(g_paper_w) * sx, o.y + float(g_paper_h) * sy), uv0, uv1);
+        rule_y = o.y + kRuleY * sy;
+    } else {
     dl->AddRectFilled(p0, p1, Col(kBoard));
     ImVec2 s0(p0.x + u * 1.6f, p0.y + u * 1.6f), s1(p1.x - u * 1.6f, p1.y - u * 1.6f);
     dl->AddRectFilledMultiColor(s0, s1, Col(kPaperTop), Col(kPaperTop), Col(kPaperBottom), Col(kPaperBottom));
@@ -110,18 +206,17 @@ void Draw(const char* title, const std::vector<Line>& lines, int selected, float
     float fold_y = (s0.y + s1.y) / 2;
     dl->AddLine(ImVec2(s0.x, fold_y), ImVec2(s1.x, fold_y), Ink(0.05f), std::max(1.0f, u * 0.25f));
     // the printed frame: a heavy rule and a fine one inside it
-    ImVec2 f0(s0.x + u * 2.6f, s0.y + u * 2.6f), f1(s1.x - u * 2.6f, s1.y - u * 2.6f);
     dl->AddRect(f0, f1, Ink(0.85f), 0.0f, 0, std::max(1.5f, u * 0.55f));
     dl->AddRect(ImVec2(f0.x + u * 0.9f, f0.y + u * 0.9f), ImVec2(f1.x - u * 0.9f, f1.y - u * 0.9f), Ink(0.45f), 0.0f,
                 0, std::max(1.0f, u * 0.2f));
-
-    // the title over a double rule
-    float cx = (p0.x + p1.x) / 2;
-    Text(dl, u * 10.0f, ImVec2(cx, p0.y + u * 11.5f), Ink(0.92f), title, w * 0.8f, 0.5f);
-    float rule_y = p0.y + u * 19.0f;
     dl->AddLine(ImVec2(f0.x + u * 1.5f, rule_y), ImVec2(f1.x - u * 1.5f, rule_y), Ink(0.85f), std::max(1.5f, u * 0.5f));
     dl->AddLine(ImVec2(f0.x + u * 1.5f, rule_y + u * 0.9f), ImVec2(f1.x - u * 1.5f, rule_y + u * 0.9f), Ink(0.5f),
                 std::max(1.0f, u * 0.18f));
+    }
+
+    // the title over the rule
+    float cx = (p0.x + p1.x) / 2;
+    Text(dl, u * 10.0f, ImVec2(cx, (p0.y + u * 4.6f + rule_y) / 2), Ink(0.92f), title, w * 0.8f, 0.5f);
 
     // the list, scrolled to keep the selection in view; the actions stay at the foot
     std::vector<int> listed, actions;
@@ -160,9 +255,9 @@ void Draw(const char* title, const std::vector<Line>& lines, int selected, float
         }
         bool on = i == selected;
         float alpha = on ? 1.0f : kIdle;
-        Text(dl, u * 5.2f, ImVec2(label_x, y), Ink(alpha), l.label, value_cx - value_w / 2 - label_x - u * 5.0f);
+        Text(dl, u * 5.2f, ImVec2(label_x, y), Ink(alpha), Titled(l.label), value_cx - value_w / 2 - label_x - u * 5.0f);
         if (l.kind == Line::kOption) {
-            Text(dl, u * 4.6f, ImVec2(value_cx, y), Ink(alpha), l.value, value_w, 0.5f);
+            Text(dl, u * 4.6f, ImVec2(value_cx, y), Ink(alpha), Titled(l.value), value_w, 0.5f);
             float a = u * 2.4f, ax = value_w / 2 + u * 3.0f;
             Arrow(dl, ImVec2(value_cx - ax, y), a, -1, Ink(alpha));
             Arrow(dl, ImVec2(value_cx + ax, y), a, 1, Ink(alpha));
@@ -191,8 +286,9 @@ void Draw(const char* title, const std::vector<Line>& lines, int selected, float
         int i = actions[k];
         float y = actions_top + u * 6.6f * float(k) + u * 3.3f;
         bool on = i == selected;
-        Text(dl, u * 5.4f, ImVec2(cx, y), Ink(on ? 1.0f : kIdle), lines[size_t(i)].label, w * 0.7f, 0.5f);
-        float tw = Measure(u * 5.4f, lines[size_t(i)].label.c_str()).x / 2 + u * 2.0f;
+        std::string label = Titled(lines[size_t(i)].label);
+        Text(dl, u * 5.4f, ImVec2(cx, y), Ink(on ? 1.0f : kIdle), label, w * 0.7f, 0.5f);
+        float tw = Measure(u * 5.4f, label.c_str()).x / 2 + u * 2.0f;
         hits[size_t(i)].min = ImVec2(cx - tw, y - u * 3.3f);
         hits[size_t(i)].max = ImVec2(cx + tw, y + u * 3.3f);
     }
