@@ -760,12 +760,13 @@ std::vector<Line> Lines(int selected) {
         o.action = l.kind == ui::paper::Line::kAction;
         if (l.kind == ui::paper::Line::kBinding) {
             bool on = int(i) == selected;
-            std::string keys[2] = {l.value.empty() ? "-" : l.value, l.value2.empty() ? "-" : l.value2};
-            for (int k = 0; k < 2; k++) {
-                if (on && g_capture.action >= 0 && g_capture.slot == k) keys[k] = "Press a key";
-                if (on && g_slot == k) keys[k] = "[" + keys[k] + "]";
-            }
-            o.value = keys[0] + "   " + keys[1];
+            o.binding = true;
+            o.keys[0] = l.value.empty() ? "-" : l.value;
+            o.keys[1] = l.value2.empty() ? "-" : l.value2;
+            o.slot = on ? g_slot : -1;
+            o.waiting = on && g_capture.action >= 0;
+            if (o.waiting) o.keys[g_capture.slot & 1] = "Press a key";
+            o.value = o.keys[0] + "   " + o.keys[1];
         } else {
             o.value = l.value;
         }
@@ -893,28 +894,37 @@ namespace app::pc {
 namespace {
 int g_values[12] = {};
 int g_slot = 0;
+bool g_waiting = false;  // line 1's key box, after a press, until the next
 }
-std::vector<Line> Lines(int) {
+std::vector<Line> Lines(int selected) {
     std::vector<Line> out;
     for (int i = 0; i < 12; i++) out.push_back({"Setting " + std::to_string(i + 1), "Value " + std::to_string(g_values[i])});
-    out[1].value = "[Right Shift]   Mouse Button 4";  // a binding's two key boxes, as long as they get
+    out[1].value = "Right Shift   Mouse Button 4";  // a binding's two keys, as long as they get
+    out[1].binding = true;
+    out[1].keys[0] = "Right Shift";
+    out[1].keys[1] = "Mouse Button 4";
+    out[1].slot = selected == 1 ? g_slot : -1;
+    out[1].waiting = selected == 1 && g_waiting;
+    if (out[1].waiting) out[1].keys[g_slot] = "Press a key";
     out.push_back({"Reset to Defaults", "", true});
     out.push_back({"Apply and Exit", "", true});
     return out;
 }
 void Step(int line, int dir) {
-    if (line >= 0 && line < 12) g_values[line] += dir;
+    if (line == 1) g_slot = dir < 0 ? 0 : 1;
+    else if (line >= 0 && line < 12) g_values[line] += dir;
     std::printf("pc options: step %d %d\n", line, dir);
 }
 void Press(int line) {
     if (line == 12) std::fill(std::begin(g_values), std::end(g_values), 0);
+    else if (line == 1) g_waiting = !g_waiting;
     else if (line >= 0 && line < 12) g_values[line]++;
     std::printf("pc options: press %d\n", line);
 }
 void Clear(int line) { std::printf("pc options: clear %d\n", line); }
 void Update() {}
 bool Capturing() { return false; }
-void Leave(bool applied) { std::printf("pc options: leave, applied %d\n", int(applied)); (void)g_slot; }
+void Leave(bool applied) { std::printf("pc options: leave, applied %d\n", int(applied)); }
 }  // namespace app::pc
 
 namespace app {

@@ -31,7 +31,11 @@ namespace app::pc {
 struct Line {
     std::string label;
     std::string value;
-    bool action = false;  // Reset to Defaults, Apply and Exit
+    bool action = false;    // Reset to Defaults, Apply and Exit
+    bool binding = false;   // a key binding: its two keys, the one the selection is on, and whether it waits for a key
+    std::string keys[2];
+    int slot = 0;
+    bool waiting = false;
 };
 
 std::vector<Line> Lines(int selected);  // selected: a binding line shows which key box is picked

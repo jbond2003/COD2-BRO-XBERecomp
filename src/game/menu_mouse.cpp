@@ -53,6 +53,7 @@ constexpr uint32_t kTextWidgetVtable = 0x8298B8;
 constexpr uint32_t kWidgetWidth = 0x321090, kWidgetHeight = 0x321030;
 constexpr uint32_t kSoundSlot = 0x10, kSelectSlot = 0x88;
 constexpr uint32_t kPressStartVtable = 0x8295A0;  // in game, after a level loads: "Press A to start"
+constexpr uint32_t kChapterVtable = 0x8299F0;     // Chapter Select: a picker, the chapter's picture in the middle
 constexpr uint32_t kTypewriterVtable = 0x82A068;
 constexpr uint32_t kProfilesVtable = 0x828ED0;  // Profile Manager
 constexpr uint32_t kBonusVtable = 0x82A708;     // Bonus Materials
@@ -339,6 +340,7 @@ struct PcEntry {
     bool selected = false;
     bool sound = false;         // play the move sound at the next poll
     bool select_first = false;  // down from PC OPTIONS wraps to the first item
+    bool select_last = false;   // back from PC Options: the game's selection on SOUND, ours on PC OPTIONS
 } g_pc;
 
 // Menu lines that are gone: the main menu's Multiplayer (screen vtable 0x829B80: Single Player, Multiplayer,
@@ -454,14 +456,24 @@ bool XboxLiveText(uint32_t text) {
 
 bool PcEntryUp() { return g_pc.screen && g_pc.widget && Frame() - g_pc.frame <= 2; }
 
+// a text widget that is a line of the Options menu PC OPTIONS is under
+bool PcEntryLine(uint32_t widget) {
+    uint32_t menu = g_pc.screen, items = menu ? R32(menu + 4) : 0;
+    int16_t count = menu ? R16s(menu + 0x26) : 0;
+    for (int16_t i = 0; items && i < count; i++) {
+        uint32_t item = R32(items + uint32_t(i) * 4);
+        if (item && R32(item + 0x10) == widget) return true;
+    }
+    return false;
+}
+
 bool RequestPcScreen();  // below
+bool PcScreenPending();   // asked for, not up yet
 
 void OpenPcOptions() {
-    // the front end's Options menu: the game's own Gameplay screen, made PC Options (PcScreenPoll)
-    if (RequestPcScreen()) {
-        g_pc.selected = false;
-        return;
-    }
+    // the front end's Options menu: the game's own Gameplay screen, made PC Options (PcScreenPoll). PC OPTIONS stays
+    // selected until that is up, so no other line lights up on the way
+    if (RequestPcScreen()) return;
     LOGR("PC Options opened from the game's menus");
 #ifdef _WIN32
     app::OpenPcOptions();
@@ -483,7 +495,7 @@ void UpdatePcEntry(uint32_t menu) {
     if (menu != g_pc.screen || anchor != g_pc.anchor) {
         g_pc.screen = menu;
         g_pc.anchor = anchor;
-        g_pc.selected = false;
+        g_pc.selected = g_pc.select_last;
         // the second string the widget holds is shared: one more reference keeps it for our copy
         second = R32(anchor + 0x54);
         if (second) kernel::G<uint16_t>(second + 4) = uint16_t(kernel::G<uint16_t>(second + 4) + 1);
@@ -624,13 +636,15 @@ struct Layout {
     const char* pc_title;
     bool close_up;            // the lines take the places of the first ones (the slider lines' gaps closed)
     float most_width;         // a value wider is drawn smaller
+    float key_offset;         // a binding's two keys: each this far from the value's middle, and this wide at most
+    float key_width;
 };
 
 constexpr Layout kLayouts[] = {
     {0x828930, kFrontEnd, kOptionsVtable, 0, 5, {0, 1, 2, 3, 4, -1, -1}, {-1, -1, -1}, 0x3C, 0x50, 10, 5, 6,
-     "gameplay", "PC OPTIONS", "PC Options", false, 140.0f},
+     "gameplay", "PC OPTIONS", "PC Options", false, 140.0f, 44.0f, 84.0f},
     {0x82A388, kInGame, 0x8289F8, 1, 7, {0, 1, 4, 5, 7, 8, 9}, {2, 3, 6}, 0x38, 0x54, 14, 10, 11,
-     "options", "PC OPTIONS", "PC Options", true, 150.0f},
+     "options", "PC OPTIONS", "PC Options", true, 150.0f, 48.0f, 90.0f},
 };
 
 struct PcScreen {
@@ -649,6 +663,11 @@ struct PcScreen {
     float own_scales[kMostLines][2] = {};  // the values' letter size, x and y (+0x38, +0x3C)
     float own_aside_y[3] = {};
     uint8_t own_aside_disabled[3] = {};
+    uint32_t idle_color = 0;  // a value's colour on a line not selected
+    // a binding line: its two keys (strings), the key the selection is on (-1 none) and whether it waits for a key
+    bool row_binding[kMostLines] = {}, row_waiting[kMostLines] = {};
+    int row_slot[kMostLines] = {};
+    uint32_t row_keys[kMostLines][2] = {};
     std::unordered_map<uint32_t, uint32_t> titles;  // title widgets retitled, and the string each had
     std::unordered_map<uint32_t, uint32_t> want;  // text widget -> the string it shows, under g_drawn_lock
 } g_pcs;
@@ -761,15 +780,21 @@ void TakePcScreen(uint32_t menu, const Layout& l) {
     g_pcs.top = 0;
     g_pcs.applied = false;
     float first_y = 0, step_y = 0;
+    int16_t selected = R16s(menu + 0x22);
+    g_pcs.idle_color = 0;
     for (int i = 0; i < l.lines; i++) {
         uint32_t item = LineItem(menu, l.items[i]), label = item ? R32(item + 0x10) : 0;
         g_pcs.own_labels[i] = label ? R32(label + 0x1C) : 0;
+        g_pcs.row_binding[i] = g_pcs.row_waiting[i] = false;
+        g_pcs.row_slot[i] = -1;
+        g_pcs.row_keys[i][0] = g_pcs.row_keys[i][1] = 0;
         g_pcs.own_label_y[i] = label ? RF(label + 0x30) : 0;
         uint32_t value = R32(menu + l.values + uint32_t(i) * 4);
         g_pcs.own_values[i] = value ? R32(value + 0x1C) : 0;
         g_pcs.own_value_y[i] = value ? RF(value + 0x30) : 0;
         g_pcs.own_scales[i][0] = value ? RF(value + 0x38) : 0;
         g_pcs.own_scales[i][1] = value ? RF(value + 0x3C) : 0;
+        if (value && l.items[i] != selected && !g_pcs.idle_color) g_pcs.idle_color = R32(value + 0x50);
         if (i == 0) first_y = g_pcs.own_label_y[0];
         if (i == 1) step_y = (g_pcs.own_label_y[1] - first_y) / float(l.items[1] - l.items[0]);
     }
@@ -800,8 +825,11 @@ void TakePcScreen(uint32_t menu, const Layout& l) {
             }
         }
     }
+    if (l.manager == kFrontEnd) g_pc.selected = false;
     LOGR("PC Options opened on the game's %s screen", l.manager == kFrontEnd ? "Gameplay" : "Options");
 }
+
+bool PcScreenPending() { return g_pcs.want_layout != nullptr; }
 
 // each poll of a manager: PC Options asked for, taken, kept up to date, and left
 void PcScreenPoll(X86Context& ctx, uint32_t manager, uint32_t menu) {
@@ -810,7 +838,10 @@ void PcScreenPoll(X86Context& ctx, uint32_t manager, uint32_t menu) {
     const Layout* want = g_pcs.want_layout;
     if (want && manager == R32(want->manager)) {
         if (!g_pcs.asked) g_pcs.asked = poll;
-        if (poll - g_pcs.asked > 300) g_pcs.want_layout = nullptr;  // never came up
+        if (poll - g_pcs.asked > 300) {  // never came up
+            g_pcs.want_layout = nullptr;
+            g_pc.selected = false;
+        }
         // the line picked once the A that asked is let go (a held A hides the tap), again if it did not take
         if (g_pcs.tapped && poll - g_pcs.tapped_at > 40) g_pcs.tapped = false;
         if (menu && R32(menu) == want->pick_vtable && !g_pcs.tapped && !R8(menu + 0x30) && poll - g_pcs.asked >= 6) {
@@ -826,9 +857,10 @@ void PcScreenPoll(X86Context& ctx, uint32_t manager, uint32_t menu) {
     if (menu != g_pcs.screen) {
         const Layout& left = *g_pcs.layout;
         LeavePcScreen();
-        // back on the pause menu, the selection is on PC Options again
+        // back on the pause menu or the Options menu, the selection is on PC Options again
         if (left.manager == kInGame && menu && R32(menu) == left.pick_vtable && menu == g_pause.screen && g_pause.index >= 0)
             Select(ctx, menu, g_pause.index);
+        if (left.manager == kFrontEnd) g_pc.select_last = true;
         return;
     }
     const Layout& l = *g_pcs.layout;
@@ -847,17 +879,22 @@ void PcScreenPoll(X86Context& ctx, uint32_t manager, uint32_t menu) {
             int line = g_pcs.top + i;
             uint32_t item = LineItem(menu, l.items[i]), label = item ? R32(item + 0x10) : 0;
             uint32_t value = R32(menu + l.values + uint32_t(i) * 4);
-            std::string lt = line < rows ? lines[size_t(line)].label : "";
-            std::string v = line < rows ? lines[size_t(line)].value : "";
+            const app::pc::Line* pl = line < rows ? &lines[size_t(line)] : nullptr;
+            std::string lt = pl ? pl->label : "";
+            std::string v = pl ? pl->value : "";
             if (label) W32(label + 0x1C, g_pcs.want[label] = PcString(lt));
             if (value) W32(value + 0x1C, g_pcs.want[value] = PcString(v));
+            g_pcs.row_binding[i] = pl && pl->binding;
+            g_pcs.row_waiting[i] = pl && pl->binding && pl->waiting;
+            g_pcs.row_slot[i] = pl && pl->binding ? pl->slot : -1;
+            for (int k = 0; k < 2; k++) g_pcs.row_keys[i][k] = pl && pl->binding ? PcString(pl->keys[k]) : 0;
         }
     }
     // the arrows beside a value move out to clear one longer than the game's own on and off, and a value too long for
     // the room (two key boxes) is drawn smaller
     for (int i = 0; i < l.lines; i++) {
         uint32_t value = R32(menu + l.values + uint32_t(i) * 4);
-        if (!value || !(g_pcs.own_scales[i][0] > 0)) continue;
+        if (!value || !(g_pcs.own_scales[i][0] > 0) || g_pcs.row_binding[i]) continue;
         kernel::G<float>(value + 0x38) = g_pcs.own_scales[i][0];
         kernel::G<float>(value + 0x3C) = g_pcs.own_scales[i][1];
         float width = WidgetMethod(ctx, kWidgetWidth, value);
@@ -881,21 +918,95 @@ void PcScreenPoll(X86Context& ctx, uint32_t manager, uint32_t menu) {
     }
 }
 
-// a picture about to be drawn: a slider of a line put aside (at its row, between the arrows) is not; the arrows are
+// a picture about to be drawn: a slider of a line put aside (at its row, between the arrows) is not, nor a binding
+// line's arrows; the other arrows are
 bool PcScreenHidesPicture(uint32_t widget) {
     if (!PcScreenUp()) return false;
     const Layout& l = *g_pcs.layout;
     for (int a = 0; a < l.lines * 2; a++)
-        if (PcArrow(a) == widget) return false;
+        if (PcArrow(a) == widget) return g_pcs.row_binding[a / 2];  // a binding line has keys to click, no arrows
     float x = RF(widget + 0x14), y = RF(widget + 0x18);
     for (int k = 0; k < 3; k++)
         if (l.aside[k] >= 0 && std::fabs(y - g_pcs.own_aside_y[k]) < 4.0f && x > 400.0f && x < 490.0f) return true;
     return false;
 }
 
+// a binding line's value about to be drawn (ecx the widget): its two keys instead, one each side of the value's
+// middle, each shrunk to fit its room. On the selected line the key the selection is on keeps the line's colour and
+// the other the colour of a line not selected; a key waiting to be pressed blinks. True when drawn here.
+bool g_key_draw = false;  // a binding's key being drawn: its draw comes back through the text draw
+
+bool PcScreenDrawBinding(X86Context& ctx, uint32_t widget) {
+    if (g_key_draw || !PcScreenUp()) return false;
+    const Layout& l = *g_pcs.layout;
+    uint32_t menu = g_pcs.screen;
+    int row = -1;
+    for (int i = 0; i < l.lines; i++)
+        if (R32(menu + l.values + uint32_t(i) * 4) == widget) row = i;
+    if (row < 0 || !g_pcs.row_binding[row] || !(g_pcs.own_scales[row][0] > 0)) return false;
+    bool on = R16s(menu + 0x22) == l.items[row];
+    uint32_t text = R32(widget + 0x1C), color = R32(widget + 0x50);
+    float x = RF(widget + 0x2C), y = RF(widget + 0x30);
+    uint32_t idle = g_pcs.idle_color ? g_pcs.idle_color : color;
+    bool blink = (Frame() / 16) & 1;
+    for (int k = 0; k < 2; k++) {
+        uint32_t key = g_pcs.row_keys[row][k];
+        if (!key) continue;
+        kernel::G<uint16_t>(key + 4) = 0x4000;
+        W32(widget + 0x1C, key);
+        kernel::G<float>(widget + 0x38) = g_pcs.own_scales[row][0];
+        kernel::G<float>(widget + 0x3C) = g_pcs.own_scales[row][1];
+        float width = WidgetMethod(ctx, kWidgetWidth, widget), height = WidgetMethod(ctx, kWidgetHeight, widget);
+        kernel::G<float>(widget + 0x30) = y;
+        if (std::isfinite(width) && width > l.key_width) {  // smaller, and kept in the middle of the line
+            float shrink = l.key_width / width;
+            kernel::G<float>(widget + 0x38) = g_pcs.own_scales[row][0] * shrink;
+            kernel::G<float>(widget + 0x3C) = g_pcs.own_scales[row][1] * shrink;
+            if (std::isfinite(height) && height > 0) kernel::G<float>(widget + 0x30) = y + height * (1 - shrink) / 2;
+        }
+        kernel::G<float>(widget + 0x2C) = x + (k ? l.key_offset : -l.key_offset);
+        bool picked = on && g_pcs.row_slot[row] == k;
+        bool waiting = picked && g_pcs.row_waiting[row];
+        W32(widget + 0x50, waiting ? (blink ? color : idle) : picked ? color : on ? idle : color);
+        ctx.ecx = widget;
+        g_key_draw = true;
+        kernel::CallGuest(ctx, 0x321160, {});
+        g_key_draw = false;
+    }
+    W32(widget + 0x1C, text);
+    W32(widget + 0x50, color);
+    kernel::G<float>(widget + 0x2C) = x;
+    kernel::G<float>(widget + 0x30) = y;
+    kernel::G<float>(widget + 0x38) = g_pcs.own_scales[row][0];
+    kernel::G<float>(widget + 0x3C) = g_pcs.own_scales[row][1];
+    return true;
+}
+
+// a click right of a line's label (item, at x) while PC Options is up: on a binding line it is on one of the two keys:
+// that key is picked and waits for its new key (a right click empties it). True when taken.
+bool PcScreenClick(X86Context& ctx, uint32_t menu, int item, float x, bool right) {
+    if (!PcScreenUp() || menu != g_pcs.screen) return false;
+    const Layout& l = *g_pcs.layout;
+    int row = -1;
+    for (int i = 0; i < l.lines; i++)
+        if (l.items[i] == item) row = i;
+    if (row < 0 || !g_pcs.row_binding[row]) return false;
+    uint32_t value = R32(menu + l.values + uint32_t(row) * 4);
+    if (!value) return false;
+    if (R16s(menu + 0x22) != item) {
+        if (R8(menu + 0x30)) return true;  // locked: not yet
+        Select(ctx, menu, int16_t(item));
+    }
+    int line = g_pcs.top + row;
+    app::pc::Step(line, x < RF(value + 0x2C) ? -1 : 1);
+    if (right) app::pc::Clear(line);
+    else app::pc::Press(line);
+    return true;
+}
+
 // a text widget about to be drawn: one of ours shows our words; the screen's title reads PC Options
 void PcScreenText(uint32_t widget) {
-    if (!PcScreenUp()) return;
+    if (!PcScreenUp() || g_key_draw) return;
     const Layout& l = *g_pcs.layout;
     uint32_t want = 0;
     {
@@ -1024,11 +1135,18 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
     }
     if (menu && manager == R32(kInGame)) PauseMenu(menu);
     if (manager == R32(kFrontEnd) || manager == R32(kInGame)) PcScreenPoll(ctx, manager, menu);
+    if (manager == R32(kFrontEnd) && menu && R32(menu) != kOptionsVtable && R32(menu) != kLayouts[0].vtable)
+        g_pc.select_last = false;
     bool options = menu && R32(menu) == kOptionsVtable && (manager == R32(kFrontEnd) || manager == R32(kInGame));
     if (options) {
         UpdatePcEntry(menu);
         if (g_pc.sound && menu == g_pc.screen) PlayMoveSound(ctx, menu);
         if (g_pc.select_first && menu == g_pc.screen) Select(ctx, menu, 0);
+        if (g_pc.select_last && menu == g_pc.screen && !R8(menu + 0x30)) {
+            Select(ctx, menu, int16_t(R16s(menu + 0x26) - 1));
+            g_pc.selected = true;
+            g_pc.select_last = false;
+        }
         g_pc.sound = g_pc.select_first = false;
     }
     std::vector<ItemBox> items = menu ? ShownItems(ctx, menu) : std::vector<ItemBox>{};
@@ -1078,6 +1196,10 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
         if (row && (R16s(row + 0xC) >= 0 || R16s(row + 0xE) >= 0)) hit = nullptr;
         if (hit && (value_x = ValueMiddle(ctx, items, *hit)) < 0) hit = nullptr;
     }
+    // PC Options: a binding line's keys
+    if ((pointer.left_clicks || pointer.right_clicks) && hit && value_x >= 0 &&
+        PcScreenClick(ctx, menu, hit->index, x, pointer.right_clicks > 0))
+        return;
     // PC OPTIONS under the Options menu's items
     if (options && menu == g_pc.screen && PcEntryUp()) {
         game::menu::Rect box;
@@ -1155,6 +1277,12 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
         TapDpad(x < 440.0f ? kDpadLeft : kDpadRight);
         return;
     }
+    // Chapter Select: the chapter's picture (about 186 to 456 across, 156 to 305 down in 640x480) starts it
+    if (pointer.left_clicks && !on_item && R32(menu) == kChapterVtable && x > 186.0f && x < 456.0f && y > 156.0f &&
+        y < 305.0f) {
+        TapA();
+        return;
+    }
     bool no_items = !menu || R16s(menu + 0x26) <= 0;
     bool picker = menu && Horizontal(menu);
     constexpr float kPickerMiddle = 64.0f;
@@ -1181,12 +1309,17 @@ bool MenuHasPointer() { return Frame() - g_pointer_frame <= 2; }
 // the pad as the game is about to see it: on the Options menu, down from its last item selects PC OPTIONS, and while
 // that is selected up, down and A are its own; a direction or A it took stays hidden from the game until released
 void OptionsPad(input::Pad& pad) {
-    if (PcScreenPad(pad)) return;
     constexpr uint16_t kUp = 1, kDown = 2;
     constexpr int16_t kStick = 16000;
     constexpr uint8_t kPressed = 0x20;
     static bool was_up = false, was_down = false, was_a = false, was_b = false;
     static uint8_t hidden = 0;  // 1 up, 2 down, 4 A: taken, hidden until released
+    bool held_up = (pad.buttons & kUp) || pad.ly > kStick, held_down = (pad.buttons & kDown) || pad.ly < -kStick;
+    bool held_a = pad.analog[0] > kPressed, held_b = pad.analog[1] > kPressed;
+    if (PcScreenPad(pad)) {  // PC Options has the pad: what is held now is no press once it closes
+        was_up = held_up, was_down = held_down, was_a = held_a, was_b = held_b;
+        return;
+    }
     // Y signs in to Xbox Live where its corner would be up; the profile screens keep theirs
     if (Frame() - g_live_frame <= 2) {
         uint32_t fe = R32(kFrontEnd), screens = fe ? R32(fe + 4) : 0;
@@ -1204,7 +1337,9 @@ void OptionsPad(input::Pad& pad) {
         hidden |= 4;
         OpenPcOptions();
     }
-    if (PcEntryUp()) {
+    if (PcEntryUp() && PcScreenPending()) {
+        // what asked for it, still held, stays hidden until let go; the tap that picks the line goes through
+    } else if (PcEntryUp()) {
         uint32_t menu = g_pc.screen;
         bool last = R16s(menu + 0x22) == R16s(menu + 0x26) - 1, locked = R8(menu + 0x30);
         if (!g_pc.selected) {
@@ -1252,6 +1387,23 @@ namespace {
 uint32_t ClickToStart() {
     static uint32_t str = GameString("Click anywhere to start");
     return str;
+}
+
+uint32_t ClickToStartGame() {
+    static uint32_t str = GameString("Click to start the game");
+    return str;
+}
+
+// a game string holding the words
+bool HasText(uint32_t str, const char* want) {
+    uint32_t len = kernel::G<uint16_t>(str + 2), n = uint32_t(std::strlen(want));
+    if (len < n || len > 256) return false;
+    for (uint32_t at = 0; at + n <= len; at++) {
+        bool same = true;
+        for (uint32_t k = 0; k < n && same; k++) same = char(R8(str + 6 + at + k)) == want[k];
+        if (same) return true;
+    }
+    return false;
 }
 
 bool StartPrompt() {
@@ -1309,7 +1461,12 @@ X86_FUNC(sub_0030F900) {
         if (g_prompts.size() > 64) g_prompts.clear();
         g_prompts[prompt] = Frame();
     }
+    // a mission's "Press A to start the game" says what the mouse does while the keyboard and mouse are in use
+    uint32_t text = R32(prompt + 0x1C);
+    uint32_t shown = text && StartPrompt() && HasText(text, "to start the game") ? ClickToStartGame() : 0;
+    if (shown) W32(prompt + 0x1C, shown);
     __imp__sub_0030F900(ctx, base);
+    if (shown) W32(prompt + 0x1C, text);
 }
 
 // a text widget's draw (ecx widget)
@@ -1330,16 +1487,21 @@ X86_FUNC(sub_00321160) {
         return;
     }
     PcScreenText(widget);
+    if (PcScreenDrawBinding(ctx, widget)) {
+        ctx.esp += 4;  // the draw's own ret, skipped with it
+        return;
+    }
     // the title screen's "Press START" says what the mouse does while the keyboard and mouse are in use
     uint32_t text = R32(widget + 0x1C);
     uint32_t shown = text && StartPrompt() && SameText(text, "Press START") ? ClickToStart() : 0;
     if (shown) W32(widget + 0x1C, shown);
-    // SOUND looks unselected while PC OPTIONS is, and PC OPTIONS is drawn right after it
+    // the Options menu's lines look unselected while PC OPTIONS is, and PC OPTIONS is drawn right after SOUND
     bool anchor = widget == g_pc.anchor && PcEntryUp();
+    bool dimmed = PcEntryUp() && g_pc.selected && (anchor || PcEntryLine(widget));
     uint32_t color = R32(widget + 0x50);
-    if (anchor && g_pc.selected) W32(widget + 0x50, (color & 0xFFFFFF) | kIdleAlpha);
+    if (dimmed) W32(widget + 0x50, (color & 0xFFFFFF) | kIdleAlpha);
     __imp__sub_00321160(ctx, base);
-    if (anchor && g_pc.selected) W32(widget + 0x50, color);
+    if (dimmed) W32(widget + 0x50, color);
     if (shown) W32(widget + 0x1C, text);
     if (anchor) {
         ctx.ecx = g_pc.widget;
