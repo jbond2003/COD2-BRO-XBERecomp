@@ -32,14 +32,15 @@ constexpr Text kTexts[] = {
      "All progress in this level will be lost. Are you sure you wish to exit to the desktop?"},
 };
 
-uint32_t Rewrite(const Text& t) {
+// the copies of t starting in [from, to) of guest memory rewritten; the last one's address, 0 for none
+uint32_t Rewrite(const Text& t, size_t from = 0, size_t to = mem::kPhysicalSize) {
     uint8_t* mem = static_cast<uint8_t*>(kernel::HostPtr(mem::kContiguousBase));
-    size_t size = mem::kPhysicalSize;
+    size_t size = std::min<size_t>(to + std::strlen(t.xbox) + 1, mem::kPhysicalSize);
     size_t old_len = std::strlen(t.xbox), new_len = std::strlen(t.pc);
     std::string_view want(t.xbox, old_len + 1);  // with its zero
     std::boyer_moore_horspool_searcher search(want.begin(), want.end());
     uint32_t done = 0;
-    for (uint8_t* at = mem; at < mem + size;) {
+    for (uint8_t* at = mem + from; at < mem + size;) {
         auto [found, end] = search(reinterpret_cast<const char*>(at), reinterpret_cast<const char*>(mem + size));
         if (found == reinterpret_cast<const char*>(mem + size)) break;
         uint8_t* p = reinterpret_cast<uint8_t*>(const_cast<char*>(found));
@@ -65,14 +66,15 @@ uint32_t Rewrite(const Text& t) {
 
 namespace game {
 
-// each client frame. The table loads once, with the front end: it is searched for (a whole-memory search, so only
-// every half second, never in a level) until one of the texts is found; then only the found entries are looked at,
-// and all are searched for again if one of them goes (the table loaded again elsewhere)
+// each client frame. The table loads once, with the front end: until one of the texts is found, memory is searched a
+// piece a frame (a whole-memory search at once made the menus stutter), never in a level; after the pass that found
+// one, only the found entries are looked at, and all are searched for again if one of them goes
 void UpdatePcTexts() {
-    static uint32_t frames = 0;
+    constexpr size_t kPiece = 4u << 20;  // about a millisecond
     static uint32_t found[std::size(kTexts)] = {};
     static bool searching = true;
-    frames++;
+    static size_t cursor = 0;
+    static int wraps_left = -1;  // passes still to go once something is found
     for (size_t i = 0; i < std::size(kTexts) && !searching; i++) {
         if (!found[i]) continue;
         const Text& t = kTexts[i];
@@ -85,15 +87,23 @@ void UpdatePcTexts() {
             continue;
         }
         searching = true;
+        wraps_left = -1;
+        for (uint32_t& f : found) f = 0;
     }
     if (!searching) return;
-    bool level = !kernel::R32(0x95F8F8) && kernel::R32(0x95F8FC);
-    if (frames % 15 || level) return;
-    int n = 0;
+    if (!kernel::R32(0x95F8F8) && kernel::R32(0x95F8FC)) return;  // a level
     for (size_t i = 0; i < std::size(kTexts); i++)
-        if ((found[i] = Rewrite(kTexts[i]))) n++;
-    if (!n) return;
+        if (uint32_t at = Rewrite(kTexts[i], cursor, cursor + kPiece)) {
+            found[i] = at;
+            if (wraps_left < 0) wraps_left = 2;  // this pass and one more: the others may lie behind it
+        }
+    cursor += kPiece;
+    if (cursor < mem::kPhysicalSize) return;
+    cursor = 0;
+    if (wraps_left < 0 || --wraps_left > 0) return;
     searching = false;
+    int n = 0;
+    for (uint32_t f : found) n += f != 0;
     LOGR("PC texts: %d of %zu", n, std::size(kTexts));
 }
 
