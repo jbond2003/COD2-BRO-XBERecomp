@@ -14,11 +14,12 @@
 #include <vector>
 
 #ifdef _WIN32
-#include "kernel/kernel.h"
+#include "core/log.h"
 
 namespace game {
 bool ReadFrontEndPicture(const std::string& name, std::vector<uint8_t>& rgba, uint32_t& width,
                          uint32_t& height);  // src/game/prompts.cpp
+bool ReadEarlyGameFile(const std::string& xbox_path, std::vector<uint8_t>& out);  // src/game/prompts.cpp
 }
 #endif
 
@@ -120,8 +121,9 @@ void LoadFonts() {
     // the game's paper, and its typeface from the disc (media/GARA.TTF)
     if (game::ReadFrontEndPicture("single_options_misc.dds", g_paper_pixels, g_paper_w, g_paper_h))
         g_paper_rect = io.Fonts->AddCustomRectRegular(int(g_paper_w), int(g_paper_h));
+    LOGR("PC Options: %s", g_paper_rect >= 0 ? "the game's paper" : "no paper from the game files, a drawn one");
     std::vector<uint8_t> ttf;
-    if (kernel::ReadGameFile("D:\\media\\GARA.TTF", ttf) && ttf.size() > 1024) {
+    if (game::ReadEarlyGameFile("D:\\media\\GARA.TTF", ttf) && ttf.size() > 1024) {
         void* data = IM_ALLOC(ttf.size());  // the atlas owns it
         std::memcpy(data, ttf.data(), ttf.size());
         ImFontConfig cfg;

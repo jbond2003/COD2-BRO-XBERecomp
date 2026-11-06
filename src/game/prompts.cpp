@@ -7,6 +7,7 @@
 // CoD2-BRO-Native-Loader's text/key_prompts.cpp (GPL-2.0-or-later, THIRD_PARTY_NOTICES.md).
 
 #include <algorithm>
+#include <filesystem>
 #include <array>
 #include <atomic>
 #include <cctype>
@@ -34,6 +35,8 @@
 #include "gpu/texture.h"
 #include "gpu/texture_override.h"
 #include "kernel/kernel.h"
+#include "app/app.h"
+#include "kernel/disc.h"
 
 namespace game {
 int PadTarget(size_t i);  // src/game/mouse_look.cpp
@@ -110,10 +113,44 @@ struct Entry {
     uint32_t size;
 };
 
+// a part of a game file (len 0: all of it), also before boot, while D: is not mapped yet (the PC Options page reads
+// its paper with the window): from the disc image, else from the assets folder
+bool ReadAny(const std::string& xbox_path, uint64_t pos, uint32_t len, std::vector<uint8_t>& out) {
+    if (len ? kernel::ReadGameFile(xbox_path, pos, len, out) : kernel::ReadGameFile(xbox_path, out)) return true;
+    if (xbox_path.size() < 4 || (xbox_path[0] != 'D' && xbox_path[0] != 'd')) return false;
+    std::string rel = xbox_path.substr(3);
+    if (const kernel::Disc* disc = kernel::MountedDisc()) {
+        const kernel::Disc::Entry* e = disc->Find(std::string_view(rel));
+        if (!e || e->dir) return false;
+        uint32_t n = len ? len : uint32_t(e->size);
+        out.resize(n);
+        return disc->Read(*e, pos, out.data(), n) == n;
+    }
+    std::filesystem::path dir = app::ExeDir();
+    std::error_code ec;
+    for (int i = 0; i < 6; i++) {
+        if (std::filesystem::is_directory(dir / "assets", ec)) break;
+        if (!dir.has_parent_path() || dir.parent_path() == dir) return false;
+        dir = dir.parent_path();
+    }
+    std::string host = rel;
+    std::replace(host.begin(), host.end(), '\\', '/');
+    std::ifstream f(dir / "assets" / host, std::ios::binary);
+    if (!f) return false;
+    if (!len) {
+        out.assign(std::istreambuf_iterator<char>(f), {});
+        return !out.empty();
+    }
+    out.resize(len);
+    if (!f.seekg(std::streamoff(pos))) return false;
+    f.read(reinterpret_cast<char*>(out.data()), std::streamsize(len));
+    return uint64_t(f.gcount()) == len;
+}
+
 std::map<std::string, Entry> ReadDirectory(const char* pack = kPack) {
     std::map<std::string, Entry> files;
     std::vector<uint8_t> h;
-    if (!kernel::ReadGameFile(pack, 0, 0x8000, h) || std::memcmp(h.data(), "KAPF", 4) != 0) return files;
+    if (!ReadAny(pack, 0, 0x8000, h) || std::memcmp(h.data(), "KAPF", 4) != 0) return files;
     auto string_at = [&](uint32_t at) {
         std::string s;
         while (at < h.size() && h[at]) s += char(h[at++]);
@@ -677,13 +714,16 @@ namespace game {
 
 void InitPrompts() { gpu::texture_override::SetProvider(Provide); }
 
+// a game file, also before boot
+bool ReadEarlyGameFile(const std::string& xbox_path, std::vector<uint8_t>& out) { return ReadAny(xbox_path, 0, 0, out); }
+
 // a DXT3 picture of the front end's pack (sp/frontend.cod) as straight RGBA bytes, for the PC Options page
 bool ReadFrontEndPicture(const std::string& name, std::vector<uint8_t>& rgba, uint32_t& width, uint32_t& height) {
     constexpr const char* kFrontEnd = "D:\\sp\\frontend.cod";
     std::map<std::string, Entry> files = ReadDirectory(kFrontEnd);
     auto it = files.find(name);
     std::vector<uint8_t> dds;
-    if (it == files.end() || !kernel::ReadGameFile(kFrontEnd, it->second.offset, it->second.size, dds)) return false;
+    if (it == files.end() || !ReadAny(kFrontEnd, it->second.offset, it->second.size, dds)) return false;
     if (dds.size() <= 128 || std::memcmp(dds.data(), "DDS ", 4) != 0 || std::memcmp(dds.data() + 84, "DXT3", 4) != 0)
         return false;
     height = U32(dds, 12);
