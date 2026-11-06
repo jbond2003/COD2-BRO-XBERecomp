@@ -37,6 +37,8 @@
 
 namespace game {
 int PadTarget(size_t i);  // src/game/mouse_look.cpp
+std::shared_ptr<const gpu::texture_override::Picture> PcReticle(const gpu::TextureDesc& d,
+                                                                const uint8_t* guest);  // src/game/pc_reticle.cpp
 }
 
 namespace {
@@ -568,7 +570,7 @@ std::shared_ptr<const Picture> Provide(const gpu::TextureDesc& d, const uint8_t*
     if (!found) {
         if (g_menu_paper.empty() || d.width != 256 || d.height != 512 || gpu::LevelSize(d, 0) != g_menu_paper.size() ||
             std::memcmp(guest, g_menu_paper.data(), g_menu_paper.size()) != 0)
-            return nullptr;
+            return game::PcReticle(d, guest);
         std::lock_guard lock(g_lock);
         if (!g_menu_paper_picture) g_menu_paper_picture = MenuPaper();
         return g_menu_paper_picture;
@@ -676,6 +678,13 @@ void Update() {
 namespace game {
 
 void InitPrompts() { gpu::texture_override::SetProvider(Provide); }
+
+// a file of one of the game's packs (sp/*.cod)
+bool ReadPackFile(const char* pack, const std::string& name, std::vector<uint8_t>& out) {
+    std::map<std::string, Entry> files = ReadDirectory(pack);
+    auto it = files.find(name);
+    return it != files.end() && kernel::ReadGameFile(pack, it->second.offset, it->second.size, out);
+}
 
 // each client frame, in menus and in play
 void UpdatePrompts() { Update(); }
