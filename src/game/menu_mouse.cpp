@@ -1175,6 +1175,7 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
     if (app::MenuOpen()) return;  // the settings panel has the mouse
 #endif
     if (PcScreenUp() && app::pc::Capturing()) return;  // a key box waits for its key: the pointer moves nothing
+    if (PcScreenPending()) return;  // PC Options asked for: the menu under it takes no hover or click until it is up
     if (!pointer.inside) return;
     // between screens the front end has none (a level loading): nothing to point at. Reading the missing screen's
     // fields here crashed the game on a click while the first mission loaded.
