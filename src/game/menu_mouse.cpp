@@ -340,7 +340,7 @@ struct PcEntry {
 } g_pc;
 
 // Menu lines that are gone: the main menu's Multiplayer (screen vtable 0x829B80: Single Player, Multiplayer,
-// Options, Bonus Materials, and a hidden DISABLED item) and the pause menu's Xbox Live Options. The item is marked
+// Options, Bonus Materials, and a hidden DISABLED item). The item is marked
 // disabled (+0x16), which the screen's own up/down and the mouse skip, its text is not drawn, and the lines under it
 // move up into its place. The multiplayer and Live code is left as it is.
 constexpr uint32_t kMainMenuVtable = 0x829B80;
@@ -351,6 +351,8 @@ bool Hidden(uint32_t widget) {
     std::lock_guard lock(g_drawn_lock);
     return g_hidden.count(widget) != 0;
 }
+
+int16_t g_main_gone = -1;  // the main menu's hidden line (Multiplayer)
 
 void HideItem(X86Context& ctx, uint32_t menu, const char* label) {
     uint32_t items = R32(menu + 4);
@@ -383,6 +385,7 @@ void HideItem(X86Context& ctx, uint32_t menu, const char* label) {
             g_moved_y[widget] = y - gap;
         }
     }
+    if (R32(menu) == kMainMenuVtable) g_main_gone = gone;
     // never left on it (a screen made with it selected)
     if (gone >= 0 && R16s(menu + 0x22) == gone && !R8(menu + 0x30))
         Select(ctx, menu, int16_t(gone > 0 ? gone - 1 : gone + 1));
@@ -413,7 +416,7 @@ bool XboxLiveText(uint32_t text) {
 bool PcEntryUp() { return g_pc.screen && g_pc.widget && Frame() - g_pc.frame <= 2; }
 
 void OpenPcOptions() {
-    LOGR("PC Options opened from the Options menu");
+    LOGR("PC Options opened from the game's menus");
 #ifdef _WIN32
     app::OpenPcOptions();
 #endif
@@ -449,6 +452,43 @@ void UpdatePcEntry(uint32_t menu) {
     g_pc.frame = Frame();
 }
 
+// The pause menu: its Xbox Live Options line becomes PC Options (opening the PC settings page instead), and Options
+// reads Game & Controller Options. The lines keep their place and the game's own selection; our strings are given
+// a large reference count each frame so the game never frees them.
+struct PauseEntry {
+    uint32_t screen = 0;
+    int16_t index = -1;  // the PC Options line
+    uint32_t frame = 0;  // the last frame the pause menu was up
+} g_pause;
+
+void PauseMenu(uint32_t menu) {
+    static uint32_t pc = 0, game = 0;
+    if (!pc) pc = GameString("PC Options");
+    if (!game) game = GameString("Game & Controller Options");
+    uint32_t items = R32(menu + 4);
+    int16_t count = R16s(menu + 0x26);
+    if (!pc || !game || !items) return;
+    for (int16_t i = 0; i < count; i++) {
+        uint32_t item = R32(items + uint32_t(i) * 4), widget = item ? R32(item + 0x10) : 0;
+        uint32_t text = widget && R32(widget) == kTextWidgetVtable ? R32(widget + 0x1C) : 0;
+        if (!text) continue;
+        if (text == pc || SameText(text, "Xbox Live Options")) {
+            if (text != pc) W32(widget + 0x1C, pc);
+            kernel::G<uint8_t>(item + 0x16) = 0;
+            g_pause = {menu, i, Frame()};
+        } else if (text != game && SameText(text, "Options")) {
+            W32(widget + 0x1C, game);
+        }
+    }
+    kernel::G<uint16_t>(pc + 4) = 0x4000;
+    kernel::G<uint16_t>(game + 4) = 0x4000;
+}
+
+bool PausePcSelected() {
+    return g_pause.screen && g_pause.index >= 0 && Frame() - g_pause.frame <= 2 &&
+           R16s(g_pause.screen + 0x22) == g_pause.index && !R8(g_pause.screen + 0x30);
+}
+
 void PlayMoveSound(X86Context& ctx, uint32_t menu) {
     uint32_t ecx = ctx.ecx;
     ctx.ecx = menu;
@@ -469,7 +509,7 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
     }
     if (manager == R32(kFrontEnd) || manager == R32(kInGame)) Typewriter(ctx, menu);
     if (menu && manager == R32(kFrontEnd) && R32(menu) == kMainMenuVtable) HideItem(ctx, menu, "Multiplayer");
-    if (menu && manager == R32(kInGame)) HideItem(ctx, menu, "Xbox Live Options");
+    if (menu && manager == R32(kInGame)) PauseMenu(menu);
     bool options = menu && R32(menu) == kOptionsVtable && (manager == R32(kFrontEnd) || manager == R32(kInGame));
     if (options) {
         UpdatePcEntry(menu);
@@ -543,6 +583,16 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
         LOGI("menu click at %.0f,%.0f: screen %08x, %d items, picker %d: item %d of %zu shown, value %.0f, selected %d, locked %d", x, y, menu ? R32(menu) : 0, menu ? R16s(menu + 0x26) : 0, menu ? int(Horizontal(menu)) : 0,
              hit ? hit->index : -1, items.size(), value_x, R16s(menu + 0x22), R8(menu + 0x30));
     int16_t selected = R16s(menu + 0x22);
+    // a picker's choices (difficulty: Easy, Normal, Hard...) are lines stacked in one place, showing one at a time:
+    // the pointer over them picks none, the arrows and the wheel step, a click takes the one shown
+    if (on_item && Horizontal(menu)) {
+        hit = nullptr;
+        on_item = false;
+        if (pointer.left_clicks) {
+            TapA();
+            return;
+        }
+    }
     // a hover the screen could not take while its highlight moved (locked) is taken once it can: a fast sweep over
     // the typewriter's keys ends on the key under the pointer
     static bool hover_pending = false;
@@ -606,6 +656,11 @@ void OptionsPad(input::Pad& pad) {
     bool a = pad.analog[0] > kPressed, b = pad.analog[1] > kPressed;
     bool up_edge = up && !was_up, down_edge = down && !was_down, a_edge = a && !was_a, b_edge = b && !was_b;
     was_up = up, was_down = down, was_a = a, was_b = b;
+    // the pause menu's PC Options line: A opens the PC settings page, the game never sees it
+    if (PausePcSelected() && a_edge) {
+        hidden |= 4;
+        OpenPcOptions();
+    }
     if (PcEntryUp()) {
         uint32_t menu = g_pc.screen;
         bool last = R16s(menu + 0x22) == R16s(menu + 0x26) - 1, locked = R8(menu + 0x30);
@@ -676,6 +731,16 @@ X86_FUNC(sub_0031FC10) {
 }
 
 X86_EXTERN_FUNC(__imp__sub_0030F900);
+X86_EXTERN_FUNC(__imp__sub_00328E90);
+
+// the main menu's tick (edi screen, the selected line on the stack): shows "check0<n+1>", the box printed beside line
+// n. The lines below the hidden Multiplayer moved up one, so their tick goes one box up with them
+X86_FUNC(sub_00328E90) {
+    int32_t line = int32_t(R32(ctx.esp + 4));
+    if (R32(ctx.edi) == kMainMenuVtable && g_main_gone >= 0 && line > g_main_gone) W32(ctx.esp + 4, uint32_t(line - 1));
+    __imp__sub_00328E90(ctx, base);
+}
+
 // a button prompt's draw (ecx prompt, vtable 0x82A450: a button picture and words, as "Press A to select"). The
 // front end's top right one is Y and "Xbox Live" (made at 0x32A660, at 603,52 in 640x480): not drawn
 X86_FUNC(sub_0030F900) {
