@@ -347,6 +347,7 @@ struct PcEntry {
 constexpr uint32_t kMainMenuVtable = 0x829B80;
 std::unordered_map<uint32_t, uint32_t> g_hidden;  // a hidden line's text widget -> engine frame last seen
 std::unordered_map<uint32_t, float> g_moved_y;   // widget -> the y we gave it
+std::unordered_map<uint32_t, float> g_original_y;  // widget -> the y the game gave it
 
 bool Hidden(uint32_t widget) {
     std::lock_guard lock(g_drawn_lock);
@@ -359,10 +360,20 @@ void HideItem(X86Context& ctx, uint32_t menu, const char* label) {
     uint32_t items = R32(menu + 4);
     int16_t count = R16s(menu + 0x26);
     int16_t gone = -1;
-    float gap = 0;
+    // each line's own place, as the game last laid it out (not the one we moved it to)
+    auto original = [](uint32_t widget) {
+        float y = RF(widget + 0x30);
+        auto it = g_moved_y.find(widget);
+        if (it != g_moved_y.end() && it->second == y) return g_original_y[widget];
+        g_original_y[widget] = y;
+        return y;
+    };
+    float above_y = NAN;  // the place of the line above, in the game's order
     for (int16_t i = 0; items && i < count; i++) {
         uint32_t item = R32(items + uint32_t(i) * 4), widget = item ? R32(item + 0x10) : 0;
-        uint32_t text = widget && R32(widget) == kTextWidgetVtable ? R32(widget + 0x1C) : 0;
+        if (!widget || R32(widget) != kTextWidgetVtable) continue;
+        uint32_t text = R32(widget + 0x1C);
+        float own = original(widget);
         if (gone < 0 && text && SameText(text, label)) {
             gone = i;
             {
@@ -371,20 +382,18 @@ void HideItem(X86Context& ctx, uint32_t menu, const char* label) {
                 g_hidden[widget] = Frame();
             }
             kernel::G<uint8_t>(item + 0x16) = 1;
-            uint32_t above = i > 0 ? R32(items + uint32_t(i - 1) * 4) : 0;
-            uint32_t above_widget = above ? R32(above + 0x10) : 0;
-            if (above_widget) gap = RF(widget + 0x30) - RF(above_widget + 0x30);
+            above_y = own;
             continue;
         }
-        if (gone < 0 || !widget || R8(item + 0x16) || !(gap > 0 && gap < 100)) continue;
-        // the game may lay the line out again: move whatever it last put there
-        float y = RF(widget + 0x30);
-        auto it = g_moved_y.find(widget);
-        if (it == g_moved_y.end() || it->second != y) {
-            if (g_moved_y.size() > 256) g_moved_y.clear();
-            kernel::G<float>(widget + 0x30) = y - gap;
-            g_moved_y[widget] = y - gap;
+        // a line under the hidden one takes the place of the line above it, so the lines keep the game's spacing
+        float want = above_y;
+        above_y = own;
+        if (gone < 0 || R8(item + 0x16) || !std::isfinite(want) || !(own - want > 0 && own - want < 100)) continue;
+        if (RF(widget + 0x30) != want) {
+            if (g_moved_y.size() > 256) g_moved_y.clear(), g_original_y.clear();
+            kernel::G<float>(widget + 0x30) = want;
         }
+        g_moved_y[widget] = want;
     }
     if (R32(menu) == kMainMenuVtable) g_main_gone = gone;
     // never left on it (a screen made with it selected)
