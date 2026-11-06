@@ -137,14 +137,17 @@ X86_FUNC(sub_00335D60) {
 // 0x336118 "cmp ecx, eax" with eax 3: the choice may step to 4
 void ControllerChoiceMax(X86Context& ctx, uint8_t*) { ctx.eax = kModern; }
 
-// 0x338FD5 "cmp eax, 4" opening the screen: true keeps a 4 (jumps past the reset to 0)
+// 0x338FD5 "cmp eax, 4" opening the screen: true keeps the choice (jumps past the reset to 0). The screen shows Modern
+// only when Modern is what plays: a 4 left in the profile's cg_controllerconfig with Modern off is the game's A
+// (style_h, as the game plays it), and is shown as A.
 bool ControllerChoiceOpen(X86Context& ctx, uint8_t*) {
     g_opening = true;
+    LOGR("controller configuration on opening: %s", Modern() ? "Modern" : "the game's own");
     if (Modern()) {
         ctx.eax = kModern;
         W32(kChoice, kModern);
     }
-    return int32_t(ctx.eax) == kModern;
+    return Modern() || int32_t(ctx.eax) != kModern;  // false: the game's own code sets 0 (A)
 }
 
 // 0x3362E5, Reset to Defaults just set the choice (edi screen) to 0: the default is Modern
