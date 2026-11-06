@@ -28,6 +28,7 @@ constexpr Text kTexts[] = {
     {"No saved games present on hard disk.", "No saved games present."},
     {"All progress in this level will be lost. Are you sure you wish to exit to the Xbox Dashboard?",
      "All progress in this level will be lost. Are you sure you wish to exit to the desktop?"},
+    {"Sprint (MP only)", "Sprint"},  // the Controller screen's L3: sprint works in the campaign here (sprint.cpp)
 };
 
 bool IsGuest(uint32_t va) { return va >= mem::kContiguousBase && va - mem::kContiguousBase < mem::kPhysicalSize - 256; }
