@@ -619,6 +619,7 @@ bool ClickPrompt(X86Context& ctx, float x, float y) {
 // On the in-game screen the slider lines are put aside (disabled, moved off) and the seven others closed up; their
 // sliders are pictures of the screen's decorations (+0x34, drawn by 0x310010), two per slider, found by their place.
 constexpr int kMostLines = 7;
+constexpr int kWheelLines = 3;  // the wheel scrolls PC Options this many lines a notch
 constexpr int kMostArrows = 14;
 
 struct Layout {
@@ -637,6 +638,8 @@ struct Layout {
     const char* pc_title_caps;
     const char* pc_title;
     bool close_up;            // the lines take the places of the first ones (the slider lines' gaps closed)
+    float row_step;           // the lines this far apart (0: as the game has them)
+    float action_shift;       // Reset and Apply this much lower
     float most_width;         // a value wider is drawn smaller
     float key_offset;         // a binding's two keys: each this far from the value's middle, and this wide at most
     float key_width;
@@ -644,9 +647,9 @@ struct Layout {
 
 constexpr Layout kLayouts[] = {
     {0x828930, kFrontEnd, kOptionsVtable, 0, 5, {0, 1, 2, 3, 4, -1, -1}, {-1, -1, -1}, 0x3C, 0x50, 10, 5, 6,
-     "gameplay", "PC OPTIONS", "PC Options", false, 140.0f, 44.0f, 84.0f},
+     "gameplay", "PC OPTIONS", "PC Options", false, 32.0f, 8.0f, 140.0f, 44.0f, 84.0f},
     {0x82A388, kInGame, 0x8289F8, 1, 7, {0, 1, 4, 5, 7, 8, 9}, {2, 3, 6}, 0x38, 0x54, 14, 10, 11,
-     "options", "PC OPTIONS", "PC Options", true, 150.0f, 48.0f, 90.0f},
+     "options", "PC OPTIONS", "PC Options", true, 28.0f, 0.0f, 150.0f, 48.0f, 90.0f},
 };
 
 struct PcScreen {
@@ -665,6 +668,7 @@ struct PcScreen {
     float own_scales[kMostLines][2] = {};  // the values' letter size, x and y (+0x38, +0x3C)
     float own_aside_y[3] = {};
     uint8_t own_aside_disabled[3] = {};
+    float own_action_y[2] = {};  // Reset's and Apply's labels
     uint32_t idle_color = 0, lit_color = 0;  // a value's colour on a line not selected, and on the selected one
     // a binding line: its two keys (strings), the key the selection is on (-1 none) and whether it waits for a key
     bool row_binding[kMostLines] = {}, row_waiting[kMostLines] = {};
@@ -762,6 +766,10 @@ void LeavePcScreen() {
         kernel::G<uint8_t>(item + 0x16) = g_pcs.own_aside_disabled[k];
         if (label) kernel::G<float>(label + 0x30) = g_pcs.own_aside_y[k];
     }
+    for (int k = 0; k < 2; k++) {
+        uint32_t item = LineItem(menu, k ? l.apply_item : l.reset_item), label = item ? R32(item + 0x10) : 0;
+        if (label && g_pcs.own_action_y[k] > 0) kernel::G<float>(label + 0x30) = g_pcs.own_action_y[k];
+    }
     for (auto [title, text] : g_pcs.titles) W32(title + 0x1C, text);
     g_pcs.titles.clear();
     {
@@ -814,7 +822,13 @@ void TakePcScreen(uint32_t menu, const Layout& l) {
         kernel::G<uint8_t>(item + 0x16) = 1;
         if (label) kernel::G<float>(label + 0x30) = -200.0f;
     }
-    if (l.close_up && step_y > 0) {
+    for (int k = 0; k < 2; k++) {
+        uint32_t item = LineItem(menu, k ? l.apply_item : l.reset_item), label = item ? R32(item + 0x10) : 0;
+        g_pcs.own_action_y[k] = label ? RF(label + 0x30) : 0;
+        if (label) kernel::G<float>(label + 0x30) = g_pcs.own_action_y[k] + l.action_shift;
+    }
+    if (l.row_step > 0) step_y = l.row_step;
+    if ((l.close_up || l.row_step > 0) && step_y > 0) {
         for (int i = 0; i < l.lines; i++) {
             float y = first_y + step_y * float(i);
             uint32_t item = LineItem(menu, l.items[i]), label = item ? R32(item + 0x10) : 0;
@@ -1309,6 +1323,8 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
         TapB();
     else if (pointer.wheel && picker)
         TapDpad(pointer.wheel > 0 ? kDpadLeft : kDpadRight);
+    else if (pointer.wheel && PcScreenUp())
+        g_pcs.top -= (pointer.wheel > 0 ? 1 : -1) * kWheelLines;  // the list scrolls under the selection (clamped each poll)
     else if (pointer.wheel)
         TapDpad(pointer.wheel > 0 ? kDpadUp : kDpadDown);
 }
