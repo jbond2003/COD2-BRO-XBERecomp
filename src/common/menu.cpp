@@ -730,6 +730,96 @@ void DrawFpsCounter(double fps) {
 }  // namespace
 
 
+namespace pc {
+
+namespace {
+// the page's lines and rows without headings
+void Page(std::vector<ui::paper::Line>& lines, std::vector<PaperRow>& rows) {
+    std::vector<ui::paper::Line> all;
+    std::vector<PaperRow> all_rows;
+    BuildPage(all, all_rows);
+    lines.clear();
+    rows.clear();
+    for (size_t i = 0; i < all.size(); i++) {
+        if (all[i].kind == ui::paper::Line::kHeading) continue;
+        lines.push_back(all[i]);
+        rows.push_back(all_rows[i]);
+    }
+}
+}  // namespace
+
+std::vector<Line> Lines(int selected) {
+    std::vector<ui::paper::Line> lines;
+    std::vector<PaperRow> rows;
+    Page(lines, rows);
+    std::vector<Line> out;
+    for (size_t i = 0; i < lines.size(); i++) {
+        const ui::paper::Line& l = lines[i];
+        Line o;
+        o.label = l.label;
+        o.action = l.kind == ui::paper::Line::kAction;
+        if (l.kind == ui::paper::Line::kBinding) {
+            bool on = int(i) == selected;
+            std::string keys[2] = {l.value.empty() ? "-" : l.value, l.value2.empty() ? "-" : l.value2};
+            for (int k = 0; k < 2; k++) {
+                if (on && g_capture.action >= 0 && g_capture.slot == k) keys[k] = "Press a key";
+                if (on && g_slot == k) keys[k] = "[" + keys[k] + "]";
+            }
+            o.value = keys[0] + "   " + keys[1];
+        } else {
+            o.value = l.value;
+        }
+        out.push_back(o);
+    }
+    return out;
+}
+
+void Step(int line, int dir) {
+    std::vector<ui::paper::Line> lines;
+    std::vector<PaperRow> rows;
+    Page(lines, rows);
+    if (line < 0 || line >= int(rows.size()) || g_capture.action >= 0) return;
+    const PaperRow& r = rows[size_t(line)];
+    if (r.kind == PaperRow::kBind) g_slot = dir < 0 ? 0 : 1;
+    else if (r.kind == PaperRow::kSetting && r.row != kSection) StepSetting(r.row, dir);
+}
+
+void Press(int line) {
+    std::vector<ui::paper::Line> lines;
+    std::vector<PaperRow> rows;
+    Page(lines, rows);
+    if (line < 0 || line >= int(rows.size()) || g_capture.action >= 0) return;
+    const PaperRow& r = rows[size_t(line)];
+    if (r.kind == PaperRow::kApplyExit) {
+        Apply();
+        Save();
+    } else {
+        Activate(r, 0);
+    }
+}
+
+void Clear(int line) {
+    std::vector<ui::paper::Line> lines;
+    std::vector<PaperRow> rows;
+    Page(lines, rows);
+    if (line < 0 || line >= int(rows.size()) || g_capture.action >= 0) return;
+    const PaperRow& r = rows[size_t(line)];
+    if (r.kind == PaperRow::kBind) input::Bind(r.action, 0, g_slot);
+}
+
+void Update() { UpdateCapture(); }
+
+bool Capturing() { return g_capture.action >= 0; }
+
+void Leave(bool applied) {
+    if (applied) Apply();
+    g_held_set = false;
+    g_capture = {};
+    Save();
+}
+
+}  // namespace pc
+
 bool MenuOpen() { return g_open.load(std::memory_order_relaxed); }
 
 bool Capturing() { return g_capture.action >= 0; }
@@ -795,6 +885,38 @@ void DrawUi(double fps) {
 #endif
 
 #ifndef _WIN32
+#include <algorithm>
+#include <cstdio>
+#include <iterator>
+// the harness: a few lines that change, to drive the screen with
+namespace app::pc {
+namespace {
+int g_values[12] = {};
+int g_slot = 0;
+}
+std::vector<Line> Lines(int) {
+    std::vector<Line> out;
+    for (int i = 0; i < 12; i++) out.push_back({"Setting " + std::to_string(i + 1), "Value " + std::to_string(g_values[i])});
+    out[1].value = "[Right Shift]   Mouse Button 4";  // a binding's two key boxes, as long as they get
+    out.push_back({"Reset to Defaults", "", true});
+    out.push_back({"Apply and Exit", "", true});
+    return out;
+}
+void Step(int line, int dir) {
+    if (line >= 0 && line < 12) g_values[line] += dir;
+    std::printf("pc options: step %d %d\n", line, dir);
+}
+void Press(int line) {
+    if (line == 12) std::fill(std::begin(g_values), std::end(g_values), 0);
+    else if (line >= 0 && line < 12) g_values[line]++;
+    std::printf("pc options: press %d\n", line);
+}
+void Clear(int line) { std::printf("pc options: clear %d\n", line); }
+void Update() {}
+bool Capturing() { return false; }
+void Leave(bool applied) { std::printf("pc options: leave, applied %d\n", int(applied)); (void)g_slot; }
+}  // namespace app::pc
+
 namespace app {
 void OpenBindings() {}
 void OpenPcOptions() {}

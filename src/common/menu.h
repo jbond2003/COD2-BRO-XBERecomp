@@ -1,5 +1,7 @@
 #pragma once
 #include <cstdint>
+#include <string>
+#include <vector>
 
 namespace input {
 struct Pad;
@@ -21,3 +23,23 @@ bool Capturing();  // a controls box is waiting for a key: Escape is the box's, 
 void DrawUi(double fps);
 
 }  // namespace app
+
+// PC Options as one of the game's own screens (src/game/menu_mouse.cpp shows them on the Gameplay screen): its lines
+// with their words, and what the screen's buttons do to them. Lines are counted without headings.
+namespace app::pc {
+
+struct Line {
+    std::string label;
+    std::string value;
+    bool action = false;  // Reset to Defaults, Apply and Exit
+};
+
+std::vector<Line> Lines(int selected);  // selected: a binding line shows which key box is picked
+void Step(int line, int dir);           // left or right
+void Press(int line);                   // A or Enter: step a setting, wait for a key, reset, or apply
+void Clear(int line);                   // X or Delete: a binding's key box emptied
+void Update();                          // each poll: a key box waiting for its key
+bool Capturing();
+void Leave(bool applied);               // the screen closes; display changes not applied are dropped
+
+}  // namespace app::pc
