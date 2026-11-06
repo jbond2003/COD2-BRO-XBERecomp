@@ -210,6 +210,7 @@ const app::GameInfo app::kGame = {
                 {"qwerty_typewriter", &game::Opt().qwerty_typewriter, nullptr},
                 {"button_prompts", nullptr, &game::Opt().button_prompts},
                 {"modern_layout", &game::Opt().modern_layout, nullptr},
+                {"pc_crosshair", &game::Opt().pc_crosshair, nullptr},
                 {"walk_speed", nullptr, &game::Opt().walk_speed}},  // game settings kept in the settings file
     .load = game::Load,  // reads more from the settings file's toml::table: mouse sensitivities, [keys]
     .save = game::Save,  // writes more into it

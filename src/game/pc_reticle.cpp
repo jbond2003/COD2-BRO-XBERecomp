@@ -23,6 +23,7 @@
 #include <windows.h>
 #endif
 
+#include "common/options.h"
 #include "core/log.h"
 #include "gpu/texture_override.h"
 #include "kernel/kernel.h"
@@ -411,6 +412,7 @@ namespace game {
 
 // render thread, from the texture provider (prompts.cpp): the PC piece for one of Big Red One's crosshair textures
 std::shared_ptr<const Picture> PcReticle(const gpu::TextureDesc& d, const uint8_t* guest) {
+    if (!Opt().pc_crosshair) return nullptr;  // PC Options > Crosshair: Big Red One's own
     std::call_once(g_loaded, Load);
     size_t size = gpu::LevelSize(d, 0);
     for (const Piece& p : g_pieces)

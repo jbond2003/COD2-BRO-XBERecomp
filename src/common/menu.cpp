@@ -29,6 +29,7 @@ float app::g_zoom = 1.0f;
 #include "common/mouse_keyboard.h"
 #include "common/options.h"
 #include "common/paper_page.h"
+#include "gpu/texture_override.h"
 
 namespace app {
 
@@ -117,7 +118,8 @@ const std::vector<Mode>& Modes() {
 }
 
 enum RowId { kSection, kDisplayMode, kResolution, kRenderResolution, kFov, kMaxFps, kVsync, kFpsCounter, kAniso,
-             kTextureReplacement, kTextureDumping, kDumpFormat, kMouseX, kMouseY, kInvertY, kInvertX, kQwerty, kPrompts };
+             kTextureReplacement, kTextureDumping, kDumpFormat, kMouseX, kMouseY, kInvertY, kInvertX, kQwerty, kPrompts,
+             kCrosshair };
 
 struct Row {
     RowId id;
@@ -137,6 +139,8 @@ constexpr Row kRows[] = {
     {kTextureReplacement, "TEXTURE REPLACEMENT"},
     {kTextureDumping, "TEXTURE DUMPING"},
     {kDumpFormat, "DUMP FORMAT"},
+    {kSection, "HUD"},
+    {kCrosshair, "CROSSHAIR"},
     {kSection, "MOUSE"},
     {kMouseX, "HORIZONTAL SENSITIVITY"},
     {kMouseY, "VERTICAL SENSITIVITY"},
@@ -236,6 +240,12 @@ std::string RowText(RowId id, int step, Settings& s) {
         case kInvertX:
             if (step) game::Opt().invert_mouse_x = !game::Opt().invert_mouse_x;
             return OnOff(game::Opt().invert_mouse_x);
+        case kCrosshair:
+            if (step) {
+                game::Opt().pc_crosshair = !game::Opt().pc_crosshair;
+                gpu::texture_override::Changed();  // the crosshair's textures are asked for again
+            }
+            return game::Opt().pc_crosshair ? "CALL OF DUTY (PC)" : "BIG RED ONE (ORIGINAL)";
         case kQwerty:
             if (step) game::Opt().qwerty_typewriter = !game::Opt().qwerty_typewriter;
             return game::Opt().qwerty_typewriter ? "QWERTY" : "ABC (ORIGINAL)";
@@ -334,6 +344,7 @@ void Defaults() {
     o.invert_mouse_x = false;
     o.qwerty_typewriter = true;
     o.button_prompts = 0;
+    o.pc_crosshair = true;
     g_held = s;
     g_held.display_mode = d.display_mode;
     g_held.width = d.width;
