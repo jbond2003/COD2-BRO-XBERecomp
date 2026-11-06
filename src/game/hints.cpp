@@ -5,6 +5,8 @@
 // rewritten in place to the keys (within the room each entry has), and put back when a controller is used. The prone
 // hint ("press crouch again") follows the new controls: Z on the keys, B held with the Modern layout.
 
+#include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -45,6 +47,9 @@ std::string Look() { return "Move the mouse"; }
 std::string Sprint() { return "Press and hold " + Key("sprint", "Shift"); }
 std::string Prone() { return "Press " + Key("prone", "Z") + " to go prone"; }
 std::string HoldProne() { return "Hold [%s] to go prone"; }  // B held, its picture as before
+// the stance token draws the crouch key or button; on the keys prone has its own key, on Modern B is held
+std::string CrouchProne() { return "[PRESS_STANCE_DOWN] to crouch, " + Key("prone", "Z") + " to go prone"; }
+std::string CrouchHold() { return "[PRESS_STANCE_DOWN] to crouch, hold it to go prone"; }
 
 Hint g_hints[] = {
     {"Move the left thumbstick", Move},
@@ -55,9 +60,11 @@ Hint g_hints[] = {
     {"the right thumbstick", [] { return std::string("the mouse"); }},
     {"Click and hold the left thumbstick", Sprint},
     {"Press [%s] to go prone", Prone, HoldProne},  // the original: the crouch button again
+    {"[PRESS_STANCE_DOWN] to crouch, press it again to go prone", CrouchProne, CrouchHold},  // a level's own
 };
 
 bool g_searched = false;
+double g_scanned = 0;  // when, in seconds; a level's own texts load after the global ones
 bool g_keyboard = false;
 bool g_modern = false;
 uint32_t g_version = ~0u;
@@ -68,6 +75,10 @@ void Find() {
     size_t size = mem::kPhysicalSize;
     int found = 0;
     for (Hint& h : g_hints) {
+        if (h.at) {
+            found++;
+            continue;
+        }
         size_t len = std::strlen(h.pad);
         std::string want = std::string(h.pad) + '\0';
         for (size_t i = 12; i + want.size() < size; i++) {
@@ -105,12 +116,19 @@ void UpdateHints() {
     uint32_t mode = Opt().button_prompts;
     bool keyboard = mode == 1 || (mode != 2 && input::KeyboardActive());
     uint32_t version = input::BindingsVersion();
-    if (!g_searched) {
-        // the table loads with the front end; the hints are only shown in a level (no front end manager)
-        if (kernel::R32(0x95F8F8) || !kernel::R32(0x95F8FC)) return;
-        g_searched = true;
+    // the tables load with the front end and each level; the hints are only shown in a level (no front end manager).
+    // Each level is searched again for the texts not found yet, a few seconds apart while it loads
+    if (kernel::R32(0x95F8F8) || !kernel::R32(0x95F8FC)) {
+        g_searched = false;
+        return;
+    }
+    bool all = std::all_of(std::begin(g_hints), std::end(g_hints), [](const Hint& h) { return h.at != 0; });
+    double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (!g_searched || (!all && now - g_scanned >= 3.0)) {
+        g_scanned = now;
         Find();
-        g_keyboard = !keyboard;
+        if (!g_searched) g_keyboard = !keyboard;
+        g_searched = true;
     }
     bool modern = Opt().modern_layout;
     if (keyboard == g_keyboard && version == g_version && modern == g_modern) return;

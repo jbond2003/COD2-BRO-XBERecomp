@@ -316,3 +316,9 @@ on_true = 0x00338FE1
 [[hook]]
 at = 0x003362E5
 call = "ControllerChoiceDefault"
+
+# the profile loaded: its configuration's style, 0x332FB1 "dec eax" on cg_controllerconfig
+[[hook]]
+at = 0x00332FB1
+call = "ControllerConfigLoaded"
+on_true = 0x00333037

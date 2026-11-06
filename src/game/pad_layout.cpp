@@ -150,6 +150,21 @@ bool ControllerChoiceOpen(X86Context& ctx, uint8_t*) {
     return Modern() || int32_t(ctx.eax) != kModern;  // false: the game's own code sets 0 (A)
 }
 
+// 0x332FB1, the profile loaded, its cg_controllerconfig (eax) about to pick a style: 1-3 add "exec style_e/f/g.cfg"
+// as the Controller screen does, but 0 copies "exec style_h.cfg" straight into the command buffer and 4 adds
+// nothing, so the Modern binds never followed. With Modern picked the exec is added here, and the binds with it
+// (sub_002AABB0); true skips to the buffer's execution (0x333037)
+bool ControllerConfigLoaded(X86Context& ctx, uint8_t*) {
+    if (!Modern()) return false;
+    constexpr uint32_t kExecStyleH = 0x82DFF4;  // the game's "exec style_h.cfg\n"
+    uint32_t eax = ctx.eax;
+    ctx.eax = kExecStyleH;
+    kernel::CallGuest(ctx, kCbufAddText, {});
+    ctx.eax = eax;
+    LOGR("controller configuration loaded: Modern");
+    return true;
+}
+
 // 0x3362E5, Reset to Defaults just set the choice (edi screen) to 0: the default is Modern
 void ControllerChoiceDefault(X86Context& ctx, uint8_t*) { W32(ctx.edi + 0xC0, kModern); }
 
