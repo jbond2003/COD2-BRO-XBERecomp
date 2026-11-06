@@ -610,6 +610,11 @@ void Update() {
         Icon icon = kControlIcons[to];
         if (icon != kIconCount && labels[icon].empty()) labels[icon] = CapLabel(key);
     }
+    // crouch is a command now, on no button: the hints' B ("Press B to crouch") is its key
+    if (labels[kB].empty()) {
+        std::string crouch = input::KeyName("crouch");
+        if (!crouch.empty()) labels[kB] = CapLabel(crouch);
+    }
     // in menus the arrows are the dpad, Enter A and Backspace B
     bool menu = !input::Playing();
     if (menu) {

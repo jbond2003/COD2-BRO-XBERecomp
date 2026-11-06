@@ -27,7 +27,7 @@ namespace game {
 void RemapToLayout(const input::Pad& from, input::Pad& to);  // src/game/mouse_look.cpp
 void InitPrompts();  // src/game/prompts.cpp
 void OptionsPad(input::Pad& pad);  // src/game/menu_mouse.cpp: PC OPTIONS in the Options menu
-void ModernPad(input::Pad& pad, bool keys_back);  // src/game/pad_layout.cpp: B to crouch, held to go prone
+void ModernPad(input::Pad& pad);  // src/game/pad_layout.cpp: B to crouch, held to go prone
 
 namespace {
 
@@ -84,14 +84,13 @@ void Pad(int port, input::Pad& pad) {
         return;
     }
     // the keys press the default layout's controls; in play they follow the layout picked in the game's options
-    ModernPad(pad, false);  // the controller's own buttons
+    ModernPad(pad);
     input::Pad keys;
     input::Keyboard(keys);
     input::Pad out = keys;
     if (input::Playing()) {
         constexpr uint16_t kStartBack = 0x30;
         out.buttons = keys.buttons & kStartBack;
-        ModernPad(out, true);  // Back is the pause menu in Modern: the objectives key keeps its job
         std::fill(std::begin(out.analog), std::end(out.analog), uint8_t(0));
         RemapToLayout(keys, out);
     }

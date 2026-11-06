@@ -2,7 +2,8 @@
 // around") whose texts are entries of the global string table (sp/global.cod, loaded with the front end): loaded,
 // an entry is a pointer to its text, a pointer to a "[text]" copy, the text padded with zeros and the copy. The button tokens ("Press ~cross") already show keycaps
 // (prompts.cpp); the stick ones are words, so while the keyboard and mouse are in use those entries' texts are
-// rewritten in place to the keys (within the room each entry has), and put back when a controller is used.
+// rewritten in place to the keys (within the room each entry has), and put back when a controller is used. The prone
+// hint ("press crouch again") follows the new controls: Z on the keys, B held with the Modern layout.
 
 #include <cstring>
 #include <string>
@@ -19,6 +20,7 @@ namespace {
 struct Hint {
     const char* pad;  // the game's own text
     std::string (*keys)();
+    std::string (*modern)() = nullptr;  // on a controller with the Modern layout, if not the game's own
     uint32_t at = 0;    // the text in guest memory, 0 until found
     uint32_t room = 0;  // bytes before its "[text]" copy
 };
@@ -41,6 +43,8 @@ std::string MoveLower() {
 }
 std::string Look() { return "Move the mouse"; }
 std::string Sprint() { return "Press and hold " + Key("sprint", "Shift"); }
+std::string Prone() { return "Press " + Key("prone", "Z") + " to go prone"; }
+std::string HoldProne() { return "Hold [%s] to go prone"; }  // B held, its picture as before
 
 Hint g_hints[] = {
     {"Move the left thumbstick", Move},
@@ -50,10 +54,12 @@ Hint g_hints[] = {
     {"the left thumbstick", MoveLower},
     {"the right thumbstick", [] { return std::string("the mouse"); }},
     {"Click and hold the left thumbstick", Sprint},
+    {"Press [%s] to go prone", Prone, HoldProne},  // the original: the crouch button again
 };
 
 bool g_searched = false;
 bool g_keyboard = false;
+bool g_modern = false;
 uint32_t g_version = ~0u;
 
 // each hint's entry in the loaded string table: the header, the text, its "[text]" copy
@@ -106,11 +112,16 @@ void UpdateHints() {
         Find();
         g_keyboard = !keyboard;
     }
-    if (keyboard == g_keyboard && version == g_version) return;
+    bool modern = Opt().modern_layout;
+    if (keyboard == g_keyboard && version == g_version && modern == g_modern) return;
     g_keyboard = keyboard;
     g_version = version;
-    for (const Hint& h : g_hints)
-        if (h.at) Write(h, keyboard ? h.keys() : std::string(h.pad));
+    g_modern = modern;
+    for (const Hint& h : g_hints) {
+        if (!h.at) continue;
+        if (keyboard) Write(h, h.keys());
+        else Write(h, modern && h.modern ? h.modern() : std::string(h.pad));
+    }
 }
 
 }  // namespace game

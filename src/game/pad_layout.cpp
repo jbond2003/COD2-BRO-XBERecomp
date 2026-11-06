@@ -7,7 +7,7 @@
 // Here the choice goes to 4 = Modern: its letter reads "Modern", and whenever the game execs a style while Modern is
 // picked (Options().modern_layout, kept in the settings file) the binds below follow it. Modern: RT fire, LT aim
 // down the sights, A jump, X use and reload, Y and the dpad's right next weapon, dpad left the one before, RB a
-// grenade, LB and R3 melee, L3 sprint, dpad up objectives, Back the pause menu, Start as before. B crouches and
+// grenade, R3 melee, LB nothing, L3 sprint, dpad up and Back objectives, Start the pause menu. B crouches and
 // stands, held it goes prone (ModernPad: B is bound to nothing and sends the commands).
 //
 // Also the console commands the keyboard sends (crouch, prone, controls the layout has no button for) run here, each
@@ -44,14 +44,14 @@ constexpr const char* kModernBinds =
     "bind TRIANGLE \"weapnext\"\n"
     "bind CIRCLE \"\"\n"
     "bind R2 \"+grenadeattack\"\n"
-    "bind L2 \"+melee\"\n"
+    "bind L2 \"\"\n"
     "bind R3 \"+melee\"\n"
     "bind L3 \"+sprint\"\n"
     "bind UPARROW \"+scores\"\n"
     "bind DOWNARROW \"\"\n"
     "bind LEFTARROW \"weapprev\"\n"
     "bind RIGHTARROW \"weapnext\"\n"
-    "bind TAB \"togglemenu\"\n";
+    "bind TAB \"+scores\"\n";
 
 uint32_t g_text = 0;  // a guest buffer for our text
 constexpr uint32_t kTextBytes = 2048;
@@ -76,6 +76,18 @@ bool IsStyleExec(uint32_t text) {
 
 X86_EXTERN_FUNC(__imp__sub_002AABB0);
 X86_EXTERN_FUNC(__imp__sub_00335D60);
+X86_EXTERN_FUNC(__imp__sub_002B3450);
+
+// the first key bound to a command (edi), or -1: the hints' [STANCE_DOWN] asks for "lowerstance", which Modern does
+// on B by code, so B (CIRCLE, key 0xD5 in the key name table at 0x8D32F0) is its button there
+X86_FUNC(sub_002B3450) {
+    uint32_t command = ctx.edi;
+    __imp__sub_002B3450(ctx, base);
+    static constexpr char kLower[] = "lowerstance";
+    if (int32_t(ctx.eax) == -1 && command && Modern() &&
+        std::memcmp(kernel::HostPtr(command), kLower, sizeof(kLower)) == 0)
+        ctx.eax = 0xD5;
+}
 
 // Cbuf_AddText (text in eax): a style's exec gets the Modern binds after it while Modern is picked
 X86_FUNC(sub_002AABB0) {
@@ -140,18 +152,9 @@ void ControllerChoiceDefault(X86Context& ctx, uint8_t*) { W32(ctx.edi + 0xC0, kM
 
 namespace game {
 
-// each poll of port 0. keys_back: the keyboard's buttons, whose Back is the objectives key
-void ModernPad(input::Pad& pad, bool keys_back) {
+// each poll of port 0's controller
+void ModernPad(input::Pad& pad) {
     if (!Modern()) return;
-    constexpr uint16_t kBack = 0x20;
-    if (keys_back) {
-        static bool held = false;
-        bool now = (pad.buttons & kBack) != 0;
-        pad.buttons &= uint16_t(~kBack);
-        if (now != held) input::QueueCommand(now ? "+scores" : "-scores");
-        held = now;
-        return;
-    }
     // B: crouch or stand on a tap, prone when held
     constexpr uint8_t kPressed = 0x40;
     constexpr int64_t kHoldMs = 350;
