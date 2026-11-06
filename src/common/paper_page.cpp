@@ -28,6 +28,7 @@ namespace ui::paper {
 namespace {
 
 ImFont* g_serif = nullptr;
+bool g_bold = false;  // a bold face, else drawn twice for weight
 // the game's own option page (single_options_misc.dds of sp/frontend.cod, the Sound page's), in the font atlas
 int g_paper_rect = -1;
 std::vector<uint8_t> g_paper_pixels;
@@ -64,7 +65,7 @@ void Text(ImDrawList* dl, float size, ImVec2 at, ImU32 color, const std::string&
     ImVec2 pos(std::floor(at.x - m.x * align), std::floor(at.y - m.y * 0.5f));
     dl->AddText(Serif(), size, pos, color, text.c_str());
     // the game's print is heavier than the face: drawn again a little to the right
-    if (g_paper_rect >= 0) dl->AddText(Serif(), size, ImVec2(pos.x + std::max(1.0f, size * 0.03f), pos.y), color, text.c_str());
+    if (g_paper_rect >= 0 && !g_bold) dl->AddText(Serif(), size, ImVec2(pos.x + std::max(1.0f, size * 0.03f), pos.y), color, text.c_str());
 }
 
 // the game's own pages write their lines as titles ("Reset to Defaults"), ours are in capitals: as the game's
@@ -123,19 +124,30 @@ void LoadFonts() {
         g_paper_rect = io.Fonts->AddCustomRectRegular(int(g_paper_w), int(g_paper_h));
     LOGR("PC Options: %s", g_paper_rect >= 0 ? "the game's paper" : "no paper from the game files, a drawn one");
     std::vector<uint8_t> ttf;
+    const char* windir = std::getenv("WINDIR");
+    std::string bold = std::string(windir ? windir : "C:\\Windows") + "\\Fonts\\GARABD.TTF";
+    if (std::ifstream(bold, std::ios::binary)) {
+        ImFontConfig cfg;
+        cfg.OversampleH = 2;
+        cfg.OversampleV = 2;
+        g_serif = io.Fonts->AddFontFromFileTTF(bold.c_str(), 72.0f, &cfg);
+        if (g_serif) {
+            g_bold = true;
+            return;
+        }
+    }
     if (game::ReadEarlyGameFile("D:\\media\\GARA.TTF", ttf) && ttf.size() > 1024) {
         void* data = IM_ALLOC(ttf.size());  // the atlas owns it
         std::memcpy(data, ttf.data(), ttf.size());
         ImFontConfig cfg;
         cfg.OversampleH = 2;
         cfg.OversampleV = 2;
-        g_serif = io.Fonts->AddFontFromMemoryTTF(data, int(ttf.size()), 56.0f, &cfg);
+        g_serif = io.Fonts->AddFontFromMemoryTTF(data, int(ttf.size()), 72.0f, &cfg);
         if (g_serif) return;
     }
 #endif
     std::vector<std::string> candidates;
 #ifdef _WIN32
-    const char* windir = std::getenv("WINDIR");
     std::string fonts = std::string(windir ? windir : "C:\\Windows") + "\\Fonts\\";
     for (const char* f : {"GARABD.TTF", "GARA.TTF", "georgiab.ttf", "timesbd.ttf"}) candidates.push_back(fonts + f);
 #else
@@ -192,7 +204,11 @@ void Draw(const char* title, const std::vector<Line>& lines, int selected, float
         atlas->CalcCustomRectUV(atlas->GetCustomRectByIndex(g_paper_rect), &uv0, &uv1);
         float sx = w / (kSheetRight - kSheetLeft), sy = (p1.y - p0.y) / (kSheetBottom - kSheetTop);
         ImVec2 o(p0.x - kSheetLeft * sx, p0.y - kSheetTop * sy);
-        dl->AddImage(atlas->TexID, o, ImVec2(o.x + float(g_paper_w) * sx, o.y + float(g_paper_h) * sy), uv0, uv1);
+        // tinted as the game draws its pages (the Sound page's paper is this dark)
+        dl->AddImage(atlas->TexID, o, ImVec2(o.x + float(g_paper_w) * sx, o.y + float(g_paper_h) * sy), uv0, uv1,
+                     IM_COL32(168, 160, 148, 255));
+        f0 = ImVec2(p0.x + u * 4.2f, o.y + 97.0f * sy);  // the printed frame
+        f1 = ImVec2(p1.x - u * 4.2f, o.y + 407.0f * sy);
         rule_y = o.y + kRuleY * sy;
     } else {
     dl->AddRectFilled(p0, p1, Col(kBoard));
@@ -223,8 +239,11 @@ void Draw(const char* title, const std::vector<Line>& lines, int selected, float
     // the list, scrolled to keep the selection in view; the actions stay at the foot
     std::vector<int> listed, actions;
     for (int i = 0; i < int(lines.size()); i++) (lines[size_t(i)].kind == Line::kAction ? actions : listed).push_back(i);
-    float list_top = p0.y + u * 23.0f, row_h = u * 6.6f;
-    float actions_top = p1.y - u * (9.0f + 6.6f * float(actions.size()));
+    bool game = g_paper_rect >= 0;  // the game's page: its lines as large as the Sound page's
+    float list_top = p0.y + u * 23.0f, row_h = u * (game ? 8.6f : 6.6f), action_h = u * (game ? 9.0f : 6.6f);
+    float label_size = u * (game ? 7.4f : 5.2f), value_size = u * (game ? 6.4f : 4.6f),
+          action_size = u * (game ? 7.8f : 5.4f);
+    float actions_top = f1.y - u * 4.0f - action_h * float(actions.size());
     g_rows = std::max(1, int((actions_top - u * 2.0f - list_top) / row_h));
     int max_scroll = std::max(0, int(listed.size()) - g_rows);
     int sel_pos = int(std::find(listed.begin(), listed.end(), selected) - listed.begin());
@@ -257,9 +276,9 @@ void Draw(const char* title, const std::vector<Line>& lines, int selected, float
         }
         bool on = i == selected;
         float alpha = on ? 1.0f : kIdle;
-        Text(dl, u * 5.2f, ImVec2(label_x, y), Ink(alpha), Titled(l.label), value_cx - value_w / 2 - label_x - u * 5.0f);
+        Text(dl, label_size, ImVec2(label_x, y), Ink(alpha), Titled(l.label), value_cx - value_w / 2 - label_x - u * 5.0f);
         if (l.kind == Line::kOption) {
-            Text(dl, u * 4.6f, ImVec2(value_cx, y), Ink(alpha), Titled(l.value), value_w, 0.5f);
+            Text(dl, value_size, ImVec2(value_cx, y), Ink(alpha), Titled(l.value), value_w, 0.5f);
             float a = u * 2.4f, ax = value_w / 2 + u * 3.0f;
             Arrow(dl, ImVec2(value_cx - ax, y), a, -1, Ink(alpha));
             Arrow(dl, ImVec2(value_cx + ax, y), a, 1, Ink(alpha));
@@ -286,13 +305,13 @@ void Draw(const char* title, const std::vector<Line>& lines, int selected, float
     }
     for (size_t k = 0; k < actions.size(); k++) {
         int i = actions[k];
-        float y = actions_top + u * 6.6f * float(k) + u * 3.3f;
+        float y = actions_top + action_h * float(k) + action_h / 2;
         bool on = i == selected;
         std::string label = Titled(lines[size_t(i)].label);
-        Text(dl, u * 5.4f, ImVec2(cx, y), Ink(on ? 1.0f : kIdle), label, w * 0.7f, 0.5f);
-        float tw = Measure(u * 5.4f, label.c_str()).x / 2 + u * 2.0f;
-        hits[size_t(i)].min = ImVec2(cx - tw, y - u * 3.3f);
-        hits[size_t(i)].max = ImVec2(cx + tw, y + u * 3.3f);
+        Text(dl, action_size, ImVec2(cx, y), Ink(on ? 1.0f : kIdle), label, w * 0.7f, 0.5f);
+        float tw = Measure(action_size, label.c_str()).x / 2 + u * 2.0f;
+        hits[size_t(i)].min = ImVec2(cx - tw, y - action_h / 2);
+        hits[size_t(i)].max = ImVec2(cx + tw, y + action_h / 2);
     }
     if (note && *note) Text(dl, u * 2.8f, ImVec2(cx, f1.y - u * 2.4f), Ink(0.6f), note, w * 0.8f, 0.5f);
 }
