@@ -5,8 +5,9 @@
 // that button again (IN_KeyDown 0x2ABFE0, IN_KeyUp 0x2ABF50, the button in esi).
 //
 // The meter is multiplayer's: full at 1.0, drained at the rate at 0x82E908 (2/3 a second, read there alone) while
-// sprinting, the sprint ended below 0.5 (under a second of running), refilled at 1/3 a second after a second's rest.
-// Here the rate is set for a sprint of kSprintSeconds (his choice: 10 seconds), the rest as the game has it. (The static
+// sprinting, the sprint over when it is empty (a second and a half of running; below 0.5 the exhausted flag 0x20000
+// and its event come first), refilled at 1/3 a second after a second's rest. Here the rate is set for a sprint of
+// kSprintSeconds (his choice: 10 seconds), the rest as the game has it. (The static
 // at 0x92E79C, read by PM_UpdateSprint alone and never written by this image, would skip the drain altogether.)
 #include <cstring>
 
@@ -17,10 +18,10 @@ namespace {
 constexpr uint32_t kSprintButton = 0x934068;
 constexpr uint32_t kKeyDown = 0x2ABFE0, kKeyUp = 0x2ABF50;
 constexpr uint32_t kDrainRate = 0x82E908;  // float, of the meter a second
-constexpr float kSprintSeconds = 10.0f;    // a full meter to the 0.5 that ends the sprint
+constexpr float kSprintSeconds = 10.0f;    // a full meter to empty
 
 void SprintKey(X86Context& ctx, uint32_t fn) {
-    float rate = 0.5f / kSprintSeconds;
+    float rate = 1.0f / kSprintSeconds;
     uint32_t bits;
     std::memcpy(&bits, &rate, 4);
     kernel::W32(kDrainRate, bits);
