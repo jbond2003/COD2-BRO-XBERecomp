@@ -23,13 +23,13 @@ constexpr Text kTexts[] = {
     {"Checking hard disk. Please do not turn off your Xbox console.", "Checking storage. Please do not turn off your PC."},
 };
 
-int Rewrite(const Text& t) {
+uint32_t Rewrite(const Text& t) {
     uint8_t* mem = static_cast<uint8_t*>(kernel::HostPtr(mem::kContiguousBase));
     size_t size = mem::kPhysicalSize;
     size_t old_len = std::strlen(t.xbox), new_len = std::strlen(t.pc);
     std::string_view want(t.xbox, old_len + 1);  // with its zero
     std::boyer_moore_horspool_searcher search(want.begin(), want.end());
-    int done = 0;
+    uint32_t done = 0;
     for (uint8_t* at = mem; at < mem + size;) {
         auto [found, end] = search(reinterpret_cast<const char*>(at), reinterpret_cast<const char*>(mem + size));
         if (found == reinterpret_cast<const char*>(mem + size)) break;
@@ -47,7 +47,7 @@ int Rewrite(const Text& t) {
         }
         std::memset(p, 0, old_len);
         std::memcpy(p, t.pc, new_len);
-        done++;
+        done = mem::kContiguousBase + uint32_t(off);
     }
     return done;
 }
@@ -56,14 +56,27 @@ int Rewrite(const Text& t) {
 
 namespace game {
 
-// each client frame: now and then while not in a level (the table loads with the front end, a screen copies its text)
+// each client frame. The table loads once, with the front end: it is searched for (a whole-memory search, so only
+// every half second) until found, then only its entry is looked at
 void UpdatePcTexts() {
     static uint32_t frames = 0;
-    if (frames++ % 15) return;
-    if (!kernel::R32(0x95F8F8) && kernel::R32(0x95F8FC)) return;  // a level
-    for (const Text& t : kTexts) {
-        int n = Rewrite(t);
-        if (n) LOGR("PC text: \"%s\" (%d copies)", t.pc, n);
+    static uint32_t found[std::size(kTexts)] = {};
+    frames++;
+    bool level = !kernel::R32(0x95F8F8) && kernel::R32(0x95F8FC);  // in a level: never a search
+    for (size_t i = 0; i < std::size(kTexts); i++) {
+        const Text& t = kTexts[i];
+        if (found[i]) {
+            const char* at = static_cast<const char*>(kernel::HostPtr(found[i]));
+            if (std::strcmp(at, t.pc) == 0) continue;
+            if (std::strcmp(at, t.xbox) != 0) {
+                found[i] = 0;  // the table went (loaded again elsewhere): searched for again
+                continue;
+            }
+        }
+        if (!found[i] && (frames % 15 || level)) continue;
+        uint32_t at = Rewrite(t);
+        if (at && !found[i]) LOGR("PC text: \"%s\"", t.pc);
+        found[i] = at;
     }
 }
 
