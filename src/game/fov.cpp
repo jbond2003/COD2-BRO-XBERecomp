@@ -48,7 +48,7 @@ X86_EXTERN_FUNC(__imp__sub_002F1E60);
 
 namespace game {
 void UpdatePrompts();  // src/game/prompts.cpp
-void UpdateHints();    // src/game/hints.cpp
+void UpdateHints(X86Context& ctx);  // src/game/hints.cpp
 void RunCommands(X86Context& ctx);  // src/game/pad_layout.cpp
 }
 
@@ -58,7 +58,7 @@ X86_FUNC(sub_002F1E60) {
     X86HostFp host_fp;
     ApplyFov(ctx);
     game::UpdatePrompts();
-    game::UpdateHints();
+    game::UpdateHints(ctx);
     game::RunCommands(ctx);
     // the front end (its UI manager, null in a level) runs at 30 fps like its movies and backdrops, so the menus do
     // not change speed from screen to screen

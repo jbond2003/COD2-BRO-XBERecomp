@@ -4,6 +4,12 @@
 // (prompts.cpp); the stick ones are words, so while the keyboard and mouse are in use those entries' texts are
 // rewritten in place to the keys (within the room each entry has), and put back when a controller is used. The prone
 // hint ("press crouch again") follows the new controls: Z on the keys, B held with the Modern layout.
+//
+// Two lines of our own in the first mission: sprint, 5 seconds after the game's first hint ("to look around", set by
+// the level script during the opening scene, a minute before its next), and on the keyboard and mouse leaning 5 seconds
+// after that. The script's hint (0x2FEF80: the text's key hash) goes to the HUD (0x32CED0, esi the HUD [0x95F8F0], eax
+// the hash): the text found in the global table is given to the hint widget ([HUD+0x3C], vtable +0x140 = 0x32EE50:
+// text, 400, -1.0) and the HUD's timer at +0x60 restarted. Ours go the same way, so they look and move like the game's.
 
 #include <algorithm>
 #include <chrono>
@@ -14,6 +20,7 @@
 #include "common/mouse_keyboard.h"
 #include "common/options.h"
 #include "core/log.h"
+#include "cpu/x86_ops.h"
 #include "kernel/kernel.h"
 #include "kernel/memory.h"
 
@@ -107,12 +114,89 @@ void Write(const Hint& h, const std::string& text) {
     std::memcpy(p, t.data(), t.size());
 }
 
+// --- our own hint lines
+
+constexpr uint32_t kHud = 0x95F8F0;           // the in-game HUD object; its hint widget at +0x3C, hint timer at +0x60
+constexpr uint32_t kGlobalTable = 0x95F5D8;   // the global string table
+constexpr uint32_t kLookup = 0x2984F0;        // (eax table; the key's hash on the stack) the entry, its text at +8
+constexpr uint32_t kSetHint = 0x32EE50;       // hint widget's (ecx) text, with the game's reveal and duration
+constexpr uint32_t kSetHintArgs[] = {0x190, 0xBF800000u};
+constexpr double kLineAfter = 5.0;  // seconds after the previous line
+
+double g_first = 0;  // when the game's first hint was set, 0 outside the sequence
+int g_lines = 0;     // our lines shown since
+uint32_t g_text = 0;
+
+bool InLevel() { return !kernel::R32(0x95F8F8) && kernel::R32(0x95F8FC); }
+
+double Now() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+
+std::string Lean() {
+    return "Press " + Key("lean_left", "Q") + " and " + Key("lean_right", "E") + " to lean";
+}
+
+void ShowLine(X86Context& ctx, const std::string& text) {
+    constexpr uint32_t kBytes = 256;
+    if (!g_text) g_text = mem::AllocSystem(kBytes);
+    uint32_t hud = kernel::R32(kHud);
+    uint32_t widget = hud ? kernel::R32(hud + 0x3C) : 0;
+    if (!g_text || !widget || text.size() >= kBytes) return;
+    std::memcpy(kernel::HostPtr(g_text), text.c_str(), text.size() + 1);
+    uint32_t ecx = ctx.ecx;
+    ctx.ecx = widget;
+    kernel::CallGuest(ctx, kSetHint, {g_text, kSetHintArgs[0], kSetHintArgs[1]});
+    ctx.ecx = ecx;
+    kernel::W32(hud + 0x60, 0);
+    LOGR("hint line: \"%s\"", text.c_str());
+}
+
+// our lines, in their time after the game's first hint (each client frame)
+void UpdateLines(X86Context& ctx) {
+    if (!g_first) return;
+    if (!InLevel()) {
+        g_first = 0;
+        return;
+    }
+    double since = Now() - g_first;
+    if (g_lines == 0 && since >= kLineAfter) {
+        // the token is the game's, "L3 Button" on a controller
+        ShowLine(ctx, g_keyboard ? "Hold " + Key("sprint", "Shift") + " to sprint" : std::string("Hold the [SPRINT] to sprint"));
+        g_lines = 1;
+    } else if (g_lines == 1 && since >= 2 * kLineAfter) {
+        if (g_keyboard) ShowLine(ctx, Lean());
+        g_lines = 2;
+        g_first = 0;
+    }
+}
+
 }  // namespace
+
+X86_EXTERN_FUNC(__imp__sub_0032CED0);
+
+// the HUD's hint from the level script (esi the HUD, eax the text's key hash, -1 none): the game's first starts our
+// lines, any other ends them
+X86_FUNC(sub_0032CED0) {
+    uint32_t hash = ctx.eax;
+    __imp__sub_0032CED0(ctx, base);
+    g_first = 0;
+    if (hash == 0xFFFFFFFFu) return;
+    uint32_t eax = ctx.eax;
+    ctx.eax = kernel::R32(kGlobalTable);
+    uint32_t entry = kernel::CallGuest(ctx, kLookup, {hash});
+    ctx.eax = eax;
+    uint32_t text = entry ? kernel::R32(entry + 8) : 0;
+    if (!text || text < mem::kContiguousBase) return;
+    if (std::strstr(static_cast<const char*>(kernel::HostPtr(text)), "to look around")) {
+        g_first = Now();
+        g_lines = 0;
+    }
+}
 
 namespace game {
 
 // each client frame
-void UpdateHints() {
+void UpdateHints(X86Context& ctx) {
+    UpdateLines(ctx);
     uint32_t mode = Opt().button_prompts;
     bool keyboard = mode == 1 || (mode != 2 && input::KeyboardActive());
     uint32_t version = input::BindingsVersion();
