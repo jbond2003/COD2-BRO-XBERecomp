@@ -845,13 +845,17 @@ void PcScreenPoll(X86Context& ctx, uint32_t manager, uint32_t menu) {
             g_pcs.want_layout = nullptr;
             g_pc.selected = false;
         }
-        // the line picked once the A that asked is let go (a held A hides the tap), again if it did not take
+        // the line selected, then A tapped once the screen is still again (a tap while its highlight still moves is
+        // lost), again if it did not take
         if (g_pcs.tapped && poll - g_pcs.tapped_at > 40) g_pcs.tapped = false;
         if (menu && R32(menu) == want->pick_vtable && !g_pcs.tapped && !R8(menu + 0x30) && poll - g_pcs.asked >= 6) {
-            Select(ctx, menu, int16_t(want->pick_item));
-            TapA();
-            g_pcs.tapped = true;
-            g_pcs.tapped_at = poll;
+            if (R16s(menu + 0x22) != want->pick_item) {
+                Select(ctx, menu, int16_t(want->pick_item));
+            } else {
+                TapA();
+                g_pcs.tapped = true;
+                g_pcs.tapped_at = poll;
+            }
         } else if (menu && R32(menu) == want->vtable && g_pcs.tapped) {
             TakePcScreen(menu, *want);
         }
@@ -1342,7 +1346,12 @@ void OptionsPad(input::Pad& pad) {
         OpenPcOptions();
     }
     if (PcEntryUp() && PcScreenPending()) {
-        // what asked for it, still held, stays hidden until let go; the tap that picks the line goes through
+        // what asked for it, still held, stays hidden until let go; the tap that picks the line goes through, and B
+        // calls it off and backs out as ever
+        if (b_edge) {
+            g_pcs.want_layout = nullptr;
+            g_pc.selected = false;
+        }
     } else if (PcEntryUp()) {
         uint32_t menu = g_pc.screen;
         bool last = R16s(menu + 0x22) == R16s(menu + 0x26) - 1, locked = R8(menu + 0x30);
