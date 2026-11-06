@@ -499,6 +499,65 @@ bool PausePcSelected() {
            R16s(g_pause.screen + 0x22) == g_pause.index && !R8(g_pause.screen + 0x30);
 }
 
+// The button prompts along the foot of a screen ("Press A to select and B to go back", "A Select  B Profile
+// Manager"): one text each (vtable 0x82A450, drawn by 0x30F900) with the buttons as icon codes 33-49 in it. A click on
+// one presses the button whose part of the line it lands in: a button owns the words around it, halfway to the next.
+std::unordered_map<uint32_t, uint32_t> g_prompts;  // prompt -> engine frame last drawn, under g_drawn_lock
+
+void PressIcon(int code) {
+    switch (code - 33) {
+    case 0: input::MenuTap(0, 0x80); break;  // right trigger
+    case 1: TapA(); break;
+    case 2: input::MenuTap(0, 4); break;  // X
+    case 3: input::MenuTap(0, 8); break;  // Y
+    case 4: TapB(); break;
+    case 5: input::MenuTap(0, 0x40); break;  // left trigger
+    case 8: TapDpad(kDpadUp); break;
+    case 9: TapDpad(kDpadRight); break;
+    case 10: TapDpad(kDpadLeft); break;
+    case 11: TapDpad(kDpadDown); break;
+    case 12: input::MenuTap(0x10); break;  // start
+    case 16: input::MenuTap(0x20); break;  // back
+    default: break;
+    }
+}
+
+bool ClickPrompt(X86Context& ctx, float x, float y) {
+    std::vector<uint32_t> prompts;
+    {
+        std::lock_guard lock(g_drawn_lock);
+        uint32_t frame = Frame();
+        for (const auto& [p, f] : g_prompts)
+            if (frame - f <= 2) prompts.push_back(p);
+    }
+    for (uint32_t prompt : prompts) {
+        game::menu::Rect box;
+        uint32_t text = R32(prompt + 0x1C);
+        if (!text || !WidgetBox(ctx, prompt, box) || !box.Contains(x, y)) continue;
+        // the line's characters with a rough width each (an icon is wider), and where its buttons are
+        uint32_t len = kernel::G<uint16_t>(text + 2);
+        if (len == 0 || len > 256) continue;
+        std::vector<float> start;
+        std::vector<std::pair<float, int>> icons;  // middle, code
+        float at = 0;
+        for (uint32_t i = 0; i < len; i++) {
+            uint8_t c = R8(text + 6 + i);
+            float w = (c >= 33 && c <= 49) ? 2.2f : c == ' ' ? 0.5f : 1.0f;
+            if (c >= 33 && c <= 49) icons.push_back({at + w / 2, c});
+            at += w;
+        }
+        if (icons.empty() || at <= 0) continue;
+        float pos = (x - box.left) / (box.right - box.left) * at;
+        size_t pick = 0;
+        for (size_t k = 1; k < icons.size(); k++)
+            if (pos > (icons[k - 1].first + icons[k].first) / 2) pick = k;
+        LOGI("prompt click: button code %d", icons[pick].second);
+        PressIcon(icons[pick].second);
+        return true;
+    }
+    return false;
+}
+
 void PlayMoveSound(X86Context& ctx, uint32_t menu) {
     uint32_t ecx = ctx.ecx;
     ctx.ecx = menu;
@@ -631,6 +690,8 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
         TapDpad(x < value_x - kValueMiddle ? kDpadLeft : kDpadRight);
         return;
     }
+    // a button prompt at the foot of the screen
+    if (pointer.left_clicks && !on_item && ClickPrompt(ctx, x, y)) return;
     // Bonus Materials (screen 0x82A708): the page on the right shows a movie or picture with an arrow each side of it
     // (about 291 and 589 across, 230 down in 640x480), stepped by left and right: a click on that page left or right of
     // its middle steps it
@@ -774,6 +835,11 @@ X86_FUNC(sub_0030F900) {
         g_live_frame = Frame();
         ctx.esp += 4;  // the draw's own ret, skipped with it
         return;
+    }
+    if (R32(prompt) == 0x82A450) {
+        std::lock_guard lock(g_drawn_lock);
+        if (g_prompts.size() > 64) g_prompts.clear();
+        g_prompts[prompt] = Frame();
     }
     __imp__sub_0030F900(ctx, base);
 }
