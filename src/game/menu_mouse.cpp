@@ -1208,10 +1208,15 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
     if ((pointer.left_clicks || pointer.right_clicks) && hit && value_x >= 0 &&
         PcScreenClick(ctx, menu, hit->index, x, pointer.right_clicks > 0))
         return;
-    // PC OPTIONS under the Options menu's items
+    // PC OPTIONS under the Options menu's items: its box, and the gap above it up to halfway to SOUND (whose own box
+    // reaches down over it)
     if (options && menu == g_pc.screen && PcEntryUp()) {
-        game::menu::Rect box;
-        if (WidgetBox(ctx, g_pc.widget, box) && box.Contains(x, y)) {
+        game::menu::Rect box, above;
+        bool on_pc = WidgetBox(ctx, g_pc.widget, box) && box.Contains(x, y);
+        if (!on_pc && WidgetBox(ctx, g_pc.widget, box) && WidgetBox(ctx, g_pc.anchor, above) && x >= box.left &&
+            x < box.right && y < box.top && y >= (above.top + above.bottom + box.top + box.bottom) / 4)
+            on_pc = true;
+        if (on_pc) {
             if ((pointer.moved || pointer.left_clicks) && !g_pc.selected && !R8(menu + 0x30)) {
                 g_pc.selected = true;
                 PlayMoveSound(ctx, menu);

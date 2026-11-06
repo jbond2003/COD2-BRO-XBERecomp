@@ -397,7 +397,8 @@ void BindingRow(size_t action, const char* label) {
     ImGui::PopID();
 }
 
-// the key a waiting box takes: none until every key is up, then the first one down; Escape cancels
+// the key a waiting box takes: none until every key is up, then the first one down; Escape and Backspace (the
+// menus' back keys) cancel
 void UpdateCapture() {
     if (g_capture.action < 0) return;
     int vk = input::PressedKey();
@@ -406,7 +407,7 @@ void UpdateCapture() {
         return;
     }
     if (!vk) return;
-    if (vk != VK_ESCAPE) input::Bind(size_t(g_capture.action), vk, g_capture.slot);
+    if (vk != VK_ESCAPE && vk != VK_BACK) input::Bind(size_t(g_capture.action), vk, g_capture.slot);
     g_capture = {};
 }
 

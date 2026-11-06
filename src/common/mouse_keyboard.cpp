@@ -242,13 +242,15 @@ struct Held {
 
 Held PressActions(const Binds& binds, bool play, Pad& p) {
     Held held;
-    // in a menu the wheel and the mouse buttons do nothing, a bound key presses its button
+    // in a menu the wheel and the mouse buttons do nothing, a bound key presses its button, and Enter and Backspace
+    // are the menu's own (A and B) whatever they are bound to
     auto pressed = [&](size_t action, int vk) {
         constexpr int buttons[] = {VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2};
         uint32_t mask = 0;
         for (int i = 0; i < 5; i++) if (buttons[i] == vk) mask = 1u << i;
         bool mouse = Wheel(vk) || mask;
-        return Down(vk) && (play || !mouse) && !(mask & g_block_mouse.load());
+        bool menu_own = vk == VK_RETURN || vk == VK_BACK;
+        return Down(vk) && (play || !(mouse || menu_own)) && !(mask & g_block_mouse.load());
     };
     for (size_t i = 0; i < kCount; i++) {
         int b = kActions[i].button;
