@@ -1,14 +1,12 @@
 // Texts of the game that speak of the console, said as on a PC. They are entries of the global string table
-// (sp/global.cod; loaded, an entry is a pointer to its text, a pointer to a "[text]" copy, then the text: see
-// hints.cpp), and a screen showing one holds its own copy as a game string (u16 capacity, u16 length, u16 references,
-// the text). Both are rewritten in place wherever they are found, the new text being no longer than the old.
+// (sp/global.cod), found by the game through its hash table lookup (0x2984F0: eax table, the key's hash on the stack;
+// the entry, whose +8 is the text). A text found there is rewritten in place in the table, the new text being no
+// longer than the old, before the game uses it: nothing is searched for.
 
-#include <algorithm>
 #include <cstring>
-#include <functional>
-#include <string_view>
 
 #include "core/log.h"
+#include "cpu/x86_ops.h"
 #include "kernel/kernel.h"
 #include "kernel/memory.h"
 
@@ -32,79 +30,30 @@ constexpr Text kTexts[] = {
      "All progress in this level will be lost. Are you sure you wish to exit to the desktop?"},
 };
 
-// the copies of t starting in [from, to) of guest memory rewritten; the last one's address, 0 for none
-uint32_t Rewrite(const Text& t, size_t from = 0, size_t to = mem::kPhysicalSize) {
-    uint8_t* mem = static_cast<uint8_t*>(kernel::HostPtr(mem::kContiguousBase));
-    size_t size = std::min<size_t>(to + std::strlen(t.xbox) + 1, mem::kPhysicalSize);
-    size_t old_len = std::strlen(t.xbox), new_len = std::strlen(t.pc);
-    std::string_view want(t.xbox, old_len + 1);  // with its zero
-    std::boyer_moore_horspool_searcher search(want.begin(), want.end());
-    uint32_t done = 0;
-    for (uint8_t* at = mem + from; at < mem + size;) {
-        auto [found, end] = search(reinterpret_cast<const char*>(at), reinterpret_cast<const char*>(mem + size));
-        if (found == reinterpret_cast<const char*>(mem + size)) break;
-        uint8_t* p = reinterpret_cast<uint8_t*>(const_cast<char*>(found));
-        size_t off = size_t(p - mem);
-        at = p + want.size();
-        // a game string's copy: its length before the text
-        if (off >= 4) {
-            uint16_t len;
-            std::memcpy(&len, p - 4, 2);
-            if (len == old_len) {
-                uint16_t now = uint16_t(new_len);
-                std::memcpy(p - 4, &now, 2);
-            }
-        }
+bool IsGuest(uint32_t va) { return va >= mem::kContiguousBase && va - mem::kContiguousBase < mem::kPhysicalSize - 256; }
+
+// the entry's text, if one of ours, put as on a PC
+void Check(uint32_t entry) {
+    if (!IsGuest(entry)) return;
+    uint32_t text = kernel::R32(entry + 8);
+    if (!IsGuest(text)) return;
+    char* p = static_cast<char*>(kernel::HostPtr(text));
+    for (const Text& t : kTexts) {
+        if (p[0] != t.xbox[0] || std::strcmp(p, t.xbox) != 0) continue;
+        size_t old_len = std::strlen(t.xbox);
         std::memset(p, 0, old_len);
-        std::memcpy(p, t.pc, new_len);
-        done = mem::kContiguousBase + uint32_t(off);
+        std::memcpy(p, t.pc, std::strlen(t.pc));
+        LOGR("PC text: \"%s\"", t.pc);
+        return;
     }
-    return done;
 }
 
 }  // namespace
 
-namespace game {
+X86_EXTERN_FUNC(__imp__sub_002984F0);
 
-// each client frame. The table loads once, with the front end: until one of the texts is found, memory is searched a
-// piece a frame (a whole-memory search at once made the menus stutter), never in a level; after the pass that found
-// one, only the found entries are looked at, and all are searched for again if one of them goes
-void UpdatePcTexts() {
-    constexpr size_t kPiece = 4u << 20;  // about a millisecond
-    static uint32_t found[std::size(kTexts)] = {};
-    static bool searching = true;
-    static size_t cursor = 0;
-    static int wraps_left = -1;  // passes still to go once something is found
-    for (size_t i = 0; i < std::size(kTexts) && !searching; i++) {
-        if (!found[i]) continue;
-        const Text& t = kTexts[i];
-        const char* at = static_cast<const char*>(kernel::HostPtr(found[i]));
-        if (std::strcmp(at, t.pc) == 0) continue;
-        if (std::strcmp(at, t.xbox) == 0) {
-            char* w = static_cast<char*>(kernel::HostPtr(found[i]));  // written again: put right in place
-            std::memset(w, 0, std::strlen(t.xbox));
-            std::memcpy(w, t.pc, std::strlen(t.pc));
-            continue;
-        }
-        searching = true;
-        wraps_left = -1;
-        for (uint32_t& f : found) f = 0;
-    }
-    if (!searching) return;
-    if (!kernel::R32(0x95F8F8) && kernel::R32(0x95F8FC)) return;  // a level
-    for (size_t i = 0; i < std::size(kTexts); i++)
-        if (uint32_t at = Rewrite(kTexts[i], cursor, cursor + kPiece)) {
-            found[i] = at;
-            if (wraps_left < 0) wraps_left = 2;  // this pass and one more: the others may lie behind it
-        }
-    cursor += kPiece;
-    if (cursor < mem::kPhysicalSize) return;
-    cursor = 0;
-    if (wraps_left < 0 || --wraps_left > 0) return;
-    searching = false;
-    int n = 0;
-    for (uint32_t f : found) n += f != 0;
-    LOGR("PC texts: %d of %zu", n, std::size(kTexts));
+// the hash table lookup (eax table, the hash on the stack; eax the entry or 0)
+X86_FUNC(sub_002984F0) {
+    __imp__sub_002984F0(ctx, base);
+    if (ctx.eax) Check(ctx.eax);
 }
-
-}  // namespace game
