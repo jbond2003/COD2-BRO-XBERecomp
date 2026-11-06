@@ -763,9 +763,10 @@ std::vector<Line> Lines(int selected) {
             o.binding = true;
             o.keys[0] = l.value.empty() ? "-" : l.value;
             o.keys[1] = l.value2.empty() ? "-" : l.value2;
-            o.slot = on ? g_slot : -1;
-            o.waiting = on && g_capture.action >= 0;
-            if (o.waiting) o.keys[g_capture.slot & 1] = "Press a key";
+            // the key box waiting for a key is the one it was picked on, wherever the selection goes
+            o.waiting = g_capture.action == int(rows[i].action);
+            o.slot = o.waiting ? (g_capture.slot & 1) : on ? g_slot : -1;
+            if (o.waiting) o.keys[o.slot] = "Press a key";
             o.value = o.keys[0] + "   " + o.keys[1];
         } else {
             o.value = l.value;

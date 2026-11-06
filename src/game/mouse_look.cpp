@@ -56,7 +56,9 @@ void MouseLook() {
 
 // The keyboard gives the pad controls of the default layout (config/default.cfg); the layouts the options offer
 // (style_a..l.cfg) bind the controls to other commands. Each key's control moves to the one bound to its command
-// now, else to one bound to a similar command.
+// now, else to one bound to a similar command, else its command is run itself (reload and use stay apart where the
+// layout joins them on one button). The lean keys always lean, as on the PC: never the "lean, or switch weapons
+// when not aiming" the dpad has.
 struct PadControl {
     uint16_t digital;     // Pad::buttons bit, 0 for an analog button
     uint8_t analog;       // Pad::analog index when digital is 0
@@ -76,10 +78,7 @@ const char* Similar(const char* command) {
         const char* command;
         const char* similar;
     };
-    static constexpr Pair kSimilar[] = {
-        {"+reload", "+activatereload"}, {"+activate", "+activatereload"}, {"+leanleftswitchnext", "+leanleft"},
-        {"+leanrightswitchnext", "+leanright"}, {"weapnext", "weapprev"},
-    };
+    static constexpr Pair kSimilar[] = {{"weapnext", "weapprev"}};
     for (const Pair& p : kSimilar)
         if (std::strcmp(p.command, command) == 0) return p.similar;
     return nullptr;
@@ -132,16 +131,18 @@ void RemapToLayout(const input::Pad& from, input::Pad& to) {
         const PadControl& c = kPadControls[k];
         uint8_t v = Value(from, c);
         const PadControl* target = nullptr;
+        const char* own = c.key_code == 0x9C ? "+leanleft" : c.key_code == 0x9D ? "+leanright" : nullptr;
         for (const char* command : {c.command, Similar(c.command)}) {
-            if (!command || !*command) continue;
+            if (own || !command || !*command) continue;
             for (size_t i = 0; i < std::size(kPadControls); i++)
                 if (SameCommand(bound[i], command)) target = &kPadControls[i];
             if (target) break;
         }
-        bool direct = v && !target && *c.command && c.key_code != 0xD5;  // not lower stance: the stance keys send theirs
+        const char* command = own ? own : c.command;
+        bool direct = v && !target && *command && c.key_code != 0xD5;  // not lower stance: the stance keys send theirs
         if (direct != commanded[k]) {
-            if (c.command[0] == '+') input::QueueCommand((direct ? "" : "-") + std::string(direct ? c.command : c.command + 1));
-            else if (direct) input::QueueCommand(c.command);
+            if (command[0] == '+') input::QueueCommand((direct ? "" : "-") + std::string(direct ? command : command + 1));
+            else if (direct) input::QueueCommand(command);
             commanded[k] = direct;
         }
         if (v && target) Press(to, *target, v);
@@ -160,6 +161,7 @@ int PadTarget(size_t i) {
     }
     if (!any) return int(i);
     const PadControl& c = kPadControls[i];
+    if (c.key_code == 0x9C || c.key_code == 0x9D) return -1;  // the lean keys run their command
     for (const char* command : {c.command, Similar(c.command)}) {
         if (!command || !*command) continue;
         int target = -1;

@@ -542,9 +542,11 @@ void PauseMenu(uint32_t menu) {
     kernel::G<uint16_t>(game + 4) = 0x4000;
 }
 
+// (locked or not: a click right after the hover that selected it finds the screen still moving its highlight, and
+// its A is ours all the same; PC Options then opens once the screen is still)
 bool PausePcSelected() {
     return g_pause.screen && g_pause.index >= 0 && Frame() - g_pause.frame <= 2 &&
-           R16s(g_pause.screen + 0x22) == g_pause.index && !R8(g_pause.screen + 0x30);
+           R16s(g_pause.screen + 0x22) == g_pause.index;
 }
 
 // The button prompts along the foot of a screen ("Press A to select and B to go back", "A Select  B Profile
@@ -663,7 +665,7 @@ struct PcScreen {
     float own_scales[kMostLines][2] = {};  // the values' letter size, x and y (+0x38, +0x3C)
     float own_aside_y[3] = {};
     uint8_t own_aside_disabled[3] = {};
-    uint32_t idle_color = 0;  // a value's colour on a line not selected
+    uint32_t idle_color = 0, lit_color = 0;  // a value's colour on a line not selected, and on the selected one
     // a binding line: its two keys (strings), the key the selection is on (-1 none) and whether it waits for a key
     bool row_binding[kMostLines] = {}, row_waiting[kMostLines] = {};
     int row_slot[kMostLines] = {};
@@ -795,6 +797,7 @@ void TakePcScreen(uint32_t menu, const Layout& l) {
         g_pcs.own_scales[i][0] = value ? RF(value + 0x38) : 0;
         g_pcs.own_scales[i][1] = value ? RF(value + 0x3C) : 0;
         if (value && l.items[i] != selected && !g_pcs.idle_color) g_pcs.idle_color = R32(value + 0x50);
+        if (value && l.items[i] == selected) g_pcs.lit_color = R32(value + 0x50);
         if (i == 0) first_y = g_pcs.own_label_y[0];
         if (i == 1) step_y = (g_pcs.own_label_y[1] - first_y) / float(l.items[1] - l.items[0]);
     }
@@ -947,7 +950,7 @@ bool PcScreenDrawBinding(X86Context& ctx, uint32_t widget) {
     bool on = R16s(menu + 0x22) == l.items[row];
     uint32_t text = R32(widget + 0x1C), color = R32(widget + 0x50);
     float x = RF(widget + 0x2C), y = RF(widget + 0x30);
-    uint32_t idle = g_pcs.idle_color ? g_pcs.idle_color : color;
+    uint32_t idle = g_pcs.idle_color ? g_pcs.idle_color : color, lit = on || !g_pcs.lit_color ? color : g_pcs.lit_color;
     bool blink = (Frame() / 16) & 1;
     for (int k = 0; k < 2; k++) {
         uint32_t key = g_pcs.row_keys[row][k];
@@ -965,9 +968,9 @@ bool PcScreenDrawBinding(X86Context& ctx, uint32_t widget) {
             if (std::isfinite(height) && height > 0) kernel::G<float>(widget + 0x30) = y + height * (1 - shrink) / 2;
         }
         kernel::G<float>(widget + 0x2C) = x + (k ? l.key_offset : -l.key_offset);
+        bool waiting = g_pcs.row_waiting[row] && g_pcs.row_slot[row] == k;
         bool picked = on && g_pcs.row_slot[row] == k;
-        bool waiting = picked && g_pcs.row_waiting[row];
-        W32(widget + 0x50, waiting ? (blink ? color : idle) : picked ? color : on ? idle : color);
+        W32(widget + 0x50, waiting ? (blink ? lit : idle) : picked ? color : on ? idle : color);
         ctx.ecx = widget;
         g_key_draw = true;
         kernel::CallGuest(ctx, 0x321160, {});
@@ -1167,6 +1170,7 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
 #ifdef _WIN32
     if (app::MenuOpen()) return;  // the settings panel has the mouse
 #endif
+    if (PcScreenUp() && app::pc::Capturing()) return;  // a key box waits for its key: the pointer moves nothing
     if (!pointer.inside) return;
     // between screens the front end has none (a level loading): nothing to point at. Reading the missing screen's
     // fields here crashed the game on a click while the first mission loaded.

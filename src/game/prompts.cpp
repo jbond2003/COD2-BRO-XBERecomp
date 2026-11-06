@@ -681,6 +681,15 @@ void Update() {
         Icon icon = kControlIcons[to];
         if (icon != kIconCount && labels[icon].empty()) labels[icon] = CapLabel(key);
     }
+    // a control that runs its command itself is on no button: the lean keys are the dpad's left and right, and use's
+    // key the X of "Press X to pick up" where the layout joins use and reload
+    auto own = [&](Icon icon, const char* action) {
+        std::string key = input::KeyName(action);
+        if (labels[icon].empty() && !key.empty()) labels[icon] = CapLabel(key);
+    };
+    own(kDpadLeft, "lean_left");
+    own(kDpadRight, "lean_right");
+    own(kX, "use");
     // crouch is a command now, on no button: the hints' B ("Press B to crouch") is its key
     if (labels[kB].empty()) {
         std::string crouch = input::KeyName("crouch");
