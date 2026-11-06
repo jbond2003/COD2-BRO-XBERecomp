@@ -5,7 +5,7 @@
 // rewritten in place to the keys (within the room each entry has), and put back when a controller is used. The prone
 // hint ("press crouch again") follows the new controls: Z on the keys, B held with the Modern layout.
 //
-// Two lines of our own in the first mission: sprint, 5 seconds after the game's "to move around" hint (the level
+// Two lines of our own in the first mission: sprint, 15 seconds after the game's "to move around" hint (the level
 // script's, as the player gains control after the opening scene), and on the keyboard and mouse leaning 5 seconds
 // after that; a hint of the game's own in the meantime ends them. The script's hint (0x2FEF80: the text's key hash) goes to the HUD (0x32CED0, esi the HUD [0x95F8F0], eax
 // the hash): the text found in the global table is given to the hint widget ([HUD+0x3C], vtable +0x140 = 0x32EE50:
@@ -121,7 +121,8 @@ constexpr uint32_t kGlobalTable = 0x95F5D8;   // the global string table
 constexpr uint32_t kLookup = 0x2984F0;        // (eax table; the key's hash on the stack) the entry, its text at +8
 constexpr uint32_t kSetHint = 0x32EE50;       // hint widget's (ecx) text, with the game's reveal and duration
 constexpr uint32_t kSetHintArgs[] = {0x190, 0xBF800000u};
-constexpr double kLineAfter = 5.0;  // seconds after the previous line
+constexpr double kSprintAfter = 15.0;  // seconds after the game's move hint
+constexpr double kLeanAfter = 5.0;     // seconds after the sprint line
 
 double g_first = 0;  // when the game's move hint was set, 0 outside the sequence
 int g_lines = 0;     // our lines shown since
@@ -158,11 +159,11 @@ void UpdateLines(X86Context& ctx) {
         return;
     }
     double since = Now() - g_first;
-    if (g_lines == 0 && since >= kLineAfter) {
+    if (g_lines == 0 && since >= kSprintAfter) {
         // the token is the game's, "L3 Button" on a controller
         ShowLine(ctx, g_keyboard ? "Hold " + Key("sprint", "Shift") + " to sprint" : std::string("Hold the [SPRINT] to sprint"));
         g_lines = 1;
-    } else if (g_lines == 1 && since >= 2 * kLineAfter) {
+    } else if (g_lines == 1 && since >= kSprintAfter + kLeanAfter) {
         if (g_keyboard) ShowLine(ctx, Lean());
         g_lines = 2;
         g_first = 0;
