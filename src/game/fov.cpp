@@ -60,9 +60,6 @@ X86_FUNC(sub_002F1E60) {
     game::UpdatePrompts();
     game::UpdateHints();
     game::RunCommands(ctx);
-    // the front end (its UI manager, null in a level) runs at 30 fps like its movies and backdrops, so the menus do
-    // not change speed from screen to screen
-    if (kernel::R32(0x95F8F8)) app::LimitNextFrame(30);
 }
 
 // R_RenderView, the gun scene's fov_y just loaded into ecx

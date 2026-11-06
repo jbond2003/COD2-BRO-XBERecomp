@@ -54,6 +54,7 @@ constexpr uint32_t kSoundSlot = 0x10, kSelectSlot = 0x88;
 constexpr uint32_t kPressStartVtable = 0x8295A0;  // in game, after a level loads: "Press A to start"
 constexpr uint32_t kTypewriterVtable = 0x82A068;
 constexpr uint32_t kProfilesVtable = 0x828ED0;  // Profile Manager
+constexpr uint32_t kBonusVtable = 0x82A708;     // Bonus Materials
 constexpr uint32_t kTypewriterActivate = 0x338C40;
 constexpr int16_t kSpaceKey = 38;
 
@@ -583,9 +584,17 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
         LOGI("menu click at %.0f,%.0f: screen %08x, %d items, picker %d: item %d of %zu shown, value %.0f, selected %d, locked %d", x, y, menu ? R32(menu) : 0, menu ? R16s(menu + 0x26) : 0, menu ? int(Horizontal(menu)) : 0,
              hit ? hit->index : -1, items.size(), value_x, R16s(menu + 0x22), R8(menu + 0x30));
     int16_t selected = R16s(menu + 0x22);
-    // a picker's choices (difficulty: Easy, Normal, Hard...) are lines stacked in one place, showing one at a time:
+    // a picker's choices (difficulty: Easy, Normal, Hard...) that are lines stacked in one place, showing one at a time:
     // the pointer over them picks none, the arrows and the wheel step, a click takes the one shown
-    if (on_item && Horizontal(menu)) {
+    auto stacked = [&]() {
+        int same = 0;
+        for (const ItemBox& b : items)
+            if (std::abs((b.box.top + b.box.bottom) / 2 - (hit->box.top + hit->box.bottom) / 2) < 4 &&
+                std::abs((b.box.left + b.box.right) / 2 - (hit->box.left + hit->box.right) / 2) < 4)
+                same++;
+        return same > 1;
+    };
+    if (on_item && Horizontal(menu) && stacked()) {
         hit = nullptr;
         on_item = false;
         if (pointer.left_clicks) {
@@ -611,6 +620,13 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
     if (pointer.left_clicks && value_x >= 0) {
         constexpr float kValueMiddle = 10.0f;
         TapDpad(x < value_x - kValueMiddle ? kDpadLeft : kDpadRight);
+        return;
+    }
+    // Bonus Materials (screen 0x82A708): the page on the right shows a movie or picture with an arrow each side of it
+    // (about 291 and 589 across, 230 down in 640x480), stepped by left and right: a click on that page left or right of
+    // its middle steps it
+    if (pointer.left_clicks && !on_item && R32(menu) == kBonusVtable && x > 250.0f && y > 120.0f && y < 340.0f) {
+        TapDpad(x < 440.0f ? kDpadLeft : kDpadRight);
         return;
     }
     bool no_items = !menu || R16s(menu + 0x26) <= 0;
