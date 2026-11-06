@@ -21,6 +21,15 @@ struct Text {
 
 constexpr Text kTexts[] = {
     {"Checking hard disk. Please do not turn off your Xbox console.", "Checking storage. Please do not turn off your PC."},
+    {"Loading profile. Please do not turn off your Xbox console.", "Loading profile. Please do not turn off your PC."},
+    {"Saving Profile. Please don't turn off your Xbox console.", "Saving profile. Please do not turn off your PC."},
+    {"Overwriting game. Please do not turn off your Xbox console.", "Overwriting game. Please do not turn off your PC."},
+    {"Deleting game. Please do not turn off your Xbox console.", "Deleting game. Please do not turn off your PC."},
+    {"Formatting hard drive. Please do not turn off your Xbox console.",
+     "Formatting storage. Please do not turn off your PC."},
+    {"No saved games present on hard disk.", "No saved games present."},
+    {"All progress in this level will be lost. Are you sure you wish to exit to the Xbox Dashboard?",
+     "All progress in this level will be lost. Are you sure you wish to exit to the desktop?"},
 };
 
 uint32_t Rewrite(const Text& t) {
@@ -57,27 +66,35 @@ uint32_t Rewrite(const Text& t) {
 namespace game {
 
 // each client frame. The table loads once, with the front end: it is searched for (a whole-memory search, so only
-// every half second) until found, then only its entry is looked at
+// every half second, never in a level) until one of the texts is found; then only the found entries are looked at,
+// and all are searched for again if one of them goes (the table loaded again elsewhere)
 void UpdatePcTexts() {
     static uint32_t frames = 0;
     static uint32_t found[std::size(kTexts)] = {};
+    static bool searching = true;
     frames++;
-    bool level = !kernel::R32(0x95F8F8) && kernel::R32(0x95F8FC);  // in a level: never a search
-    for (size_t i = 0; i < std::size(kTexts); i++) {
+    for (size_t i = 0; i < std::size(kTexts) && !searching; i++) {
+        if (!found[i]) continue;
         const Text& t = kTexts[i];
-        if (found[i]) {
-            const char* at = static_cast<const char*>(kernel::HostPtr(found[i]));
-            if (std::strcmp(at, t.pc) == 0) continue;
-            if (std::strcmp(at, t.xbox) != 0) {
-                found[i] = 0;  // the table went (loaded again elsewhere): searched for again
-                continue;
-            }
+        const char* at = static_cast<const char*>(kernel::HostPtr(found[i]));
+        if (std::strcmp(at, t.pc) == 0) continue;
+        if (std::strcmp(at, t.xbox) == 0) {
+            char* w = static_cast<char*>(kernel::HostPtr(found[i]));  // written again: put right in place
+            std::memset(w, 0, std::strlen(t.xbox));
+            std::memcpy(w, t.pc, std::strlen(t.pc));
+            continue;
         }
-        if (!found[i] && (frames % 15 || level)) continue;
-        uint32_t at = Rewrite(t);
-        if (at && !found[i]) LOGR("PC text: \"%s\"", t.pc);
-        found[i] = at;
+        searching = true;
     }
+    if (!searching) return;
+    bool level = !kernel::R32(0x95F8F8) && kernel::R32(0x95F8FC);
+    if (frames % 15 || level) return;
+    int n = 0;
+    for (size_t i = 0; i < std::size(kTexts); i++)
+        if ((found[i] = Rewrite(kTexts[i]))) n++;
+    if (!n) return;
+    searching = false;
+    LOGR("PC texts: %d of %zu", n, std::size(kTexts));
 }
 
 }  // namespace game
