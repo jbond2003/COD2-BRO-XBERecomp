@@ -1,9 +1,9 @@
 // The original Call of Duty's (PC, 2003) crosshair in place of Big Red One's. Both games build the crosshair from the
 // same pieces, named alike: a centre (center_dot), the sides that spread (side_skinny) and the arc of some weapons
 // (side_small_arc, the grenades'). Big Red One's are in each level's weapons.cod; the PC game's are gfx/reticle/*.tga in its
-// Main/pak5.pk3. Nothing of either game is in this repository: the PC pictures are read from the player's own install
-// (Steam's, or the folder in COD_PC_DIR) when the game asks for the matching texture, and without one the crosshair
-// stays as it is.
+// Main/pak5.pk3. Nothing of either game is in this repository: the PC pictures are read from a copy in the game files
+// (pc\reticle\*.tga beside sp\), else from the player's own PC install (Steam's, or the folder in COD_PC_DIR), when
+// the game asks for the matching texture; without either the crosshair stays as it is.
 
 #include <algorithm>
 #include <array>
@@ -25,6 +25,7 @@
 
 #include "core/log.h"
 #include "gpu/texture_override.h"
+#include "kernel/kernel.h"
 
 namespace game {
 bool ReadPackFile(const char* pack, const std::string& name, std::vector<uint8_t>& out);  // src/game/prompts.cpp
@@ -352,8 +353,9 @@ std::shared_ptr<Picture> Tga(const std::vector<uint8_t>& t, uint32_t n) {
 }
 
 struct Piece {
-    const char* bro;  // in weapons.cod
-    const char* pc;   // in the PC game's pk3s
+    const char* bro;   // in weapons.cod
+    const char* pc;    // in the PC game's pk3s
+    const char* copy;  // a copy in the game files (D:\pc\reticle), read first
     std::vector<uint8_t> level0;  // Big Red One's texture as the game loads it
     std::shared_ptr<const Picture> picture;
 };
@@ -362,9 +364,11 @@ std::once_flag g_loaded;
 std::vector<Piece> g_pieces;  // written once, under g_loaded
 
 void Load() {
-    std::vector<Piece> pieces = {{"center_dot.dds", "gfx/reticle/hud@center_dot.tga", {}, nullptr},
-                                 {"side_skinny.dds", "gfx/reticle/side_skinny.tga", {}, nullptr},
-                                 {"side_small_arc.dds", "gfx/reticle/hud@side_small_arc.tga", {}, nullptr}};
+    std::vector<Piece> pieces = {
+        {"center_dot.dds", "gfx/reticle/hud@center_dot.tga", "D:\\pc\\reticle\\center_dot.tga", {}, nullptr},
+        {"side_skinny.dds", "gfx/reticle/side_skinny.tga", "D:\\pc\\reticle\\side_skinny.tga", {}, nullptr},
+        {"side_small_arc.dds", "gfx/reticle/hud@side_small_arc.tga", "D:\\pc\\reticle\\side_small_arc.tga", {},
+         nullptr}};
     fs::path main;
     for (const fs::path& dir : InstallCandidates()) {
         std::error_code ec;
@@ -373,18 +377,16 @@ void Load() {
             break;
         }
     }
-    if (main.empty()) {
-        LOGR("PC crosshair: Call of Duty (PC) not found, the crosshair stays as it is");
-        return;
-    }
     // the pk3s in the order the PC game loads them: a later one replaces a file of an earlier one
     std::vector<fs::path> paks;
     std::error_code ec;
-    for (const auto& e : fs::directory_iterator(main, ec)) {
-        std::string n = e.path().filename().string();
-        std::string lower = n;
-        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return char(std::tolower(c)); });
-        if (lower.size() > 4 && lower.substr(lower.size() - 4) == ".pk3") paks.push_back(e.path());
+    if (!main.empty()) {
+        for (const auto& e : fs::directory_iterator(main, ec)) {
+            std::string lower = e.path().filename().string();
+            std::transform(lower.begin(), lower.end(), lower.begin(),
+                           [](unsigned char c) { return char(std::tolower(c)); });
+            if (lower.size() > 4 && lower.substr(lower.size() - 4) == ".pk3") paks.push_back(e.path());
+        }
     }
     std::sort(paks.begin(), paks.end());
     int found = 0;
@@ -392,13 +394,15 @@ void Load() {
         std::vector<uint8_t> dds, tga;
         if (!game::ReadPackFile("D:\\sp\\prologue\\weapons.cod", p.bro, dds) || dds.size() <= 128) continue;
         p.level0.assign(dds.begin() + 128, dds.end());
+        if (!kernel::ReadGameFile(p.copy, tga)) tga.clear();
         for (auto it = paks.rbegin(); it != paks.rend() && tga.empty(); ++it) ReadZipEntry(*it, p.pc, tga);
         if (tga.empty()) continue;
         p.picture = Tga(tga, 8);
         if (p.picture) found++;
     }
     g_pieces = std::move(pieces);
-    LOGR("PC crosshair: %d of %zu pieces from %s", found, g_pieces.size(), main.string().c_str());
+    LOGR("PC crosshair: %d of %zu pieces (game files, then %s)", found, g_pieces.size(),
+         main.empty() ? "no PC install" : main.string().c_str());
 }
 
 }  // namespace

@@ -22,6 +22,7 @@
 // behind, so the QWERTY layout relabels the keys and maps each key to its new letter in 0x325980.
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -504,6 +505,60 @@ bool PausePcSelected() {
 // one presses the button whose part of the line it lands in: a button owns the words around it, halfway to the next.
 std::unordered_map<uint32_t, uint32_t> g_prompts;  // prompt -> engine frame last drawn, under g_drawn_lock
 
+// Keyboard and mouse prompts (the controller keeps the game's own): the go-back part of a prompt ("and B to go back",
+// "B Back") is its own Back button at the bottom left, a copy of the prompt with the word "Back", dim like an
+// unselected line (alpha 0x8C) and lit when the pointer is on it (0xFF); a click on it presses B
+bool KeyboardPrompts() {
+    uint32_t mode = game::Opt().button_prompts;
+    return mode == 1 || (mode != 2 && input::KeyboardActive());
+}
+
+struct BackButton {
+    uint32_t copy = 0;   // the prompt's copy drawn as Back
+    uint32_t word = 0;   // "Back"
+    uint32_t frame = 0;  // engine frame last drawn
+    bool hover = false;
+} g_back;
+constexpr uint32_t kPromptBytes = 0x100;
+constexpr float kBackX = 40.0f;
+std::unordered_map<std::string, uint32_t> g_without_back;  // prompt text -> it without its go-back part (0: none left)
+std::unordered_map<uint32_t, uint32_t> g_shown_text;       // prompt -> the text drawn last, under g_drawn_lock
+
+bool IsIcon(char c) { return c >= 33 && c <= 49; }
+
+// the prompt's text without its go-back part, or the text itself when it has none; 0 when nothing would be left
+uint32_t WithoutBack(uint32_t text) {
+    uint32_t len = kernel::G<uint16_t>(text + 2);
+    if (len == 0 || len > 256) return text;
+    std::string line;
+    for (uint32_t i = 0; i < len; i++) line += char(R8(text + 6 + i));
+    auto known = g_without_back.find(line);
+    constexpr uint32_t kSame = 0xFFFFFFFF;
+    if (known != g_without_back.end()) return known->second == kSame ? text : known->second;
+    size_t b = line.find('%');
+    uint32_t out = text;
+    if (b != std::string::npos) {
+        size_t end = b + 1;
+        while (end < line.size() && !IsIcon(line[end])) end++;
+        std::string part = line.substr(b, end - b);
+        std::transform(part.begin(), part.end(), part.begin(), [](char c) { return char(std::tolower(uint8_t(c))); });
+        if (part.find("back") != std::string::npos) {
+            size_t start = b;
+            size_t joined = line.rfind(" and ", b);
+            if (joined != std::string::npos && joined + 5 == b) start = joined;
+            while (start > 0 && line[start - 1] == ' ') start--;
+            std::string before = line.substr(0, start), after = line.substr(end);
+            std::string rest = before.empty() || after.empty() ? before + after : before + "  " + after;
+            while (!rest.empty() && rest.back() == ' ') rest.pop_back();
+            bool button = std::any_of(rest.begin(), rest.end(), IsIcon);
+            out = button ? GameString(rest.c_str()) : 0;
+        }
+    }
+    if (g_without_back.size() > 256) g_without_back.clear();  // (the strings made stay: a few bytes each)
+    g_without_back[line] = out == text ? kSame : out;
+    return out;
+}
+
 void PressIcon(int code) {
     switch (code - 33) {
     case 0: input::MenuTap(0, 0x80); break;  // right trigger
@@ -532,8 +587,17 @@ bool ClickPrompt(X86Context& ctx, float x, float y) {
     }
     for (uint32_t prompt : prompts) {
         game::menu::Rect box;
-        uint32_t text = R32(prompt + 0x1C);
-        if (!text || !WidgetBox(ctx, prompt, box) || !box.Contains(x, y)) continue;
+        uint32_t own = R32(prompt + 0x1C), text = own;
+        {
+            std::lock_guard lock(g_drawn_lock);
+            auto shown = g_shown_text.find(prompt);
+            if (shown != g_shown_text.end()) text = shown->second;
+        }
+        if (!text) continue;
+        W32(prompt + 0x1C, text);
+        bool boxed = WidgetBox(ctx, prompt, box);
+        W32(prompt + 0x1C, own);
+        if (!boxed || !box.Contains(x, y)) continue;
         // the line's characters with a rough width each (an icon is wider), and where its buttons are
         uint32_t len = kernel::G<uint16_t>(text + 2);
         if (len == 0 || len > 256) continue;
@@ -609,6 +673,18 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
     // fields here crashed the game on a click while the first mission loaded.
     if (!menu) return;
     float x = pointer.x, y = pointer.y;
+    // the Back button
+    g_back.hover = false;
+    if (g_back.copy && frame - g_back.frame <= 2 && KeyboardPrompts()) {
+        game::menu::Rect box;
+        if (WidgetBox(ctx, g_back.copy, box) && box.Contains(x, y)) {
+            g_back.hover = true;
+            if (pointer.left_clicks) {
+                TapB();
+                return;
+            }
+        }
+    }
     // a click that could not select its item yet (the screen was locked) waits a little
     static int held_clicks = 0;
     static uint32_t held_since = 0;
@@ -797,10 +873,7 @@ uint32_t ClickToStart() {
     return str;
 }
 
-bool StartPrompt() {
-    uint32_t mode = game::Opt().button_prompts;
-    return mode == 1 || (mode != 2 && input::KeyboardActive());
-}
+bool StartPrompt() { return KeyboardPrompts(); }
 
 }  // namespace
 
@@ -836,12 +909,56 @@ X86_FUNC(sub_0030F900) {
         ctx.esp += 4;  // the draw's own ret, skipped with it
         return;
     }
-    if (R32(prompt) == 0x82A450) {
-        std::lock_guard lock(g_drawn_lock);
-        if (g_prompts.size() > 64) g_prompts.clear();
-        g_prompts[prompt] = Frame();
+    static bool drawing_back = false;
+    if (R32(prompt) != 0x82A450 || drawing_back) {
+        __imp__sub_0030F900(ctx, base);
+        return;
     }
+    uint32_t own = R32(prompt + 0x1C);
+    uint32_t text = own && KeyboardPrompts() ? WithoutBack(own) : own;
+    {
+        std::lock_guard lock(g_drawn_lock);
+        if (g_prompts.size() > 64) g_prompts.clear(), g_shown_text.clear();
+        g_prompts[prompt] = Frame();
+        g_shown_text[prompt] = text;
+    }
+    if (text == own) {
+        __imp__sub_0030F900(ctx, base);
+        return;
+    }
+    // the Back button: the prompt's copy, at the bottom left
+    if (!g_back.copy) g_back.copy = mem::AllocSystem(kPromptBytes);
+    if (!g_back.word) g_back.word = GameString("Back");
+    if (!g_back.copy || !g_back.word) {
+        __imp__sub_0030F900(ctx, base);
+        return;
+    }
+    std::memcpy(kernel::HostPtr(g_back.copy), kernel::HostPtr(prompt), kPromptBytes);
+    kernel::G<uint16_t>(g_back.word + 4) = 0x4000;
+    W32(g_back.copy + 0x1C, g_back.word);
+    kernel::G<float>(g_back.copy + 0x2C) = kBackX;
+    kernel::G<uint8_t>(g_back.copy + 0x5C) = uint8_t((R8(prompt + 0x5C) & ~0x30) | 0x10);  // its left end at x
+    uint32_t color = R32(prompt + 0x50) & 0xFFFFFF;
+    W32(g_back.copy + 0x50, color | (g_back.hover ? kSelectedAlpha : kIdleAlpha));
+    g_back.frame = Frame();
+    if (!text) {
+        // nothing left of the prompt but going back: only the button
+        ctx.ecx = g_back.copy;
+        drawing_back = true;
+        __imp__sub_0030F900(ctx, base);
+        drawing_back = false;
+        return;
+    }
+    kernel::G<uint16_t>(text + 4) = 0x4000;
+    W32(prompt + 0x1C, text);
     __imp__sub_0030F900(ctx, base);
+    W32(prompt + 0x1C, own);
+    uint32_t ecx = ctx.ecx;
+    ctx.ecx = g_back.copy;
+    drawing_back = true;
+    kernel::CallGuest(ctx, 0x30F900, {});  // (the original's ret already went: a call of its own)
+    drawing_back = false;
+    ctx.ecx = ecx;
 }
 
 // a text widget's draw (ecx widget)
