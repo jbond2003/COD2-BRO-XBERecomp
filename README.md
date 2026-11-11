@@ -65,3 +65,12 @@ regional release has its code at other addresses and is not supported.
 - [CoD2 BRO Native Loader](https://github.com/SmokeDoggy044/CoD2-BRO-Native-Loader) by SmokeDoggy044, the guide for this
   port's features and a reference for parts of it.
 - Made with the help of [Claude](https://claude.ai).
+
+<details>
+<summary>Secrets (spoilers)</summary>
+
+- **Cheats:** press F10, go to the end of the panel and enter the password `brooklyn`. The cheats stay unlocked until
+  the game is closed, and they can break missions, so use them at your own risk.
+- **Every mission unlocked:** create a profile named `thereisacow1337`.
+
+</details>
