@@ -1,5 +1,3 @@
 #include <winres.h>
 COD2BRO_CURSOR RCDATA "@CMAKE_CURRENT_SOURCE_DIR@/cursor.png"
 COD2BRO_MODERN_PAD RCDATA "@CMAKE_CURRENT_SOURCE_DIR@/modern_controller.png"
-// the executable's icon (an original drawing: a red 2 on olive green, square)
-1 ICON "@CMAKE_CURRENT_SOURCE_DIR@/icon.ico"
