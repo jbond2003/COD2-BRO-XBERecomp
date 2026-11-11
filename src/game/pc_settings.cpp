@@ -38,19 +38,36 @@ float g_shade = 1.0f;         // and how far faded in (1) or out (0)
 // The first start's title picture (menu_mouse.cpp TitleScreen) goes out through black into the profile screen, where
 // it cut: the ramp is scaled down, held black while the game changes screens, and brought back up. By the clock, so
 // the picture always comes back.
-constexpr int64_t kFadeOutMs = 400, kBlackUntilMs = 700, kFadeInMs = 500;
+constexpr int64_t kFadeOutMs = 400, kBlackUntilMs = 900, kFadeInMs = 500;
 std::atomic<int64_t> g_fade_start{0};  // steady clock ms, 0: none
+// and the title picture comes in from black as it starts (held black a moment while the window takes its size)
+constexpr int64_t kInBlackMs = 150, kInMs = 700;
+std::atomic<int64_t> g_fade_in_start{0};
 
 int64_t SteadyMs() {
     using namespace std::chrono;
     return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
 }
 
-float Shade() {
-    int64_t start = g_fade_start.load(std::memory_order_relaxed);
+float smooth(float x) {
+    x = std::clamp(x, 0.0f, 1.0f);
+    return x * x * (3.0f - 2.0f * x);
+}
+
+float ShadeIn() {
+    int64_t start = g_fade_in_start.load(std::memory_order_relaxed);
     if (!start) return 1.0f;
     int64_t t = SteadyMs() - start;
-    auto smooth = [](float x) { x = std::clamp(x, 0.0f, 1.0f); return x * x * (3.0f - 2.0f * x); };
+    if (t < kInBlackMs) return 0.0f;
+    if (t < kInBlackMs + kInMs) return smooth(float(t - kInBlackMs) / kInMs);
+    g_fade_in_start.store(0, std::memory_order_relaxed);
+    return 1.0f;
+}
+
+float Shade() {
+    int64_t start = g_fade_start.load(std::memory_order_relaxed);
+    if (!start) return ShadeIn();
+    int64_t t = SteadyMs() - start;
     if (t < kFadeOutMs) return 1.0f - smooth(float(t) / kFadeOutMs);
     if (t < kBlackUntilMs) return 0.0f;
     if (t < kBlackUntilMs + kFadeInMs) return smooth(float(t - kBlackUntilMs) / kFadeInMs);
@@ -60,7 +77,7 @@ float Shade() {
 
 void UpdateBrightness(X86Context& ctx) {
     uint32_t want = std::clamp(game::Opt().brightness, 50u, 200u);
-    float shade = Shade();
+    float shade = std::min(Shade(), ShadeIn());
     if (want == g_brightness && shade == g_shade) return;
     if (!g_ramp) g_ramp = mem::AllocSystem(kRampBytes);
     if (!g_ramp) return;
@@ -92,7 +109,12 @@ void UpdateHud() {
 namespace game {
 
 // the picture fades to black, stays a moment, and fades back (the first start's title picture into the profile screen)
-void StartScreenFade() { g_fade_start.store(SteadyMs(), std::memory_order_relaxed); }
+void StartScreenFade() {
+    g_fade_in_start.store(0, std::memory_order_relaxed);
+    g_fade_start.store(SteadyMs(), std::memory_order_relaxed);
+}
+// the picture comes in from black (the first start's title picture)
+void StartScreenFadeIn() { g_fade_in_start.store(SteadyMs(), std::memory_order_relaxed); }
 
 // each client frame
 void UpdatePcSettings(X86Context& ctx) {

@@ -50,7 +50,8 @@ using kernel::R32;
 using kernel::W32;
 
 namespace game {
-void StartScreenFade();  // src/game/pc_settings.cpp
+void StartScreenFade();    // src/game/pc_settings.cpp
+void StartScreenFadeIn();  // src/game/pc_settings.cpp
 }
 
 namespace {
@@ -1812,6 +1813,7 @@ void TitleScreen() {
         }
         state = have ? kLeave : kFading;
         since = now;
+        if (!have) game::StartScreenFadeIn();  // the picture comes in from black, at its size from the first frame
     }
     if (state == kFading && now - since >= kFadeMs) {
         std::filesystem::path file = app::ExeDir() / app::kGame.splash;
@@ -1827,7 +1829,11 @@ void TitleScreen() {
         game::StartScreenFade();
         fading_out = true;
     }
-    if (state == kSaving && now - since >= kSaveMs + kFadeOutMs) state = kLeave;
+    if (state == kSaving && now - since >= kSaveMs + kFadeOutMs) {
+        state = kLeave;
+        // the title's fit goes with it: the profile screen comes up in the black at its own size, not the title's
+        g_title_drawn_ms.store(0, std::memory_order_relaxed);
+    }
     if (state != kLeave) {
         g_title_drawn_ms.store(now, std::memory_order_relaxed);
         return;
