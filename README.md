@@ -15,6 +15,7 @@ An unofficial native PC port of the original Xbox version of Call of Duty 2: Big
   it.
 - **Sharp text.** The game's small, blurry bitmap fonts are drawn again from real font files, crisp at high
   resolutions.
+- **No more 4:3 menus.** The front end menus fill a widescreen window instead of sitting in a box with black bars.
 - **Higher resolutions and a field of view setting**, in a PC Options menu built in the game's own style.
 - **Sprint in the campaign**, which the Xbox game only had in multiplayer.
 
