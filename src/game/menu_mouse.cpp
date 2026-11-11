@@ -49,6 +49,10 @@
 using kernel::R32;
 using kernel::W32;
 
+namespace game {
+void StartScreenFade();  // src/game/pc_settings.cpp
+}
+
 namespace {
 
 constexpr uint32_t kFrontEnd = 0x95F8F8, kInGame = 0x95F8FC, kDialogs = 0x95F900;
@@ -376,6 +380,10 @@ int KeyOf(char c) {
 }
 
 uint32_t g_typewriter = 0;  // the screen while it is up
+// keys clicked with the mouse, typed in order as the screen can take them: a click used to wait for the highlight to
+// reach its key and was lost when the pointer moved on quickly
+int g_clicked[16];
+int g_clicked_count = 0;
 
 // the keys' labels to the layout: each label string moves to the key that types its character, whatever case the
 // shift key last gave them
@@ -429,7 +437,10 @@ void Typewriter(X86Context& ctx, uint32_t menu) {
     bool up = menu && R32(menu) == kTypewriterVtable;
     if (up != (g_typewriter != 0)) input::SetTextEntry(up);
     g_typewriter = up ? menu : 0;
-    if (!up) return;
+    if (!up) {
+        g_clicked_count = 0;
+        return;
+    }
     Relabel(menu);
     if (R8(menu + 0x30)) return;  // locked
     // The keys show capitals while the keyboard would type them: Shift held, or Caps Lock on (and small letters with
@@ -441,6 +452,24 @@ void Typewriter(X86Context& ctx, uint32_t menu) {
     char c = input::TakeTyped();
     if (c) Type(ctx, menu, c);
     if (R32(menu) != kTypewriterVtable) return;  // Done or back closed it
+    // one clicked key a poll, as a press of A on it would: the key is selected and activated at once
+    if (g_clicked_count && !R8(menu + 0x30)) {
+        int key = g_clicked[0];
+        std::memmove(g_clicked, g_clicked + 1, sizeof(int) * size_t(--g_clicked_count));
+        uint32_t items = R32(menu + 4);
+        uint32_t item = items && key < R16s(menu + 0x26) ? R32(items + uint32_t(key) * 4) : 0;
+        if (item && !R8(item + 0x16)) {
+            if (R16s(menu + 0x22) != key) Select(ctx, menu, int16_t(key));
+            uint32_t ecx = ctx.ecx;
+            ctx.ecx = menu;
+            kernel::CallGuest(ctx, kTypewriterActivate, {uint32_t(key)});
+            ctx.ecx = ecx;
+        }
+        if (R32(menu) != kTypewriterVtable) {
+            g_clicked_count = 0;
+            return;
+        }
+    }
     bool capitals = input::ShiftHeld() != input::CapsLockOn();
     if (capitals == shown) return;
     shown = capitals;
@@ -1795,7 +1824,7 @@ void TitleScreen() {
     enum { kNew, kFading, kSaving, kLeave };
     static int state = kNew;
     static int64_t since = 0, tapped = 0;
-    constexpr int64_t kFadeMs = 1500, kSaveMs = 300, kTapMs = 150;
+    constexpr int64_t kFadeMs = 1500, kSaveMs = 150, kFadeOutMs = 400, kTapMs = 150;
     int64_t now = NowMs();
     if (state == kNew) {
         std::error_code ec;
@@ -1815,7 +1844,14 @@ void TitleScreen() {
         LOGR("title screen: its picture is saved as the boot splash");
         state = kSaving, since = now;
     }
-    if (state == kSaving && now - since >= kSaveMs) state = kLeave;
+    // a moment after the save (so the saved frame is the bright one) the picture fades out, and the title is left
+    // once it is black (StartScreenFade, pc_settings.cpp): no cut to the profile screen
+    static bool fading_out = false;
+    if (state == kSaving && !fading_out && now - since >= kSaveMs) {
+        game::StartScreenFade();
+        fading_out = true;
+    }
+    if (state == kSaving && now - since >= kSaveMs + kFadeOutMs) state = kLeave;
     if (state != kLeave) {
         g_title_drawn_ms.store(now, std::memory_order_relaxed);
         return;
@@ -1979,6 +2015,12 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
     if (!on_item) hover_pending = false;
     if (on_item && hit->index == selected) hover_pending = false;
     if (picker_hover) hover_pending = false;
+    // a click on a typewriter key types that key, whatever the highlight is doing (Typewriter)
+    if (pointer.left_clicks && on_item && R32(menu) == kTypewriterVtable && hit->index <= kDone) {
+        for (int i = 0; i < pointer.left_clicks && g_clicked_count < 16; i++) g_clicked[g_clicked_count++] = hit->index;
+        hover_pending = false;
+        return;
+    }
     if (on_item && !R8(menu + 0x30) && (hover_pending || pointer.left_clicks) && hit->index != selected) {
         Select(ctx, menu, hit->index);
         hover_pending = R16s(menu + 0x22) != hit->index;  // (a Bonus page steps a row at a time, StepTo)

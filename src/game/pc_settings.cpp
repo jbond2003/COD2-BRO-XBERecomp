@@ -13,6 +13,8 @@
 // level, for a profile or session an older build left it off in.
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 
@@ -31,20 +33,46 @@ constexpr uint32_t kRampBytes = 768;
 
 uint32_t g_ramp = 0;       // ours, in guest memory
 uint32_t g_brightness = 100;  // what the picture has
+float g_shade = 1.0f;         // and how far faded in (1) or out (0)
+
+// The first start's title picture (menu_mouse.cpp TitleScreen) goes out through black into the profile screen, where
+// it cut: the ramp is scaled down, held black while the game changes screens, and brought back up. By the clock, so
+// the picture always comes back.
+constexpr int64_t kFadeOutMs = 400, kBlackUntilMs = 700, kFadeInMs = 500;
+std::atomic<int64_t> g_fade_start{0};  // steady clock ms, 0: none
+
+int64_t SteadyMs() {
+    using namespace std::chrono;
+    return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
+}
+
+float Shade() {
+    int64_t start = g_fade_start.load(std::memory_order_relaxed);
+    if (!start) return 1.0f;
+    int64_t t = SteadyMs() - start;
+    auto smooth = [](float x) { x = std::clamp(x, 0.0f, 1.0f); return x * x * (3.0f - 2.0f * x); };
+    if (t < kFadeOutMs) return 1.0f - smooth(float(t) / kFadeOutMs);
+    if (t < kBlackUntilMs) return 0.0f;
+    if (t < kBlackUntilMs + kFadeInMs) return smooth(float(t - kBlackUntilMs) / kFadeInMs);
+    g_fade_start.store(0, std::memory_order_relaxed);
+    return 1.0f;
+}
 
 void UpdateBrightness(X86Context& ctx) {
     uint32_t want = std::clamp(game::Opt().brightness, 50u, 200u);
-    if (want == g_brightness) return;
+    float shade = Shade();
+    if (want == g_brightness && shade == g_shade) return;
     if (!g_ramp) g_ramp = mem::AllocSystem(kRampBytes);
     if (!g_ramp) return;
     const uint8_t* from = static_cast<const uint8_t*>(kernel::HostPtr(kGameRamp));
     uint8_t* to = static_cast<uint8_t*>(kernel::HostPtr(g_ramp));
     double power = 100.0 / double(want);
     for (uint32_t i = 0; i < kRampBytes; i++)
-        to[i] = uint8_t(std::clamp(std::lround(std::pow(double(from[i]) / 255.0, power) * 255.0), 0l, 255l));
+        to[i] = uint8_t(std::clamp(std::lround(std::pow(double(from[i]) / 255.0, power) * 255.0 * shade), 0l, 255l));
     kernel::CallGuest(ctx, kSetGammaRamp, {0, g_ramp});
+    if (want != g_brightness) LOGR("brightness %u", want);
     g_brightness = want;
-    LOGR("brightness %u", want);
+    g_shade = shade;
 }
 
 void UpdateHud() {
@@ -62,6 +90,9 @@ void UpdateHud() {
 }  // namespace
 
 namespace game {
+
+// the picture fades to black, stays a moment, and fades back (the first start's title picture into the profile screen)
+void StartScreenFade() { g_fade_start.store(SteadyMs(), std::memory_order_relaxed); }
 
 // each client frame
 void UpdatePcSettings(X86Context& ctx) {
