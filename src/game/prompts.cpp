@@ -30,6 +30,7 @@
 #include "imstb_truetype.h"
 
 #include "common/mouse_keyboard.h"
+#include "common/menu_state.h"
 #include "common/options.h"
 #include "core/log.h"
 #include "gpu/texture.h"
@@ -87,6 +88,8 @@ std::vector<IconTexture> g_textures;  // written once, under g_loaded
 // the main menu's paper (Single_Front_menu.dds in sp/frontend.cod) has four boxes printed on it, one a line: with
 // Multiplayer gone there are three lines, so the fourth box is painted over with the paper beside it
 std::vector<uint8_t> g_menu_paper;  // its level 0, written once under g_loaded
+// the Controller screen's picture (xboxlineA.dds in sp/frontend.cod): the Modern one in its place (pad_picture.cpp)
+std::vector<uint8_t> g_pad_picture;  // its level 0, written once under g_loaded
 std::shared_ptr<const Picture> g_menu_paper_picture;  // under g_lock
 std::vector<uint8_t> g_ttf;
 stbtt_fontinfo g_font;
@@ -267,6 +270,10 @@ void Load() {
         kernel::ReadGameFile("D:\\sp\\frontend.cod", it->second.offset, it->second.size, dds) &&
         dds.size() == 128 + 256 * 512 && U32(dds, 16) == 256 && U32(dds, 12) == 512)
         g_menu_paper.assign(dds.begin() + 128, dds.end());
+    if (auto it = front.find("xboxlineA.dds"); it != front.end() &&
+        kernel::ReadGameFile("D:\\sp\\frontend.cod", it->second.offset, it->second.size, dds) &&
+        dds.size() >= 128 + 512 * 512 && U32(dds, 16) == 512 && U32(dds, 12) == 512)
+        g_pad_picture.assign(dds.begin() + 128, dds.begin() + 128 + 512 * 512);
 }
 
 // --- Drawing: straight alpha RGBA floats; shapes are signed distance fields in output pixels, anti-aliased over one.
@@ -605,6 +612,9 @@ std::shared_ptr<const Picture> Provide(const gpu::TextureDesc& d, const uint8_t*
         if (t.width == d.width && t.height == d.height && gpu::LevelSize(d, 0) == t.level0.size() &&
             std::memcmp(guest, t.level0.data(), t.level0.size()) == 0)
             found = &t;
+    if (!found && !g_pad_picture.empty() && d.width == 512 && d.height == 512 &&
+        gpu::LevelSize(d, 0) == g_pad_picture.size() && std::memcmp(guest, g_pad_picture.data(), g_pad_picture.size()) == 0)
+        if (auto modern = game::ModernPadPicture()) return modern;
     if (!found) {
         if (g_menu_paper.empty() || d.width != 256 || d.height != 512 || gpu::LevelSize(d, 0) != g_menu_paper.size() ||
             std::memcmp(guest, g_menu_paper.data(), g_menu_paper.size()) != 0)

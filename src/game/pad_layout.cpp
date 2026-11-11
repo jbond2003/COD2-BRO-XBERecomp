@@ -23,6 +23,7 @@
 #include "common/options.h"
 #include "core/input.h"
 #include "core/log.h"
+#include "gpu/texture_override.h"
 #include "cpu/x86_ops.h"
 #include "kernel/kernel.h"
 #include "kernel/memory.h"
@@ -114,6 +115,7 @@ X86_FUNC(sub_00335D60) {
         if (modern != Modern()) {
             game::Opt().modern_layout = modern;
             app::Save();
+            gpu::texture_override::Changed();  // the Controller screen's picture (src/game/pad_picture.cpp)
             LOGR("controller configuration: %s", modern ? "Modern" : "the game's own");
         }
     } else if (Modern()) {

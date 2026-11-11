@@ -2272,6 +2272,7 @@ X86_FUNC(sub_0030F900) {
 // a text widget's draw (ecx widget)
 X86_FUNC(sub_00321160) {
     uint32_t widget = ctx.ecx;
+    game::ModernPadLabel modern_place(widget);  // the Controller screen's labels follow the Modern picture
     if (g_foot_draw) {  // (a copy for the black edge, or part of a moved one)
         __imp__sub_00321160(ctx, base);
         return;
