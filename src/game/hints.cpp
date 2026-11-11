@@ -145,9 +145,12 @@ bool InLevel() { return !kernel::R32(0x95F8F8) && kernel::R32(0x95F8FC); }
 
 double Now() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 
-std::string Lean() {
-    return "Press " + Key("lean_left", "Q") + " and " + Key("lean_right", "E") + " to lean";
-}
+// Our lines name their keys with the game's button tokens, so the keys show as keycaps like the game's own hints:
+// three icons the HUD's hints do not use in play (~navig_all, ~updown, ~both_lr: the whole dpad, up and down, left
+// and right) carry the line's keys while it is ours on the keyboard (game::HintKeys, read by prompts.cpp).
+constexpr const char* kKeyTokens[] = {"~navig_all", "~updown", "~both_lr"};
+
+std::string Lean() { return std::string("Press ") + kKeyTokens[0] + " and " + kKeyTokens[1] + " to lean"; }
 
 void ShowLine(X86Context& ctx, const std::string& text) {
     constexpr uint32_t kBytes = 256;
@@ -166,7 +169,7 @@ void ShowLine(X86Context& ctx, const std::string& text) {
 
 std::string SprintLine() {
     // the token is the game's, "L3 Button" on a controller
-    return g_keyboard ? "Hold " + Key("sprint", "Shift") + " to sprint" : std::string("Hold the [SPRINT] to sprint");
+    return g_keyboard ? std::string("Hold ") + kKeyTokens[0] + " to sprint" : std::string("Hold the [SPRINT] to sprint");
 }
 
 // our lines, in their time after the game's move hint (each client frame)
@@ -193,7 +196,7 @@ void UpdateLines(X86Context& ctx) {
         g_lines = 2;
     } else if (g_lines == 2 && since >= kSprintAfter + kLeanAfter + kHudAfter) {
         if (g_keyboard) {
-            ShowLine(ctx, "Press " + Key("hide_hud", "H") + " to hide the HUD");
+            ShowLine(ctx, std::string("Press ") + kKeyTokens[0] + " to hide the HUD");
             g_own = 3;
         }
         g_lines = 3;
@@ -343,6 +346,20 @@ void UpdateHints(X86Context& ctx) {
         else Write(h, modern && h.modern ? h.modern() : std::string(h.pad));
     }
     ShowAgain(ctx);
+}
+
+}  // namespace game
+
+namespace game {
+
+// the actions whose keys our hint line on the screen shows, for its three key tokens (kKeyTokens): none (null) when
+// the line is not ours or a controller is in use
+void HintKeys(const char* (&actions)[3]) {
+    actions[0] = actions[1] = actions[2] = nullptr;
+    if (!g_keyboard) return;
+    if (g_own == 1) actions[0] = "sprint";
+    if (g_own == 2) actions[0] = "lean_left", actions[1] = "lean_right";
+    if (g_own == 3) actions[0] = "hide_hud";
 }
 
 }  // namespace game
