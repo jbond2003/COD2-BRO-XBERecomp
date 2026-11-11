@@ -80,6 +80,7 @@ regional release has its code at other addresses and is not supported.
 - [Xbox XBE Recomp](https://github.com/TGP482/XboxXBE-Recomp) by TGP482, the recompiler and runtime this is built on.
 - [CoD2 BRO Native Loader](https://github.com/SmokeDoggy044/CoD2-BRO-Native-Loader) by SmokeDoggy044, the guide for this
   port's features and a reference for parts of it.
+- jojo8479, who drew the controller picture for the Modern layout.
 - Made with the help of [Claude](https://claude.ai).
 
 <details>
