@@ -9,7 +9,8 @@
 //
 // Lines of our own in the first mission: sprint, 5 seconds after the game's "to move around" hint (the level
 // script's, as the player gains control after the opening scene), and on the keyboard and mouse leaning 5 seconds
-// after that and the Hide HUD key 5 seconds after leaning; a hint of the game's own in the meantime ends them. The script's hint (0x2FEF80: the text's key hash) goes to the HUD (0x32CED0, esi the HUD [0x95F8F0], eax
+// after that and the Hide HUD key 5 seconds after leaning. Each waits until a hint of the game's own has gone, and one
+// the game's hint cut short comes again (UpdateLines). The script's hint (0x2FEF80: the text's key hash) goes to the HUD (0x32CED0, esi the HUD [0x95F8F0], eax
 // the hash): the text found in the global table is given to the hint widget ([HUD+0x3C], vtable +0x140 = 0x32EE50:
 // text, 400, -1.0) and the HUD's timer at +0x60 restarted. Ours go the same way, so they look and move like the game's.
 
@@ -36,6 +37,13 @@ struct Hint {
     uint32_t room = 0;  // bytes before its "[text]" copy
 };
 
+// Our lines, and the prone hints, name their keys with the game's button tokens, so the keys show as keycaps like the
+// rest of the game's hints: two icons the hints do not use in play (~updown and ~both_lr, the dpad's up and down and
+// its left and right) carry those keys while such a line is on the screen on the keyboard (game::HintKeys, read by
+// prompts.cpp).
+constexpr const char* kKeyTokens[] = {"~updown", "~both_lr"};
+constexpr const char* kProneToken = "~both_lr";
+
 std::string Key(const char* action, const char* fallback) {
     std::string k = input::KeyName(action);
     return k.empty() ? fallback : k;
@@ -54,10 +62,10 @@ std::string MoveLower() {
 }
 std::string Look() { return "Move the mouse"; }
 std::string Sprint() { return "Press and hold " + Key("sprint", "Shift"); }
-std::string Prone() { return "Press " + Key("prone", "Z") + " to go prone"; }
+std::string Prone() { return std::string("Press ") + kProneToken + " to go prone"; }
 std::string HoldProne() { return "Hold [%s] to go prone"; }  // B held, its picture as before
 // the stance token draws the crouch key or button; on the keys prone has its own key, on Modern B is held
-std::string CrouchProne() { return "[PRESS_STANCE_DOWN] to crouch, " + Key("prone", "Z") + " to go prone"; }
+std::string CrouchProne() { return std::string("[PRESS_STANCE_DOWN] to crouch, ") + kProneToken + " to go prone"; }
 std::string CrouchHold() { return "[PRESS_STANCE_DOWN] to crouch, hold it to go prone"; }
 
 Hint g_hints[] = {
@@ -116,7 +124,11 @@ void Find() {
 }
 
 void Write(const Hint& h, const std::string& text) {
-    std::string t = text.size() < h.room ? text : text.substr(0, h.room - 1);
+    std::string t = text;
+    // no room for the token: the key's name in words
+    if (size_t at = t.find(kProneToken); t.size() >= h.room && at != std::string::npos)
+        t.replace(at, std::strlen(kProneToken), Key("prone", "Z"));
+    if (t.size() >= h.room) t = t.substr(0, h.room - 1);
     uint8_t* p = static_cast<uint8_t*>(kernel::HostPtr(h.at));
     std::memset(p, 0, h.room);
     std::memcpy(p, t.data(), t.size());
@@ -130,11 +142,12 @@ constexpr uint32_t kLookup = 0x2984F0;        // (eax table; the key's hash on t
 constexpr uint32_t kSetHint = 0x32EE50;       // hint widget's (ecx) text, with the game's reveal and duration
 constexpr uint32_t kSetHintArgs[] = {0x190, 0xBF800000u};
 constexpr double kSprintAfter = 5.0;  // seconds after the game's move hint
-constexpr double kLeanAfter = 5.0;     // seconds after the sprint line
-constexpr double kHudAfter = 5.0;      // seconds after the lean line
 
 double g_first = 0;  // when the game's move hint was set, 0 outside the sequence
 int g_lines = 0;     // our lines shown since
+double g_next = 0;   // our next line not before this
+double g_line_at = 0;  // when our last line was put up
+bool g_prone_up = false;  // the hint on the screen names the prone key by its token
 uint32_t g_text = 0;
 uint32_t g_shown = 0;  // a tutorial text the HUD is given in our words
 uint32_t g_hash = 0xFFFFFFFFu;  // the script's hint on the screen, by its key's hash; none
@@ -145,10 +158,6 @@ bool InLevel() { return !kernel::R32(0x95F8F8) && kernel::R32(0x95F8FC); }
 
 double Now() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 
-// Our lines name their keys with the game's button tokens, so the keys show as keycaps like the game's own hints:
-// three icons the HUD's hints do not use in play (~navig_all, ~updown, ~both_lr: the whole dpad, up and down, left
-// and right) carry the line's keys while it is ours on the keyboard (game::HintKeys, read by prompts.cpp).
-constexpr const char* kKeyTokens[] = {"~navig_all", "~updown", "~both_lr"};
 
 std::string Lean() { return std::string("Press ") + kKeyTokens[0] + " and " + kKeyTokens[1] + " to lean"; }
 
@@ -172,36 +181,38 @@ std::string SprintLine() {
     return g_keyboard ? std::string("Hold ") + kKeyTokens[0] + " to sprint" : std::string("Hold the [SPRINT] to sprint");
 }
 
-// our lines, in their time after the game's move hint (each client frame)
+// our lines, in their time after the game's move hint (each client frame): each waits for its time and for the
+// game's own hint to have gone (the crouch hint came just as the sprint line went up and took its place, and the
+// others never came), at most kWaitMost
+constexpr double kGap = 5.0, kWaitMost = 15.0;
+
+bool GameHintUp() {
+    uint32_t hud = kernel::R32(kHud);
+    return hud && !(kernel::R32(hud + 0x60) & 0x80000000u) && !g_own && g_hash != 0xFFFFFFFFu;
+}
+
 void UpdateLines(X86Context& ctx) {
     if (!g_first) return;
-    if (!InLevel()) {
+    if (!InLevel() || !game::Opt().hints || game::Opt().hide_hud) {
         g_first = 0;
         return;
     }
-    if (!game::Opt().hints || game::Opt().hide_hud) {
+    double now = Now();
+    if (now < g_next) return;
+    if (GameHintUp() && now < g_next + kWaitMost) return;
+    // the lines left out on a controller (leaning and Hide HUD are keys)
+    while (g_lines > 0 && g_lines < 3 && !g_keyboard) g_lines++;
+    if (g_lines >= 3) {
         g_first = 0;
         return;
     }
-    double since = Now() - g_first;
-    if (g_lines == 0 && since >= kSprintAfter) {
-        ShowLine(ctx, SprintLine());
-        g_own = 1;
-        g_lines = 1;
-    } else if (g_lines == 1 && since >= kSprintAfter + kLeanAfter) {
-        if (g_keyboard) {
-            ShowLine(ctx, Lean());
-            g_own = 2;
-        }
-        g_lines = 2;
-    } else if (g_lines == 2 && since >= kSprintAfter + kLeanAfter + kHudAfter) {
-        if (g_keyboard) {
-            ShowLine(ctx, std::string("Press ") + kKeyTokens[0] + " to hide the HUD");
-            g_own = 3;
-        }
-        g_lines = 3;
-        g_first = 0;
-    }
+    if (g_lines == 0) ShowLine(ctx, SprintLine());
+    else if (g_lines == 1) ShowLine(ctx, Lean());
+    else ShowLine(ctx, std::string("Press ") + kKeyTokens[0] + " to hide the HUD");
+    g_lines++;
+    g_own = g_lines;
+    g_line_at = now;
+    g_next = now + kGap;
 }
 
 // hints switched off, or the HUD hidden, with a hint on the screen: it goes at once, the way the script takes one
@@ -265,7 +276,9 @@ X86_FUNC(sub_0032CED0) {
     if (!game::Opt().hints || game::Opt().hide_hud) ctx.eax = 0xFFFFFFFFu;
     uint32_t hash = ctx.eax;
     if (!g_again) {
-        g_first = 0;
+        // a game hint over our line: the line comes again after it, if it was up for less than 3 seconds
+        if (g_own && g_first && Now() - g_line_at < 3.0 && hash != 0xFFFFFFFFu) g_lines = g_own - 1;
+        if (g_first) g_next = std::max(g_next, Now() + kGap);
         g_hash = hash;
         g_own = 0;
     } else if (hash == 0xFFFFFFFFu) {
@@ -297,11 +310,16 @@ X86_FUNC(sub_0032CED0) {
             break;
         }
     }
+    if (!g_again || hash == 0xFFFFFFFFu) {
+        uint32_t t = shown ? shown : text;
+        g_prone_up = t && std::strstr(static_cast<const char*>(kernel::HostPtr(t)), kProneToken);
+    }
     __imp__sub_0032CED0(ctx, base);
     if (shown) kernel::W32(entry + 8, text);
     if (!g_again && text && std::strstr(static_cast<const char*>(kernel::HostPtr(text)), "to move around")) {
         g_first = Now();
         g_lines = 0;
+        g_next = g_first + kSprintAfter;
     }
 }
 
@@ -352,14 +370,15 @@ void UpdateHints(X86Context& ctx) {
 
 namespace game {
 
-// the actions whose keys our hint line on the screen shows, for its three key tokens (kKeyTokens): none (null) when
+// the actions whose keys the hint on the screen shows, for its two key tokens (kKeyTokens): none (null) when
 // the line is not ours or a controller is in use
-void HintKeys(const char* (&actions)[3]) {
-    actions[0] = actions[1] = actions[2] = nullptr;
+void HintKeys(const char* (&actions)[2]) {
+    actions[0] = actions[1] = nullptr;
     if (!g_keyboard) return;
     if (g_own == 1) actions[0] = "sprint";
     if (g_own == 2) actions[0] = "lean_left", actions[1] = "lean_right";
     if (g_own == 3) actions[0] = "hide_hud";
+    if (!g_own && g_prone_up) actions[1] = "prone";
 }
 
 }  // namespace game

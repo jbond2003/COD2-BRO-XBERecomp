@@ -41,7 +41,7 @@
 
 namespace game {
 int PadTarget(size_t i);  // src/game/mouse_look.cpp
-void HintKeys(const char* (&actions)[3]);  // src/game/hints.cpp
+void HintKeys(const char* (&actions)[2]);  // src/game/hints.cpp
 // src/game/sharp_text.cpp: a game font sheet drawn again sharp, null for any other texture
 std::shared_ptr<const gpu::texture_override::Picture> SharpText(const gpu::TextureDesc& d, const uint8_t* guest,
                                                                 float render_scale);
@@ -728,10 +728,10 @@ void Update() {
     labels[kDpad] = "@arrows";
     // our hint line's keys (hints.cpp): on the three icons its tokens name, while it is on the screen in play
     if (!menu) {
-        const char* actions[3];
+        const char* actions[2];
         game::HintKeys(actions);
-        constexpr Icon kHintIcons[] = {kDpad, kDpadUpDown, kDpadLeftRight};
-        for (int i = 0; i < 3; i++) {
+        constexpr Icon kHintIcons[] = {kDpadUpDown, kDpadLeftRight};  // hints.cpp kKeyTokens
+        for (int i = 0; i < 2; i++) {
             std::string key = actions[i] ? input::KeyName(actions[i]) : std::string();
             if (!key.empty()) labels[kHintIcons[i]] = CapLabel(key);
         }
