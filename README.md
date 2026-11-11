@@ -56,6 +56,7 @@ mouse in the menus, sharp text, and button prompts that switch between keyboard 
   to 60 for that mission is the thing to try until it is fixed.
 - The first time you play, there can be a microstutter or two at the start while the game compiles its shaders
   for your GPU. They are saved after that, so it only happens once.
+- PlayStation controllers are not supported: there are no PlayStation button prompts, and none has been tested.
 
 See [ISSUES.md](ISSUES.md) for the problems found so far and how they were fixed.
 
