@@ -3,6 +3,20 @@
 An unofficial native PC port of the original Xbox version of Call of Duty 2: Big Red One, built with
 [Xbox XBE Recomp](https://github.com/TGP482/XboxXBE-Recomp).
 
+## Highlights
+
+- **Modern controls.** The awful original Xbox controller scheme isn't the default anymore. A new Modern layout is:
+  right trigger fires, left trigger aims down the sights, A jumps, B crouches (hold it to go prone), click the left
+  stick to sprint and the right stick to melee. The game's four old layouts are still there if you want them.
+- **Full keyboard and mouse.** Mouse look, Q and E to lean, rebindable keys, the mouse in every menu, and
+  button prompts that switch between keyboard and controller the moment you do.
+- **High refresh rate gameplay.** Play at 60, 120, 144 or 240 fps, or with no limit at all, with VSync if you want
+  it.
+- **Sharp text.** The game's small, blurry bitmap fonts are drawn again from real font files, crisp at high
+  resolutions.
+- **Higher resolutions and a field of view setting**, in a PC Options menu built in the game's own style.
+- **Sprint in the campaign**, which the Xbox game only had in multiplayer.
+
 ## Features
 
 The [CoD2 BRO Native Loader](https://github.com/SmokeDoggy044/CoD2-BRO-Native-Loader) was the guide for which
