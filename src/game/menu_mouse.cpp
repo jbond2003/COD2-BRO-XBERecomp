@@ -380,10 +380,6 @@ int KeyOf(char c) {
 }
 
 uint32_t g_typewriter = 0;  // the screen while it is up
-// keys clicked with the mouse, typed in order as the screen can take them: a click used to wait for the highlight to
-// reach its key and was lost when the pointer moved on quickly
-int g_clicked[16];
-int g_clicked_count = 0;
 
 // the keys' labels to the layout: each label string moves to the key that types its character, whatever case the
 // shift key last gave them
@@ -437,10 +433,7 @@ void Typewriter(X86Context& ctx, uint32_t menu) {
     bool up = menu && R32(menu) == kTypewriterVtable;
     if (up != (g_typewriter != 0)) input::SetTextEntry(up);
     g_typewriter = up ? menu : 0;
-    if (!up) {
-        g_clicked_count = 0;
-        return;
-    }
+    if (!up) return;
     Relabel(menu);
     if (R8(menu + 0x30)) return;  // locked
     // The keys show capitals while the keyboard would type them: Shift held, or Caps Lock on (and small letters with
@@ -452,24 +445,7 @@ void Typewriter(X86Context& ctx, uint32_t menu) {
     char c = input::TakeTyped();
     if (c) Type(ctx, menu, c);
     if (R32(menu) != kTypewriterVtable) return;  // Done or back closed it
-    // one clicked key a poll, as a press of A on it would: the key is selected and activated at once
-    if (g_clicked_count && !R8(menu + 0x30)) {
-        int key = g_clicked[0];
-        std::memmove(g_clicked, g_clicked + 1, sizeof(int) * size_t(--g_clicked_count));
-        uint32_t items = R32(menu + 4);
-        uint32_t item = items && key < R16s(menu + 0x26) ? R32(items + uint32_t(key) * 4) : 0;
-        if (item && !R8(item + 0x16)) {
-            if (R16s(menu + 0x22) != key) Select(ctx, menu, int16_t(key));
-            uint32_t ecx = ctx.ecx;
-            ctx.ecx = menu;
-            kernel::CallGuest(ctx, kTypewriterActivate, {uint32_t(key)});
-            ctx.ecx = ecx;
-        }
-        if (R32(menu) != kTypewriterVtable) {
-            g_clicked_count = 0;
-            return;
-        }
-    }
+
     bool capitals = input::ShiftHeld() != input::CapsLockOn();
     if (capitals == shown) return;
     shown = capitals;
@@ -2015,9 +1991,17 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
     if (!on_item) hover_pending = false;
     if (on_item && hit->index == selected) hover_pending = false;
     if (picker_hover) hover_pending = false;
-    // a click on a typewriter key types that key, whatever the highlight is doing (Typewriter)
+    // a click on a typewriter key types that key at once, the highlight wherever it is: the activate types by the
+    // key's index, not by what is selected. Waiting for the highlight to reach the key (the screen is locked while it
+    // moves) lost clicks made while the pointer moved on quickly.
     if (pointer.left_clicks && on_item && R32(menu) == kTypewriterVtable && hit->index <= kDone) {
-        for (int i = 0; i < pointer.left_clicks && g_clicked_count < 16; i++) g_clicked[g_clicked_count++] = hit->index;
+        uint32_t item = R32(R32(menu + 4) + uint32_t(hit->index) * 4);
+        for (int i = 0; i < pointer.left_clicks && item && !R8(item + 0x16) && R32(menu) == kTypewriterVtable; i++) {
+            uint32_t ecx = ctx.ecx;
+            ctx.ecx = menu;
+            kernel::CallGuest(ctx, kTypewriterActivate, {uint32_t(hit->index)});
+            ctx.ecx = ecx;
+        }
         hover_pending = false;
         return;
     }
