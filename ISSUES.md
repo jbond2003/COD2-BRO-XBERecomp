@@ -154,3 +154,7 @@ unaffected. Until this is solved, setting Max Frame Rate to 60 for that mission 
   runs `git submodule update --init --recursive` itself. If it still fails, run that command once by hand. Windows
   PowerShell 5 does not accept `&&`, so run `git pull` and the submodule command as two lines.
 - **No `assets` folder after cloning.** The folder is now in the repo with a `README.txt` saying what goes in it.
+- **Windows Defender reports Trojan:Win32/Bearfoos.A!ml and stops the game while it loads a mission.** A guess by
+  Defender's machine learning scan, not a virus: it came with the online update check (a WinHTTP request to this
+  repository's releases page), on top of the game starting the compiler and loading a DLL it built. The update check
+  is off from v0.1 on. If Defender still stops your own build, allow it under Windows Security, Protection history.
