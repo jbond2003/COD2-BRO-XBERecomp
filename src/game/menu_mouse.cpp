@@ -1785,8 +1785,8 @@ void PlayMoveSound(X86Context& ctx, uint32_t menu) {
 // is pressed for it in the poll that finds it up, as a player would at once, so the game leaves it by its own way
 // and nothing of its is skipped but the drawing (TitleHidden, sub_003145C0). Its picture is the boot splash instead
 // (app::kGame.splash, a file beside the exe that the SDK shows while the game starts). That file is the player's
-// own, made once: while there is none the title screen is drawn until it has faded in, with the window kept black
-// (game::UpdateFrameBand), and the frame's rows with its art (94 to 384) are saved as the splash.
+// own, made once: while there is none the title screen is drawn until it has faded in, the window showing only its
+// art (game::UpdateFrameBand), and the frame's rows with its art (94 to 384) are saved as the splash.
 constexpr uint32_t kTitleVtable = 0x8297F0;
 constexpr float kTitleTop = 92.0f / 480.0f, kTitleBottom = 386.0f / 480.0f;
 constexpr uint32_t kSplashWidth = 960;
@@ -2047,8 +2047,10 @@ void UpdateFrameBand() {
     bool level_menu = NowMs() - g_level_menu_ms.load(std::memory_order_relaxed) <= kLately;
     if (front_end || level_menu) app::LimitNextFrame(60);
     if (NowMs() - g_title_drawn_ms.load(std::memory_order_relaxed) <= kLately) {
-        // the title screen is being drawn for its picture only: the window shows the frame's first rows, which are black
-        app::SetFrameBand(0.0f, 60.0f / 480.0f);
+        // the title screen is being drawn for its picture (the first start): the window shows the rows that become
+        // the splash, so the player sees the picture fade in, as the splash shows it on every later start, and not a
+        // black window. "Press START" is below them.
+        app::SetFrameBand(kTitleTop, kTitleBottom);
         return;
     }
     app::SetFrameBand(band ? kBandTop : 0.0f, band ? kBandBottom : 1.0f, kBandSide, kBandStretch);
