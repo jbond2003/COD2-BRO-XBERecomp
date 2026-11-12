@@ -163,6 +163,20 @@ elevation, as the console's own filter table does (word[61 x 31] at 0x3E35E8 int
 **Not a fault: voices against gunfire.** Measured in Oran: the player's own shots are 2D sounds the game plays at
 0.19 of full volume, dialogue is 3D at 0.92 with a 25000 unit minimum distance. That balance is the game's.
 
+## 11. Shadows are soft blobs (fixed)
+
+**Cause.** The toolkit's. The game draws its shadow casters into one 512x512 picture (R_RenderTestShadow 0x241290,
+700 units across) and lays it on the world through a texture stage, one linear tap. The D3D12 renderer gives a
+target read into a smaller target the glow chain's box taps (three console texels each), and took "smaller" as
+smaller in either axis: 512 is taller than the 480 line frame. Every shadow was averaged over three texels, about
+10 cm, at 16 taps a pixel at 1080p.
+
+**Fix.** The box is for a target with more texels than the one drawn to. Shadows are one tap of a picture at
+render scale again, and every draw that reads them is cheaper.
+
+**Lesson.** A draw list of every stage's texture, with its filters, beside each target's size finds this in one
+frame: the harness's `CAP=N` with a few more lines printed.
+
 ## Still open: tanks glitch in Desert Fox's minefield at high frame rates
 
 **Symptom.** In Desert Fox, at a frame rate limit above 60 (seen at 144), a tank in the minefield glitches: one of
