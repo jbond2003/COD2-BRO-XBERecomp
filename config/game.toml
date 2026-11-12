@@ -351,6 +351,19 @@ call = "ViewAngleStep"
 at = 0x002BBE2B
 call = "ReloadWithRoundsLeft"
 
+# View Distance and a fallen body's detail (src/game/detail.cpp)
+[[hook]]
+at = 0x002B84D0
+call = "EntityLodDistance"
+
+[[hook]]
+at = 0x0006864F
+call = "MeshLodDistance"
+
+[[hook]]
+at = 0x0024448E
+call = "BodyLodLimit"
+
 # ClientThink: the player's gravity and run speed as the cheats have them (src/game/cheats.cpp)
 [[hook]]
 at = 0x00271D8D

@@ -60,6 +60,8 @@ constexpr std::pair<ImGuiCol, ImVec4> kPanelColors[] = {
 
 constexpr uint32_t kAnisoValues[] = {0, 2, 4, 8, 16};
 const char* const kAnisoNames[] = {"GAME DEFAULT", "2x", "4x", "8x", "16x"};
+constexpr uint32_t kViewDistances[] = {1, 2, 4, 8};
+const char* const kViewDistanceNames[] = {"GAME DEFAULT", "2x", "4x", "8x"};
 const char* const kDumpFormatNames[] = {"PNG", "DDS"};
 // 30 keeps the game's own limiter
 constexpr uint32_t kFpsCaps[] = {30, 60, 120, 144, 240, 0};  // 0: no limit
@@ -120,7 +122,7 @@ const std::vector<Mode>& Modes() {
 
 enum RowId { kSection, kDisplayMode, kResolution, kRenderResolution, kFov, kMaxFps, kVsync, kFpsCounter, kAniso,
              kTextureReplacement, kTextureDumping, kDumpFormat, kMouseX, kMouseY, kInvertY, kInvertX, kQwerty, kPrompts,
-             kBrightness, kAimAssist, kHints, kHideHud };
+             kBrightness, kAimAssist, kHints, kHideHud, kViewDistance };
 
 struct Row {
     RowId id;
@@ -138,6 +140,7 @@ constexpr Row kRows[] = {
     {kBrightness, "BRIGHTNESS"},
     {kSection, "GRAPHICS"},
     {kAniso, "ANISOTROPIC FILTERING"},
+    {kViewDistance, "VIEW DISTANCE"},
     {kSection, "TEXTURES"},
     {kTextureReplacement, "TEXTURE REPLACEMENT"},
     {kTextureDumping, "TEXTURE DUMPING"},
@@ -244,6 +247,9 @@ std::string RowText(RowId id, int step, Settings& s) {
             return OnOff(O().hide_hud);
         case kAniso:
             std::snprintf(text, sizeof(text), "%s", kAnisoNames[StepTable(kAnisoValues, s.aniso, step)]);
+            break;
+        case kViewDistance:
+            std::snprintf(text, sizeof(text), "%s", kViewDistanceNames[StepTable(kViewDistances, O().view_distance, step)]);
             break;
         case kTextureReplacement:
             if (step) s.custom_textures = !s.custom_textures;
@@ -369,6 +375,7 @@ void SetDefaults(Settings& s, game::Options& o, int parts) {
     }
     if (parts & kGraphicsPart) {
         s.aniso = d.aniso;
+        o.view_distance = 1;
         s.custom_textures = d.custom_textures;
         s.dump_textures = d.dump_textures;
         s.texture_dump_format = d.texture_dump_format;
@@ -409,6 +416,7 @@ void CopyRows(Settings& s, game::Options& o, const Settings& from, const game::O
     o.aim_assist = from_o.aim_assist;
     o.hints = from_o.hints;
     o.hide_hud = from_o.hide_hud;
+    o.view_distance = from_o.view_distance;
 }
 
 // one set of the rows' values differs from another
@@ -421,7 +429,7 @@ bool RowsDiffer(const Settings& a, const game::Options& c, const Settings& b, co
            c.invert_mouse != d.invert_mouse || c.invert_mouse_x != d.invert_mouse_x ||
            c.qwerty_typewriter != d.qwerty_typewriter || c.button_prompts != d.button_prompts ||
            c.brightness != d.brightness || c.aim_assist != d.aim_assist || c.hints != d.hints ||
-           c.hide_hud != d.hide_hud;
+           c.hide_hud != d.hide_hud || c.view_distance != d.view_distance;
 }
 
 // The F10 panel's changes, every row's, are held until its Apply (his ask: nothing changes before Apply, as in PC
@@ -968,7 +976,7 @@ const PageSpec& Spec(int page) {
         {"Display", kDisplayPart, {kDisplayMode, kResolution, kRenderResolution, kBrightness, kFov, kMaxFps, kVsync,
           kFpsCounter},
          false},
-        {"Graphics", kGraphicsPart, {kAniso, kTextureReplacement, kTextureDumping, kDumpFormat}, false},
+        {"Graphics", kGraphicsPart, {kAniso, kViewDistance, kTextureReplacement, kTextureDumping, kDumpFormat}, false},
         {"Mouse", kMousePart, {kMouseX, kMouseY, kInvertY, kInvertX}, false},
         {"Keyboard", kKeysPart, {kPrompts, kQwerty}, true},
         {"Gameplay", kGameplayPart, {kAimAssist, kHints, kHideHud}, false},

@@ -225,6 +225,7 @@ const app::GameInfo app::kGame = {
                 {"button_prompts", nullptr, &game::Opt().button_prompts},
                 {"modern_layout", &game::Opt().modern_layout, nullptr},
                 {"brightness", nullptr, &game::Opt().brightness},
+                {"view_distance", nullptr, &game::Opt().view_distance},
                 {"aim_assist", &game::Opt().aim_assist, nullptr},
                 {"hints", &game::Opt().hints, nullptr},
                 {"hide_hud", &game::Opt().hide_hud, nullptr},
