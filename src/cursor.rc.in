@@ -1,0 +1,3 @@
+#include <winres.h>
+COD2BRO_CURSOR RCDATA "@CMAKE_CURRENT_SOURCE_DIR@/cursor.png"
+COD2BRO_MODERN_PAD RCDATA "@CMAKE_CURRENT_SOURCE_DIR@/modern_controller.png"
