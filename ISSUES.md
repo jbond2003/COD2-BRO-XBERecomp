@@ -177,6 +177,14 @@ render scale again, and every draw that reads them is cheaper.
 **Lesson.** A draw list of every stage's texture, with its filters, beside each target's size finds this in one
 frame: the harness's `CAP=N` with a few more lines printed.
 
+## Still open: black screen after the opening movies on the Steam Deck (Proton)
+
+Reported by a player, on several Proton versions; not reproduced and no log seen yet. The suspect: the renderer
+builds its shaders at run time with `D3DCompile` from `d3dcompiler_47.dll`, which the release did not ship. Windows
+has Microsoft's; Proton and Wine have a stand-in that fails on larger shaders. The movies are drawn with a small
+shader, the menus with generated ones. A failed build is in the log as `d3d12: ps_5_0 compile failed`. `release.bat`
+now puts Microsoft's redistributable `d3dcompiler_47.dll` beside the executable.
+
 ## Still open: tanks glitch in Desert Fox's minefield at high frame rates
 
 **Symptom.** In Desert Fox, at a frame rate limit above 60 (seen at 144), a tank in the minefield glitches: one of
