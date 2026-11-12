@@ -3,7 +3,7 @@
 ## MOHRS-XBERecomp
 
 Parts of `src/common` (mouse_keyboard, menu, menu_pointer, options, software_cursor, game_info)
-and `tools/extract_xbe_icon.py` come from MOHRS-XBERecomp by neonoxd: https://github.com/neonoxd/MOHRS-XBERecomp, through the Medal of Honor: Rising
+come from MOHRS-XBERecomp by neonoxd: https://github.com/neonoxd/MOHRS-XBERecomp, through the Medal of Honor: Rising
 Sun port built with the same toolkit.
 
 ```

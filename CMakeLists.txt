@@ -52,23 +52,4 @@ if(WIN32)
     file(GLOB font_files CONFIGURE_DEPENDS fonts/*.ttf)
     set_source_files_properties(${fonts_resource} PROPERTIES OBJECT_DEPENDS "${font_files}")
     target_sources(CoD2BRO PRIVATE ${fonts_resource})
-    # the exe's icon: the game's own title image, taken from the player's default.xbe as it is built
-    # (tools/extract_xbe_icon.py, after MOHRS-XBERecomp), never kept in the repository. No Python or no default.xbe:
-    # no icon.
-    find_package(Python3 COMPONENTS Interpreter)
-    if(Python3_FOUND AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/assets/default.xbe)
-        set(icon ${CMAKE_CURRENT_BINARY_DIR}/icons/CoD2BRO.ico)
-        set(icon_resource ${CMAKE_CURRENT_BINARY_DIR}/icons/CoD2BRO.rc)
-        add_custom_command(
-            OUTPUT ${icon} ${icon_resource}
-            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/extract_xbe_icon.py
-                    ${CMAKE_CURRENT_SOURCE_DIR}/assets/default.xbe "$$XTIMAGE" ${icon}
-            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/tools/extract_xbe_icon.py ${CMAKE_CURRENT_SOURCE_DIR}/assets/default.xbe
-            COMMENT "Taking the game's icon from default.xbe"
-            VERBATIM)
-        set_source_files_properties(${icon_resource} PROPERTIES OBJECT_DEPENDS ${icon})
-        target_sources(CoD2BRO PRIVATE ${icon_resource})
-    else()
-        message(STATUS "No Python or no assets/default.xbe: the exe is built without the game's icon")
-    endif()
 endif()
