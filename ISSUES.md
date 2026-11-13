@@ -138,6 +138,55 @@ Profile, and only there does the foot of the screen say "X to delete".
 take the same path: the foot text (0x33A64D) and X (0x334A31). The confirmation, the write and "Delete Successful" are
 the game's own. On the keyboard Delete is X in menus, and the X keycap reads Del there.
 
+## 9. A soldier shot far away stays a few flat shapes when walked up to (fixed)
+
+**Cause.** The game's own. A soldier's model has up to five levels of detail, picked each game frame by distance
+(G_UpdateEntityLOD 0x2B8450: level 2 from 240 units, 3 from 480, 4 from 720). R_AddDObjSurfaces 0x244020 never draws
+a model finer than the level its pose was last worked out for. A living soldier's pose is worked out again each
+frame; a body the physics moves is not (DObj_UpdateSkeletons 0x2DF880 leaves at once for entity flag 0x400000), and
+some bodies keep that flag for good, so they keep the level the soldier had as he fell.
+
+**Fix.** `src/game/detail.cpp`: such a body is drawn at the level its distance asks for. The physics fills every
+bone (every level of these models has the same 80), which a run in the Oran fight confirmed for each bone of each
+such body.
+
+## 10. Sounds that belong in the middle jump to one side for a moment (fixed)
+
+**Cause.** Two in the toolkit's DirectSound. The game sets its listener and every 3D voice with DS3D_DEFERRED and
+commits once (0xC7D16); the settings were applied at once and the commit did nothing, so the mixer, on its own
+thread, mixed blocks with the listener moved and the voices not. And the delay between the ears was the one for a
+sound level with the head whatever its height, so a sound at the listener's feet or overhead had a side.
+
+**Fix.** The toolkit keeps deferred settings until the commit, and shortens the ear delay by the cosine of the
+elevation, as the console's own filter table does (word[61 x 31] at 0x3E35E8 into 0x20 byte filters at 0x3D2028).
+
+**Not a fault: voices against gunfire.** Measured in Oran: the player's own shots are 2D sounds the game plays at
+0.19 of full volume, dialogue is 3D at 0.92 with a 25000 unit minimum distance. That balance is the game's.
+
+## 11. Shadows are soft blobs (fixed)
+
+**Cause.** The toolkit's. The game draws its shadow casters into one 512x512 picture (R_RenderTestShadow 0x241290,
+700 units across) and lays it on the world through a texture stage, one linear tap. The D3D12 renderer gives a
+target read into a smaller target the glow chain's box taps (three console texels each), and took "smaller" as
+smaller in either axis: 512 is taller than the 480 line frame. Every shadow was averaged over three texels, about
+10 cm, at 16 taps a pixel at 1080p.
+
+**Fix.** The box is for a target with more texels than the one drawn to. Shadows are one tap of a picture at
+render scale again, and every draw that reads them is cheaper.
+
+**Lesson.** A draw list of every stage's texture, with its filters, beside each target's size finds this in one
+frame: the harness's `CAP=N` with a few more lines printed.
+
+## 12. Black screen after the opening movies on the Steam Deck (fix not yet tested on a Deck)
+
+**Cause.** The renderer builds its shaders at run time with `D3DCompile`. Windows has Microsoft's
+`d3dcompiler_47.dll`; Proton and Wine have their own, which has no `1.#INF` literal. The vertex shaders' helper
+lines use it, so every one failed (`d3d12: vs_5_0 compile failed: ... E5000: syntax error`, in a player's log)
+and only the movies, drawn with a small shader of their own, appeared.
+
+**Fix.** The toolkit writes infinity by its bits (`asfloat(0x7F800000u)`), and `release.bat` puts Microsoft's
+redistributable `d3dcompiler_47.dll` beside the executable.
+
 ## Still open: tanks glitch in Desert Fox's minefield at high frame rates
 
 **Symptom.** In Desert Fox, at a frame rate limit above 60 (seen at 144), a tank in the minefield glitches: one of

@@ -3,7 +3,7 @@
 
 namespace app::update {
 
-inline constexpr char kVersion[] = "0.1";  // this build's, shown in the menus
+inline constexpr char kVersion[] = "0.1.1";  // this build's, shown in the menus
 
 enum class State { kUnknown, kLatest, kAvailable };  // unknown: not answered yet, offline, or no release
 
