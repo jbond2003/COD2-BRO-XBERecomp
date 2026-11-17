@@ -12,10 +12,12 @@
 // Bars. The level scripts' cutscenes call BroScr_LetterboxFade (0x141890): letterbox_enabled 1, no gun, no HUD, and
 // two "black" HUD elements 640 wide and 70 high, the top one placed at y 0 (0x141A03) and the bottom one at 410
 // (0x141BBA). With the setting off they are placed off the picture: the cutscene is the same but for the bars.
+// A change of the setting moves the bars of a cutscene that is playing.
 
 #include <algorithm>
 #include <vector>
 
+#include "common/cheats.h"
 #include "common/options.h"
 #include "core/log.h"
 #include "cpu/x86_ops.h"
@@ -117,10 +119,37 @@ X86_FUNC(sub_00204C70) {
 }
 
 // BroScr_LetterboxFade, at its calls that place a bar: (element, y) on the stack. Off the picture, the bars are
-// not seen (a bar of no height is drawn 16 high).
-void CutsceneBarTop(X86Context& ctx, uint8_t*) {
-    if (!game::Opt().cutscene_bars) W32(ctx.esp + 4, uint32_t(-400));
+// not seen (a bar of no height is drawn 16 high). Each bar is remembered, so a change of the setting moves the bars
+// of a cutscene that is already playing (CutsceneBars, each frame).
+namespace {
+constexpr uint32_t kLevel = 0x922EE0;          // the level scripts' object: the bars' elements at +0x79C and +0x270
+constexpr uint32_t kSetElementY = 0x922A50;    // the script interface's (element, y), cdecl
+constexpr uint32_t kNoElement = 0xFFFFFFFF;
+struct Bar {
+    uint32_t field, hidden_y;
+    uint32_t element = kNoElement, y = 0;
+    bool shown = true;
+};
+Bar g_top{0x79C, uint32_t(-400)}, g_bottom{0x270, 880};
+
+void Place(X86Context& ctx, Bar& bar) {
+    bar.element = R32(ctx.esp);
+    bar.y = R32(ctx.esp + 4);
+    bar.shown = game::Opt().cutscene_bars;
+    if (!bar.shown) W32(ctx.esp + 4, bar.hidden_y);
 }
-void CutsceneBarBottom(X86Context& ctx, uint8_t*) {
-    if (!game::Opt().cutscene_bars) W32(ctx.esp + 4, 880);
+}  // namespace
+
+void CutsceneBarTop(X86Context& ctx, uint8_t*) { Place(ctx, g_top); }
+void CutsceneBarBottom(X86Context& ctx, uint8_t*) { Place(ctx, g_bottom); }
+
+void game::cheats::CutsceneBars(X86Context& ctx) {
+    uint32_t level = R32(kLevel);
+    bool show = game::Opt().cutscene_bars;
+    for (Bar* bar : {&g_top, &g_bottom}) {
+        if (bar->shown == show || bar->element == kNoElement) continue;
+        if (!level || R32(level + bar->field) != bar->element) continue;  // another cutscene's, gone
+        kernel::CallGuest(ctx, R32(kSetElementY), {bar->element, show ? bar->y : bar->hidden_y});
+        bar->shown = show;
+    }
 }

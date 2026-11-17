@@ -29,4 +29,7 @@ bool MoviePlaying();
 
 void Tick(X86Context& ctx);  // the game's thread, each client frame
 
+// the cutscene bars as the setting has them now (src/game/bodies.cpp); the game's thread, each client frame
+void CutsceneBars(X86Context& ctx);
+
 }  // namespace game::cheats

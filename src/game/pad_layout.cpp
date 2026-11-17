@@ -241,6 +241,7 @@ void ModernPad(input::Pad& pad) {
 // each client frame: the queued console commands
 void RunCommands(X86Context& ctx) {
     cheats::Tick(ctx);
+    cheats::CutsceneBars(ctx);
     std::string command;
     while (input::TakeCommand(command)) {
         if (kernel::R32(0x95F8F8)) continue;  // the front end: no player
