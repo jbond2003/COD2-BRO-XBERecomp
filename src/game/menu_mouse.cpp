@@ -1503,6 +1503,7 @@ void PcScreenPoll(X86Context& ctx, uint32_t manager, uint32_t menu) {
             for (char& c : words) c = char(std::toupper(uint8_t(c)));
         W32(label + 0x1C, ours ? PcString(words) : own);
     }
+    std::vector<uint32_t> recolor;
     {
         std::lock_guard lock(g_drawn_lock);
         g_pcs.want.clear();
@@ -1514,7 +1515,13 @@ void PcScreenPoll(X86Context& ctx, uint32_t manager, uint32_t menu) {
             std::string lt = pl ? pl->label : "";
             std::string v = pl ? pl->value : "";
             if (label) W32(label + 0x1C, g_pcs.want[label] = PcString(lt));
-            if (item) kernel::G<uint8_t>(item + 0x16) = pl && !pl->note ? g_pcs.own_disabled[i] : 1;
+            // (as the game's own setter 0x30F090 does: the flag, then the item gives its line the colour. The flag alone
+            // left a greyed line white until the game next coloured its lines, a moment after the page came up.)
+            uint8_t off = pl && !pl->note ? g_pcs.own_disabled[i] : 1;
+            if (item && R8(item + 0x16) != off) {
+                kernel::G<uint8_t>(item + 0x16) = off;
+                recolor.push_back(item);
+            }
             if (value) W32(value + 0x1C, g_pcs.want[value] = PcString(v));
             g_pcs.row_binding[i] = pl && pl->binding;
             g_pcs.row_link[i] = !pl || pl->link || pl->note;  // nor has a line past the page's last
@@ -1522,6 +1529,12 @@ void PcScreenPoll(X86Context& ctx, uint32_t manager, uint32_t menu) {
             g_pcs.row_slot[i] = pl && pl->binding ? pl->slot : -1;
             for (int k = 0; k < 2; k++) g_pcs.row_keys[i][k] = pl && pl->binding ? PcString(pl->keys[k]) : 0;
         }
+    }
+    for (uint32_t item : recolor) {
+        uint32_t ecx = ctx.ecx;
+        ctx.ecx = item;
+        kernel::CallGuest(ctx, R32(R32(item) + 0x94), {});
+        ctx.ecx = ecx;
     }
     // more pages before or after: marks under the list. The Gameplay screen's second page has the screen's own
     // lines before it (not on the page that asks, whose first line is words)
