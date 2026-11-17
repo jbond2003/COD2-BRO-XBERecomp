@@ -60,9 +60,10 @@ constexpr std::pair<ImGuiCol, ImVec4> kPanelColors[] = {
 
 constexpr uint32_t kAnisoValues[] = {0, 2, 4, 8, 16};
 const char* const kAnisoNames[] = {"GAME DEFAULT", "2x", "4x", "8x", "16x"};
-constexpr uint32_t kViewDistances[] = {1, 2, 4, 8};
-// The game draws a soldier in full detail up to 240 units (inches): 6 m. Each step doubles it.
-const char* const kViewDistanceNames[] = {"6 m (DEFAULT)", "12 m", "24 m", "49 m"};
+// Times the game's own distances for models' detail. v0.1.1 offered 1, 2, 4, 8: DetailLevel places those.
+constexpr uint32_t kViewDistances[] = {1, 4, 8};
+const char* const kViewDistanceNames[] = {"LOW (ORIGINAL)", "MEDIUM", "HIGH"};
+constexpr int DetailLevel(uint32_t times) { return times <= 1 ? 0 : times <= 5 ? 1 : 2; }
 const char* const kDumpFormatNames[] = {"PNG", "DDS"};
 // 30 keeps the game's own limiter
 constexpr uint32_t kFpsCaps[] = {30, 60, 120, 144, 240, 0};  // 0: no limit
@@ -141,7 +142,7 @@ constexpr Row kRows[] = {
     {kBrightness, "BRIGHTNESS"},
     {kSection, "GRAPHICS"},
     {kAniso, "ANISOTROPIC FILTERING"},
-    {kViewDistance, "FULL DETAIL DISTANCE"},
+    {kViewDistance, "MODEL DETAIL DISTANCE"},
     {kSection, "TEXTURES"},
     {kTextureReplacement, "TEXTURE REPLACEMENT"},
     {kTextureDumping, "TEXTURE DUMPING"},
@@ -250,7 +251,14 @@ std::string RowText(RowId id, int step, Settings& s) {
             std::snprintf(text, sizeof(text), "%s", kAnisoNames[StepTable(kAnisoValues, s.aniso, step)]);
             break;
         case kViewDistance:
-            std::snprintf(text, sizeof(text), "%s", kViewDistanceNames[StepTable(kViewDistances, O().view_distance, step)]);
+        {
+            int level = DetailLevel(O().view_distance);
+            if (step) {
+                level = StepIndex(level, step, int(std::size(kViewDistances)));
+                O().view_distance = kViewDistances[level];
+            }
+            std::snprintf(text, sizeof(text), "%s", kViewDistanceNames[level]);
+        }
             break;
         case kTextureReplacement:
             if (step) s.custom_textures = !s.custom_textures;

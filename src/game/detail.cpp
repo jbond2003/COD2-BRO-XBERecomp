@@ -22,7 +22,11 @@
 
 namespace {
 
-float Further() { return float(std::clamp(game::Opt().view_distance, 1u, 8u)); }
+// Low (the game's own) 1, medium 4, high 8: full detail to 6 m, 24 m and 49 m. A 2 saved by v0.1.1 is medium.
+float Further() {
+    uint32_t times = game::Opt().view_distance;
+    return times <= 1 ? 1.0f : times <= 5 ? 4.0f : 8.0f;
+}
 
 }  // namespace
 
