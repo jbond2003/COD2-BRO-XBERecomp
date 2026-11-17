@@ -61,7 +61,8 @@ constexpr std::pair<ImGuiCol, ImVec4> kPanelColors[] = {
 constexpr uint32_t kAnisoValues[] = {0, 2, 4, 8, 16};
 const char* const kAnisoNames[] = {"GAME DEFAULT", "2x", "4x", "8x", "16x"};
 constexpr uint32_t kViewDistances[] = {1, 2, 4, 8};
-const char* const kViewDistanceNames[] = {"GAME DEFAULT", "2x", "4x", "8x"};
+// The game draws a soldier in full detail up to 240 units (inches): 6 m. Each step doubles it.
+const char* const kViewDistanceNames[] = {"6 m (DEFAULT)", "12 m", "24 m", "49 m"};
 const char* const kDumpFormatNames[] = {"PNG", "DDS"};
 // 30 keeps the game's own limiter
 constexpr uint32_t kFpsCaps[] = {30, 60, 120, 144, 240, 0};  // 0: no limit
@@ -140,7 +141,7 @@ constexpr Row kRows[] = {
     {kBrightness, "BRIGHTNESS"},
     {kSection, "GRAPHICS"},
     {kAniso, "ANISOTROPIC FILTERING"},
-    {kViewDistance, "VIEW DISTANCE"},
+    {kViewDistance, "FULL DETAIL DISTANCE"},
     {kSection, "TEXTURES"},
     {kTextureReplacement, "TEXTURE REPLACEMENT"},
     {kTextureDumping, "TEXTURE DUMPING"},
