@@ -24,6 +24,9 @@ const char* Message(double& age);
 // the game is in its menus (the front end), not in a mission: as the game's thread last saw
 bool InMenus();
 
+// a full screen movie is playing (a logo, a cinematic), as the game's thread last saw (src/game/movies.cpp)
+bool MoviePlaying();
+
 void Tick(X86Context& ctx);  // the game's thread, each client frame
 
 }  // namespace game::cheats

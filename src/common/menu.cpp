@@ -1295,8 +1295,8 @@ void DrawUi(double fps) {
     io.FontGlobalScale = std::max(1.0f, io.DisplaySize.y / 720.0f);
     if (game::Opt().fps_counter) DrawFpsCounter(fps);
     DrawProfileMessage();
-    // the port's version, in the menus
-    if (game::cheats::InMenus() && !paper && !MenuOpen()) {
+    // the port's version, in the menus (the front end also plays the logos and cinematics: not over those)
+    if (game::cheats::InMenus() && !game::cheats::MoviePlaying() && !paper && !MenuOpen()) {
         static const std::string version = std::string("Recomp Version: ") + update::kVersion;
         update::State state = update::Check();
         bool newer = state == update::State::kAvailable;
