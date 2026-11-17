@@ -694,6 +694,7 @@ constexpr uint32_t kShowDialog = 0x3319E0, kEmptyText = 0x82DFEB;
 enum class ExitAsk { kNone, kWanted, kOpening, kUp };
 ExitAsk g_exit_ask = ExitAsk::kNone;
 uint32_t g_exit_ask_frame = 0;
+bool g_exit_ask_back = false;  // B, Escape, Backspace or the right mouse button while the box is up: No
 
 bool ExitAsking() { return g_exit_ask != ExitAsk::kNone; }
 
@@ -747,7 +748,17 @@ void ExitAskPoll(X86Context& ctx) {
         else if (frame - g_exit_ask_frame > 120) g_exit_ask = ExitAsk::kNone;  // it never came up
         break;
     case ExitAsk::kUp:
-        if (DialogUp()) break;
+        if (DialogUp()) {
+            // backing out answers No: the box's own No line (its second), picked
+            uint32_t box = R32(R32(mgr + 4) + uint32_t(R32(mgr + 0xC)) * 4);
+            if (g_exit_ask_back && box && R16s(box + 0x26) >= 2 && !R8(box + 0x30)) {
+                if (R16s(box + 0x22) != 1) Select(ctx, box, 1);
+                TapA();
+                g_exit_ask_back = false;
+            }
+            break;
+        }
+        g_exit_ask_back = false;
         g_exit_ask = ExitAsk::kNone;
         if (R8(mgr + 0x20) & 8) {
             LOGR("Exit to Desktop picked");
@@ -2138,8 +2149,10 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
         return false;
     };
     // a picker's choices never follow the pointer alone: a click picks
-    bool picker_hover = on_item && Horizontal(menu);
-    if (on_item && Horizontal(menu) && (stacked() || overlapped())) {
+    // (a box's Yes and No are side by side as a picker's choices are, but both shown: they are lines like any other)
+    bool dialog = manager == R32(kDialogs);
+    bool picker_hover = on_item && Horizontal(menu) && !dialog;
+    if (on_item && Horizontal(menu) && !dialog && (stacked() || overlapped())) {
         hit = nullptr;
         on_item = false;
         if (pointer.left_clicks) {
@@ -2198,7 +2211,7 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
         return;
     }
     bool no_items = !menu || R16s(menu + 0x26) <= 0;
-    bool picker = menu && Horizontal(menu);
+    bool picker = menu && Horizontal(menu) && !dialog;
     constexpr float kPickerMiddle = 64.0f;
     // a picker's arrows are pictures, beside its middle (difficulty, chapter select): left or right of it steps
     if (pointer.left_clicks && picker && !on_item && std::abs(x - 320.0f) > kPickerMiddle)
@@ -2326,6 +2339,8 @@ void OptionsPad(input::Pad& pad) {
     // the pause menu's Exit to Desktop, under Quit as PC OPTIONS is under SOUND
     bool asking = ExitAsking();  // the yes or no box has the pad
     if (asking) {
+        if (b_edge && g_exit_ask == ExitAsk::kUp) g_exit_ask_back = true;
+        if (b) hidden |= 8;
     } else if (PcEntryUp(g_exit)) {
         uint32_t menu = g_exit.screen;
         bool last = R16s(menu + 0x22) == R16s(menu + 0x26) - 1, locked = R8(menu + 0x30);
@@ -2370,6 +2385,8 @@ void OptionsPad(input::Pad& pad) {
     if (!up) hidden &= uint8_t(~1);
     if (!down) hidden &= uint8_t(~2);
     if (!a) hidden &= uint8_t(~4);
+    if (!b) hidden &= uint8_t(~8);
+    if (hidden & 8) pad.analog[1] = 0;
     if (hidden & 1) {
         pad.buttons &= uint16_t(~kUp);
         if (pad.ly > 0) pad.ly = 0;
