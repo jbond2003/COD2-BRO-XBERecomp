@@ -365,6 +365,11 @@ at = 0x0024448E
 call = "BodyLodLimit"
 
 # src/game/bodies.cpp: the level scripts' cutscene bars, about to be placed (the top one, then the bottom one)
+# G_FreeEntity (entity, 0): a body freed while Bodies Stay is on is said in the log, with who freed it
+[[hook]]
+at = 0x002BE420
+call = "BodyFreed"
+
 [[hook]]
 at = 0x00141A03
 call = "CutsceneBarTop"

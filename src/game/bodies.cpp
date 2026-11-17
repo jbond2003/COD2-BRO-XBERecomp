@@ -110,9 +110,8 @@ X86_FUNC(sub_00204C70) {
         float apart = Apart(Origin(ent), player);
         if (apart > most) most = apart, far = i;
     }
-    static bool said = false;
-    if (!said) LOGR("bodies stay: the first body to keep after the game's own %u", in_use);
-    said = true;
+    static int kept = 0;
+    if (kept++ < 300) LOGR("bodies stay: body %d kept after the game's own %u", kept, in_use);
     W32(kCorpses + far * kCorpseBytes, 0);  // the body stays, without a slot
     Prune(ctx, player, ctx.esi);
     kernel::Return(ctx, far, 0);
@@ -139,6 +138,17 @@ void Place(X86Context& ctx, Bar& bar) {
     if (!bar.shown) W32(ctx.esp + 4, bar.hidden_y);
 }
 }  // namespace
+
+// G_FreeEntity's first instruction: the return address, then the entity. With Bodies Stay on, each body freed is
+// written to the log with its caller (the first 300), so a player's log shows what took a body away.
+void BodyFreed(X86Context& ctx, uint8_t*) {
+    if (!game::Opt().keep_bodies) return;
+    uint32_t ent = R32(ctx.esp + 4);
+    if (!ent || kernel::G<uint8_t>(ent) != kCorpseType) return;
+    static int said = 0;
+    if (said++ < 300)
+        LOGR("bodies stay: body %08x freed by %08x, %s a slot", ent, R32(ctx.esp), HasSlot(R32(ent + 0x224)) ? "with" : "without");
+}
 
 void CutsceneBarTop(X86Context& ctx, uint8_t*) { Place(ctx, g_top); }
 void CutsceneBarBottom(X86Context& ctx, uint8_t*) { Place(ctx, g_bottom); }
