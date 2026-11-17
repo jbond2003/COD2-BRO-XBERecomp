@@ -142,7 +142,7 @@ constexpr Row kRows[] = {
     {kBrightness, "BRIGHTNESS"},
     {kSection, "GRAPHICS"},
     {kAniso, "ANISOTROPIC FILTERING"},
-    {kViewDistance, "MODEL DETAIL DISTANCE"},
+    {kViewDistance, "LEVEL OF DETAIL"},
     {kSection, "TEXTURES"},
     {kTextureReplacement, "TEXTURE REPLACEMENT"},
     {kTextureDumping, "TEXTURE DUMPING"},
