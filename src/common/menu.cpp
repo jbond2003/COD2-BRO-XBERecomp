@@ -124,7 +124,7 @@ const std::vector<Mode>& Modes() {
 
 enum RowId { kSection, kDisplayMode, kResolution, kRenderResolution, kFov, kMaxFps, kVsync, kFpsCounter, kAniso,
              kTextureReplacement, kTextureDumping, kDumpFormat, kMouseX, kMouseY, kInvertY, kInvertX, kQwerty, kPrompts,
-             kBrightness, kAimAssist, kHints, kHideHud, kViewDistance };
+             kBrightness, kAimAssist, kHints, kHideHud, kViewDistance, kKeepBodies, kCutsceneBars };
 
 struct Row {
     RowId id;
@@ -140,9 +140,11 @@ constexpr Row kRows[] = {
     {kVsync, "VSYNC"},
     {kFpsCounter, "FPS COUNTER"},
     {kBrightness, "BRIGHTNESS"},
+    {kCutsceneBars, "CUTSCENE BLACK BARS"},
     {kSection, "GRAPHICS"},
     {kAniso, "ANISOTROPIC FILTERING"},
     {kViewDistance, "LEVEL OF DETAIL"},
+    {kKeepBodies, "BODIES STAY"},
     {kSection, "TEXTURES"},
     {kTextureReplacement, "TEXTURE REPLACEMENT"},
     {kTextureDumping, "TEXTURE DUMPING"},
@@ -247,6 +249,12 @@ std::string RowText(RowId id, int step, Settings& s) {
         case kHideHud:
             if (step) O().hide_hud = !O().hide_hud;
             return OnOff(O().hide_hud);
+        case kKeepBodies:
+            if (step) O().keep_bodies = !O().keep_bodies;
+            return OnOff(O().keep_bodies);
+        case kCutsceneBars:
+            if (step) O().cutscene_bars = !O().cutscene_bars;
+            return OnOff(O().cutscene_bars);
         case kAniso:
             std::snprintf(text, sizeof(text), "%s", kAnisoNames[StepTable(kAnisoValues, s.aniso, step)]);
             break;
@@ -376,6 +384,7 @@ void SetDefaults(Settings& s, game::Options& o, int parts) {
         o.fps_counter = false;
         o.fov = game::kDefaultFov;
         o.brightness = 100;
+        o.cutscene_bars = true;
     }
     if (parts & kGameplayPart) {
         o.aim_assist = true;
@@ -385,6 +394,7 @@ void SetDefaults(Settings& s, game::Options& o, int parts) {
     if (parts & kGraphicsPart) {
         s.aniso = d.aniso;
         o.view_distance = 1;
+        o.keep_bodies = false;
         s.custom_textures = d.custom_textures;
         s.dump_textures = d.dump_textures;
         s.texture_dump_format = d.texture_dump_format;
@@ -426,6 +436,8 @@ void CopyRows(Settings& s, game::Options& o, const Settings& from, const game::O
     o.hints = from_o.hints;
     o.hide_hud = from_o.hide_hud;
     o.view_distance = from_o.view_distance;
+    o.keep_bodies = from_o.keep_bodies;
+    o.cutscene_bars = from_o.cutscene_bars;
 }
 
 // one set of the rows' values differs from another
@@ -438,7 +450,8 @@ bool RowsDiffer(const Settings& a, const game::Options& c, const Settings& b, co
            c.invert_mouse != d.invert_mouse || c.invert_mouse_x != d.invert_mouse_x ||
            c.qwerty_typewriter != d.qwerty_typewriter || c.button_prompts != d.button_prompts ||
            c.brightness != d.brightness || c.aim_assist != d.aim_assist || c.hints != d.hints ||
-           c.hide_hud != d.hide_hud || c.view_distance != d.view_distance;
+           c.hide_hud != d.hide_hud || c.view_distance != d.view_distance || c.keep_bodies != d.keep_bodies ||
+           c.cutscene_bars != d.cutscene_bars;
 }
 
 // The F10 panel's changes, every row's, are held until its Apply (his ask: nothing changes before Apply, as in PC
@@ -983,9 +996,9 @@ const PageSpec& Spec(int page) {
     static const PageSpec specs[] = {
         {"PC Options", kEveryPart, {}, false},
         {"Display", kDisplayPart, {kDisplayMode, kResolution, kRenderResolution, kBrightness, kFov, kMaxFps, kVsync,
-          kFpsCounter},
+          kFpsCounter, kCutsceneBars},
          false},
-        {"Graphics", kGraphicsPart, {kAniso, kViewDistance, kTextureReplacement, kTextureDumping, kDumpFormat}, false},
+        {"Graphics", kGraphicsPart, {kAniso, kViewDistance, kKeepBodies, kTextureReplacement, kTextureDumping, kDumpFormat}, false},
         {"Mouse", kMousePart, {kMouseX, kMouseY, kInvertY, kInvertX}, false},
         {"Keyboard", kKeysPart, {kPrompts, kQwerty}, true},
         {"Gameplay", kGameplayPart, {kAimAssist, kHints, kHideHud}, false},

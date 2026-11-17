@@ -364,6 +364,15 @@ call = "MeshLodDistance"
 at = 0x0024448E
 call = "BodyLodLimit"
 
+# src/game/bodies.cpp: the level scripts' cutscene bars, about to be placed (the top one, then the bottom one)
+[[hook]]
+at = 0x00141A03
+call = "CutsceneBarTop"
+
+[[hook]]
+at = 0x00141BBA
+call = "CutsceneBarBottom"
+
 # ClientThink: the player's gravity and run speed as the cheats have them (src/game/cheats.cpp)
 [[hook]]
 at = 0x00271D8D

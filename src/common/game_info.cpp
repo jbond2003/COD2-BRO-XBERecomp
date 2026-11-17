@@ -226,6 +226,8 @@ const app::GameInfo app::kGame = {
                 {"modern_layout", &game::Opt().modern_layout, nullptr},
                 {"brightness", nullptr, &game::Opt().brightness},
                 {"view_distance", nullptr, &game::Opt().view_distance},
+                {"keep_bodies", &game::Opt().keep_bodies, nullptr},
+                {"cutscene_bars", &game::Opt().cutscene_bars, nullptr},
                 {"aim_assist", &game::Opt().aim_assist, nullptr},
                 {"hints", &game::Opt().hints, nullptr},
                 {"hide_hud", &game::Opt().hide_hud, nullptr},
