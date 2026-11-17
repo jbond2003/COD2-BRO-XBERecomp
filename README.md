@@ -46,7 +46,7 @@ Direct3D 12, and adds a few things of its own:
 - A frame rate limit of 30, 60, 120, 144 or 240, or none, and VSync, with the cinematics at their own 30, and
   movies you can skip.
 - Texture packs: replace a texture with your own image, or dump the game's.
-- The port's version in the corner of the menus. The game never goes online.
+- The port's version in the corner of the menus.
 
 Like the loader, it has 60 fps play, higher resolutions, a field of view setting, mouse look, Q and E to lean, the
 mouse in the menus, sharp text, and button prompts that switch between keyboard and controller as you do.
