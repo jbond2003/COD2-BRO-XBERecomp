@@ -1378,6 +1378,31 @@ void TakePcScreen(uint32_t menu, const Layout& l) {
 
 bool PcScreenPending() { return g_pcs.want_layout != nullptr; }
 
+void PcScreenPoll(X86Context& ctx, uint32_t manager, uint32_t menu);
+
+// A widget is about to be drawn. The screen PC Options was asked on came up after this frame's poll: it is taken now,
+// before any of it is drawn, where the game's own lines showed for a frame.
+void PcScreenTakeBeforeDraw(X86Context& ctx) {
+    const Layout* want = g_pcs.want_layout;
+    if (!want || !g_pcs.tapped) return;
+    uint32_t screen = ActiveScreen(want->manager);
+    if (!screen || R32(screen) != want->vtable) return;
+    PcScreenPoll(ctx, R32(want->manager), screen);
+}
+
+// On the pause menu the asking moves the game's selection from PC Options to the line that opens the screen: the two
+// lines are drawn in each other's colour meanwhile, so the highlight stays on PC Options. The other line's widget, or 0.
+uint32_t PausePendingSwap(uint32_t widget) {
+    const Layout* want = g_pcs.want_layout;
+    if (!want || want->manager != kInGame || !g_pause.screen || g_pause.index < 0) return 0;
+    uint32_t menu = ActiveScreen(kInGame);
+    if (menu != g_pause.screen || R32(menu) != want->pick_vtable || R16s(menu + 0x22) != want->pick_item) return 0;
+    uint32_t a = LineItem(menu, want->pick_item), b = LineItem(menu, g_pause.index);
+    uint32_t wa = a ? R32(a + 0x10) : 0, wb = b ? R32(b + 0x10) : 0;
+    if (!wa || !wb || wa == wb) return 0;
+    return widget == wa ? wb : widget == wb ? wa : 0;
+}
+
 // each poll of a manager: PC Options asked for, taken, kept up to date, and left
 void PcScreenPoll(X86Context& ctx, uint32_t manager, uint32_t menu) {
     static uint32_t polls = 0;
@@ -2441,6 +2466,7 @@ bool HudHidden() {
 // a picture widget drawn (0x316DD0, vtable slot +0x44, ecx the widget): the sliders of the lines PC Options puts aside
 // are not
 X86_FUNC(sub_00316DD0) {
+    PcScreenTakeBeforeDraw(ctx);
     PcScreenDrawMarks(ctx, ctx.ecx);
     if (PcScreenHidesPicture(ctx.ecx) || HudHidden() || TitleHidden()) {
         ctx.esp += 4;  // its ret, skipped with it
@@ -2512,6 +2538,7 @@ X86_FUNC(sub_0030F900) {
 // a text widget's draw (ecx widget)
 X86_FUNC(sub_00321160) {
     uint32_t widget = ctx.ecx;
+    if (!g_foot_draw) PcScreenTakeBeforeDraw(ctx);
     game::ModernPadLabel modern_place(widget);  // the Controller screen's labels follow the Modern picture
     if (g_foot_draw) {  // (a copy for the black edge, or part of a moved one)
         __imp__sub_00321160(ctx, base);
@@ -2548,11 +2575,13 @@ X86_FUNC(sub_00321160) {
     bool anchor = widget == extra.anchor && PcEntryUp(extra);
     bool dimmed = PcEntryUp(extra) && extra.selected && (anchor || PcEntryLine(widget, extra));
     uint32_t color = R32(widget + 0x50);
+    uint32_t swap = PausePendingSwap(widget);
+    if (swap) W32(widget + 0x50, R32(swap + 0x50));
     if (dimmed) W32(widget + 0x50, extra.own_colors ? extra.idle_color : (color & 0xFFFFFF) | kIdleAlpha);
     Foot foot = FootBegin(ctx, widget, 0x321160);
     __imp__sub_00321160(ctx, base);
     FootEnd(widget, foot);
-    if (dimmed) W32(widget + 0x50, color);
+    if (dimmed || swap) W32(widget + 0x50, color);
     if (shown) W32(widget + 0x1C, text);
     if (anchor) {
         ctx.ecx = extra.widget;
