@@ -86,12 +86,8 @@ struct IconTexture {
 
 std::once_flag g_loaded;
 std::vector<IconTexture> g_textures;  // written once, under g_loaded
-// the main menu's paper (Single_Front_menu.dds in sp/frontend.cod) has four boxes printed on it, one a line: with
-// Multiplayer gone there are three lines, so the fourth box is painted over with the paper beside it
-std::vector<uint8_t> g_menu_paper;  // its level 0, written once under g_loaded
 // the Controller screen's picture (xboxlineA.dds in sp/frontend.cod): the Modern one in its place (pad_picture.cpp)
 std::vector<uint8_t> g_pad_picture;  // its level 0, written once under g_loaded
-std::shared_ptr<const Picture> g_menu_paper_picture;  // under g_lock
 std::vector<uint8_t> g_ttf;
 stbtt_fontinfo g_font;
 bool g_have_font = false;
@@ -267,10 +263,6 @@ void Load() {
             add(name, dds, {{icon, 0, 0, int(U32(dds, 16)), int(U32(dds, 12))}});
     LOGR("button prompts: %zu icon textures", g_textures.size());
     std::map<std::string, Entry> front = ReadDirectory("D:\\sp\\frontend.cod");
-    if (auto it = front.find("Single_Front_menu.dds"); it != front.end() &&
-        kernel::ReadGameFile("D:\\sp\\frontend.cod", it->second.offset, it->second.size, dds) &&
-        dds.size() == 128 + 256 * 512 && U32(dds, 16) == 256 && U32(dds, 12) == 512)
-        g_menu_paper.assign(dds.begin() + 128, dds.end());
     if (auto it = front.find("xboxlineA.dds"); it != front.end() &&
         kernel::ReadGameFile("D:\\sp\\frontend.cod", it->second.offset, it->second.size, dds) &&
         dds.size() >= 128 + 512 * 512 && U32(dds, 16) == 512 && U32(dds, 12) == 512)
@@ -587,24 +579,6 @@ std::shared_ptr<const Picture> Draw(const IconTexture& t, const Labels& labels, 
     return canvas.Finish();
 }
 
-// the main menu's paper without its fourth box (rows 346-363, columns 28-48): the paper 24 texels right of it
-std::shared_ptr<const Picture> MenuPaper() {
-    constexpr uint32_t w = 256, h = 512;
-    std::vector<Color> texels = DecodeDxt3(g_menu_paper, w, h);
-    for (uint32_t y = 342; y < 368; y++)
-        for (uint32_t x = 24; x < 52; x++) texels[y * w + x] = texels[y * w + x + 26];
-    auto pic = std::make_shared<Picture>();
-    pic->width = w;
-    pic->height = h;
-    pic->argb.resize(texels.size());
-    auto channel = [](float v) { return uint32_t(std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f)); };
-    for (size_t i = 0; i < texels.size(); i++) {
-        const Color& c = texels[i];
-        pic->argb[i] = channel(c.a) << 24 | channel(c.r) << 16 | channel(c.g) << 8 | channel(c.b);
-    }
-    return pic;
-}
-
 // render thread: keycaps for the icon textures while labels are set
 std::shared_ptr<const Picture> Provide(const gpu::TextureDesc& d, const uint8_t* guest, float render_scale) {
     std::call_once(g_loaded, Load);
@@ -616,14 +590,7 @@ std::shared_ptr<const Picture> Provide(const gpu::TextureDesc& d, const uint8_t*
     if (!found && !g_pad_picture.empty() && d.width == 512 && d.height == 512 &&
         gpu::LevelSize(d, 0) == g_pad_picture.size() && std::memcmp(guest, g_pad_picture.data(), g_pad_picture.size()) == 0)
         if (auto modern = game::ModernPadPicture()) return modern;
-    if (!found) {
-        if (g_menu_paper.empty() || d.width != 256 || d.height != 512 || gpu::LevelSize(d, 0) != g_menu_paper.size() ||
-            std::memcmp(guest, g_menu_paper.data(), g_menu_paper.size()) != 0)
-            return game::SharpText(d, guest, render_scale);
-        std::lock_guard lock(g_lock);
-        if (!g_menu_paper_picture) g_menu_paper_picture = MenuPaper();
-        return g_menu_paper_picture;
-    }
+    if (!found) return game::SharpText(d, guest, render_scale);
     std::lock_guard lock(g_lock);
     if (!g_labels) return nullptr;
     // a controller's pictures change only in the icon font (DXT3), where the white and black buttons are

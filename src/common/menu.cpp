@@ -1285,6 +1285,10 @@ void OpenPcOptions() {
 
 bool PcOptionsOpen() { return MenuOpen() && g_paper.load(std::memory_order_relaxed); }
 
+void ExitToDesktop() {
+    if (HWND window = static_cast<HWND>(Window())) PostMessageW(window, WM_CLOSE, 0, 0);
+}
+
 void PcOptionsPad(const input::Pad& pad) {
     uint32_t bits = pad.buttons & 0xF;  // dpad up, down, left, right
     constexpr int16_t kStick = 16000;
@@ -1451,6 +1455,7 @@ void Leave(bool applied) {
 namespace app {
 void OpenBindings() {}
 void OpenPcOptions() {}
+void ExitToDesktop() {}
 bool PcOptionsOpen() { return false; }
 void PcOptionsPad(const input::Pad&) {}
 }  // namespace app

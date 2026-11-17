@@ -17,6 +17,7 @@ void OpenBindings();  // the panel with the key bindings alone
 // PC OPTIONS in the game's Options menu: the same settings and the key bindings on a page like the game's own
 // option pages (paper_page.h), mouse, keys and controller
 void OpenPcOptions();
+void ExitToDesktop();  // Exit to Desktop in the game's menus: the window closes, as by its close button
 bool PcOptionsOpen();
 void PcOptionsPad(const input::Pad& pad);  // the controller's report each poll, before the game's is blanked
 bool Capturing();  // a controls box is waiting for a key: Escape is the box's, not the panel's
