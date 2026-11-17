@@ -524,6 +524,8 @@ constexpr uint32_t kWidgetBytes = 0x68;
 constexpr uint32_t kSelectedAlpha = 0xFF000000, kIdleAlpha = 0x8C000000;
 struct PcEntry {
     const char* label;
+    bool own_colors = false;  // the screen's selected line has its own colour (the pause menu's red), not only alpha
+    uint32_t idle_color = 0;  // then: the colour of a line that is not selected
     uint32_t screen = 0;  // the Options screen it was made for
     uint32_t anchor = 0;  // the last item's widget, SOUND
     uint32_t widget = 0;  // our copy, saying PC OPTIONS
@@ -539,7 +541,7 @@ PcEntry g_pc{"PC OPTIONS"};
 // way under Quit, Exit to Desktop; its six lines stand a little closer so that the last is above the rule
 // (PauseMenu). The main menu's Exit to Desktop is its Multiplayer line (MainMenuLines).
 constexpr uint32_t kPauseVtable = 0x8289F8;
-PcEntry g_exit{"Exit to Desktop"};
+PcEntry g_exit{"Exit to Desktop", true};
 constexpr float kPauseSmaller = 0.9f;  // the pause menu's lines: their size and spacing, for six where five were
 
 // The main menu (screen vtable 0x829B80): Single Player, Multiplayer, Options, Bonus Materials, and a hidden
@@ -686,9 +688,76 @@ void OpenPcOptions() {
 }
 
 // The game closes, as by the window's close button. (Headless there is no window: only the line in the log.)
+// Exit to Desktop asks first, in the game's own yes or no box (UI_ShowDialog 0x3319E0: eax the text or its key, then
+// manager, OK button, Yes and No buttons, more text, pause). Yes sets bit 8 of the dialog manager's +0x20, No clears it.
+constexpr uint32_t kShowDialog = 0x3319E0, kEmptyText = 0x82DFEB;
+enum class ExitAsk { kNone, kWanted, kOpening, kUp };
+ExitAsk g_exit_ask = ExitAsk::kNone;
+uint32_t g_exit_ask_frame = 0;
+
+bool ExitAsking() { return g_exit_ask != ExitAsk::kNone; }
+
 void ExitToDesktop() {
-    LOGR("Exit to Desktop picked");
-    app::ExitToDesktop();
+    if (g_exit_ask == ExitAsk::kNone) g_exit_ask = ExitAsk::kWanted;
+}
+
+bool DialogUp() {
+    uint32_t mgr = R32(kDialogs);
+    return mgr && int32_t(R32(mgr + 0xC)) >= 0;
+}
+
+// each frame: the box goes up, and once it is gone its answer is read
+void ExitAskPoll(X86Context& ctx) {
+    if (g_exit_ask == ExitAsk::kNone) return;
+    uint32_t mgr = R32(kDialogs), frame = Frame();
+    if (!mgr) {  // no box to ask in: as before
+        g_exit_ask = ExitAsk::kNone;
+        LOGR("Exit to Desktop picked");
+        app::ExitToDesktop();
+        return;
+    }
+    switch (g_exit_ask) {
+    case ExitAsk::kWanted: {
+        if (DialogUp()) {  // another box is up: this pick is dropped
+            g_exit_ask = ExitAsk::kNone;
+            return;
+        }
+        static uint32_t text = 0;
+        if (!text) {
+            const char* ask = "Are you sure you want to exit to desktop?";
+            text = mem::AllocSystem(uint32_t(std::strlen(ask)) + 1);
+            if (text) std::memcpy(&kernel::G<char>(text), ask, std::strlen(ask) + 1);
+        }
+        if (!text) {
+            g_exit_ask = ExitAsk::kNone;
+            return;
+        }
+        kernel::G<uint8_t>(mgr + 0x20) &= uint8_t(~8);
+        uint32_t eax = ctx.eax;
+        ctx.eax = text;
+        kernel::CallGuest(ctx, kShowDialog, {mgr, 0, 1, kEmptyText, 1});
+        ctx.eax = eax;
+        g_exit_ask = ExitAsk::kOpening;
+        g_exit_ask_frame = frame;
+        LOGI("Exit to Desktop: asking");
+        break;
+    }
+    case ExitAsk::kOpening:
+        if (DialogUp()) g_exit_ask = ExitAsk::kUp;
+        else if (frame - g_exit_ask_frame > 120) g_exit_ask = ExitAsk::kNone;  // it never came up
+        break;
+    case ExitAsk::kUp:
+        if (DialogUp()) break;
+        g_exit_ask = ExitAsk::kNone;
+        if (R8(mgr + 0x20) & 8) {
+            LOGR("Exit to Desktop picked");
+            app::ExitToDesktop();
+        } else {
+            LOGR("Exit to Desktop: answered no");
+        }
+        break;
+    default: break;
+    }
 }
 
 // each poll of a manager whose active screen has an extra line: the copy follows the last line's place and look
@@ -717,6 +786,11 @@ void UpdatePcEntry(uint32_t menu, PcEntry& e = g_pc) {
     kernel::G<float>(e.widget + 0x30) = 2 * RF(anchor + 0x30) - RF(prev + 0x30);
     uint32_t color = R32(anchor + 0x50) & 0xFFFFFF;
     W32(e.widget + 0x50, color | (e.selected ? kSelectedAlpha : kIdleAlpha));
+    if (e.own_colors) {
+        // ours selected: the game's selection is on the last line, whose colour is the selected one
+        e.idle_color = R32((R16s(menu + 0x22) == count - 1 ? prev : anchor) + 0x50);
+        W32(e.widget + 0x50, e.selected ? R32(anchor + 0x50) : e.idle_color);
+    }
     e.frame = Frame();
 }
 
@@ -1895,6 +1969,13 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
     int32_t active = int32_t(R32(manager + 0xC));
     uint32_t menu = screens && active >= 0 ? R32(screens + uint32_t(active) * 4) : 0;
     uint32_t frame = Frame();
+    {
+        static uint32_t asked = ~0u;
+        if (asked != frame) {
+            asked = frame;
+            ExitAskPoll(ctx);
+        }
+    }
     if (manager == R32(kFrontEnd) && menu) g_front_end_ms.store(NowMs(), std::memory_order_relaxed);
     // one of a level's screens is up (a mission's map as it loads): the front end's fit goes at once, where it
     // stayed a quarter of a second into the map and the map then changed size
@@ -2243,7 +2324,9 @@ void OptionsPad(input::Pad& pad) {
         g_pc.selected = false;
     }
     // the pause menu's Exit to Desktop, under Quit as PC OPTIONS is under SOUND
-    if (PcEntryUp(g_exit)) {
+    bool asking = ExitAsking();  // the yes or no box has the pad
+    if (asking) {
+    } else if (PcEntryUp(g_exit)) {
         uint32_t menu = g_exit.screen;
         bool last = R16s(menu + 0x22) == R16s(menu + 0x26) - 1, locked = R8(menu + 0x30);
         if (!g_exit.selected) {
@@ -2270,7 +2353,7 @@ void OptionsPad(input::Pad& pad) {
         g_exit.selected = false;
     }
     // the main menu: up and down through its lines as they are drawn, and A on Exit to Desktop
-    if (MainMenuUp() && !R8(g_main_menu + 0x30)) {
+    if (!asking && MainMenuUp() && !R8(g_main_menu + 0x30)) {
         int16_t selected = R16s(g_main_menu + 0x22);
         auto at = std::find(g_main_order.begin(), g_main_order.end(), selected);
         if (at != g_main_order.end() && (up_edge || down_edge)) {
@@ -2435,7 +2518,7 @@ X86_FUNC(sub_00321160) {
     bool anchor = widget == extra.anchor && PcEntryUp(extra);
     bool dimmed = PcEntryUp(extra) && extra.selected && (anchor || PcEntryLine(widget, extra));
     uint32_t color = R32(widget + 0x50);
-    if (dimmed) W32(widget + 0x50, (color & 0xFFFFFF) | kIdleAlpha);
+    if (dimmed) W32(widget + 0x50, extra.own_colors ? extra.idle_color : (color & 0xFFFFFF) | kIdleAlpha);
     Foot foot = FootBegin(ctx, widget, 0x321160);
     __imp__sub_00321160(ctx, base);
     FootEnd(widget, foot);
