@@ -218,10 +218,10 @@ void Init() {
     input::LoadBindings();
     InitPrompts();
     // the frame rate is one of the menu's (30, 60, 120, 144, 240 or 0 for no limit) or any other the console's
-    // com_maxfps set, up to 999. (The game takes each frame's time from the clock, Com_Frame 0x2A70C0, as the engine
+    // com_maxfps set, 5 to 999. (The game takes each frame's time from the clock, Com_Frame 0x2A70C0, as the engine
     // it comes from does: nothing of it counts frames. Movies keep their own 30: src/game/movies.cpp.)
     app::Settings& s = app::Get();
-    if (s.fps_cap == 1 || s.fps_cap > 999) s.fps_cap = 60;
+    if ((s.fps_cap && s.fps_cap < 5) || s.fps_cap > 999) s.fps_cap = 60;
 }
 
 }  // namespace
