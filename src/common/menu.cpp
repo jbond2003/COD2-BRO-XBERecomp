@@ -219,6 +219,7 @@ std::string RowText(RowId id, int step, Settings& s) {
             uint32_t at = s.fps_cap ? std::max<uint32_t>(s.fps_cap, 16) : 0;
             uint32_t cap = kFpsCaps[StepTable(kFpsCaps, at, step)];
             if (step) s.fps_cap = cap;
+            else cap = s.fps_cap;  // a rate of the console's com_maxfps is shown as it is
             std::snprintf(text, sizeof(text), cap == 30 ? "30 (ORIGINAL)" : cap ? "%u" : "UNLIMITED", cap);
             break;
         }

@@ -127,7 +127,7 @@ struct PortVariable {
     void (*set)(double);
 };
 
-constexpr double kFrameRates[] = {0, 30, 60, 120, 144, 240}, kFilters[] = {0, 2, 4, 8, 16};
+constexpr double kFilters[] = {0, 2, 4, 8, 16};
 
 double Nearest(const double* values, size_t count, double v) {
     double best = values[0];
@@ -141,8 +141,9 @@ double Nearest(const double* values, size_t count, double v) {
 const PortVariable kPortVariables[] = {
     {"cg_fov", "Field of View", "60 to 110", kMinFov, kMaxFov, kDefaultFov, 1, PORT_NUMBER(Opt().fov, uint32_t)},
     {"cg_drawFPS", "FPS Counter", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().fps_counter)},
-    {"com_maxfps", "Max Frame Rate", "30, 60, 120, 144, 240, or 0 for no limit", 0, 240, 60, 1,
-     PORT_NUMBER(app::Get().fps_cap, uint32_t)},
+    // any whole rate (his ask), not only the menu's six; 1 is the runtime's "the monitor's rate", so the least is 2
+    {"com_maxfps", "Max Frame Rate", "1 to 999, or 0 for no limit", 0, 999, 60, 1,
+     [] { return double(app::Get().fps_cap); }, [](double v) { app::Get().fps_cap = v == 1 ? 2 : uint32_t(v); }},
     {"r_swapInterval", "VSync", "0 or 1", 0, 1, 1, 1, PORT_BOOL(app::Get().vsync)},
     {"r_gamma", "Brightness", "0.5 to 2, 1 the game's own", 0.5, 2, 1, 0.1,
      [] { return double(Opt().brightness) / 100.0; }, [](double v) { Opt().brightness = uint32_t(v * 100.0 + 0.5); }},
@@ -187,7 +188,6 @@ const PortVariable* FindPortVariable(const std::string& lower) {
 double Fit(const PortVariable& v, double typed) {
     double value = std::clamp(typed, v.low, v.high);
     value = std::round(value / v.step) * v.step;
-    if (std::strcmp(v.name, "com_maxfps") == 0) value = Nearest(kFrameRates, std::size(kFrameRates), value);
     if (std::strcmp(v.name, "r_anisotropy") == 0) value = Nearest(kFilters, std::size(kFilters), value);
     return std::clamp(value, v.low, v.high);
 }
