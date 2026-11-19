@@ -105,50 +105,32 @@ struct Screen {
     bool to_end = true;
     std::string suggested_for;           // the word the suggestions are for, lower case
     std::vector<std::string> suggested;  // those starting with it first
-    size_t suggested_starting = 0, suggested_more = 0;
+    size_t suggested_starting = 0;       // how many of them start with it
+    int picked = -1;                     // the one Tab has put in the line, -1 none
 } g_screen;
 
-bool SameStart(const std::string& name, const char* word, size_t length) {
-    if (name.size() < length) return false;
-    for (size_t i = 0; i < length; i++)
-        if (std::tolower(static_cast<unsigned char>(name[i])) != std::tolower(static_cast<unsigned char>(word[i])))
-            return false;
-    return true;
+std::string LowerCase(std::string text) {
+    for (char& c : text) c = char(std::tolower(static_cast<unsigned char>(c)));
+    return text;
 }
 
-// Tab: the word the caret is in or after grows to the one name that starts with it, or as far as every such name
-// agrees, and those names are listed
+// Tab: the word being typed becomes the next name of the list under the console (Suggest), round and round; a
+// list of one is taken with a space after it
 void Complete(ImGuiInputTextCallbackData* data) {
-    int end = data->CursorPos, start = end;
+    Screen& s = g_screen;
+    int end = data->BufTextLen, start = end;
+    if (data->CursorPos != end || s.suggested.empty()) return;
     while (start > 0 && data->Buf[start - 1] != ' ' && data->Buf[start - 1] != ';') start--;
     if (start < end && (data->Buf[start] == '/' || data->Buf[start] == '\\')) start++;
-    if (start == end) return;
-    std::vector<std::string> found;
-    {
-        std::lock_guard lock(g_lock);
-        for (const std::string& name : g_names)
-            if (SameStart(name, data->Buf + start, size_t(end - start))) found.push_back(name);
-    }
-    if (found.empty()) return;
-    std::string grown = found[0];
-    for (const std::string& name : found) {
-        size_t same = 0;
-        while (same < grown.size() && same < name.size() &&
-               std::tolower(static_cast<unsigned char>(grown[same])) ==
-                   std::tolower(static_cast<unsigned char>(name[same])))
-            same++;
-        grown.resize(same);
-    }
-    if (found.size() == 1) grown += ' ';
+    // the list is the one drawn last frame: it must be this word's
+    std::string word = LowerCase(std::string(data->Buf + start, size_t(end - start)));
+    bool stepping = s.picked >= 0 && size_t(s.picked) < s.suggested.size() && word == LowerCase(s.suggested[size_t(s.picked)]);
+    if (!stepping && word != s.suggested_for) return;
+    s.picked = stepping ? int((size_t(s.picked) + 1) % s.suggested.size()) : 0;
+    std::string name = s.suggested[size_t(s.picked)];
+    bool only = s.suggested.size() == 1;
     data->DeleteChars(start, end - start);
-    data->InsertChars(start, grown.c_str());
-    if (found.size() == 1) return;
-    constexpr size_t kListed = 60;
-    std::string list;
-    for (size_t i = 0; i < found.size() && i < kListed; i++) list += "    " + found[i] + "\n";
-    if (found.size() > kListed) list += "    ... and " + std::to_string(found.size() - kListed) + " more\n";
-    Print(list);
-    g_screen.to_end = true;
+    data->InsertChars(start, (only ? name + " " : name).c_str());
 }
 
 // Up and Down: the lines typed before
@@ -167,54 +149,56 @@ void Recall(ImGuiInputTextCallbackData* data) {
 }
 
 // The names like the word being typed, listed under the console as in the PC games' own: those that start with it
-// first, then those that hold it. Tab completes from the first kind.
+// first, then those that hold it. Tab steps through them (Complete), the one taken marked; the list stays as it is
+// while the word is one Tab put there.
 void Suggest(ImVec2 at, ImVec4 back, ImVec4 edge, ImVec4 text, ImVec4 same) {
     Screen& s = g_screen;
     constexpr size_t kShown = 12;
     size_t length = std::strlen(s.input), start = length;
     while (start > 0 && s.input[start - 1] != ' ' && s.input[start - 1] != ';') start--;
     if (start < length && (s.input[start] == '/' || s.input[start] == '\\')) start++;
-    std::string word(s.input + start, length - start);
-    for (char& c : word) c = char(std::tolower(static_cast<unsigned char>(c)));
-    if (word != s.suggested_for) {
+    std::string word = LowerCase(std::string(s.input + start, length - start));
+    bool stepping = s.picked >= 0 && size_t(s.picked) < s.suggested.size() && word == LowerCase(s.suggested[size_t(s.picked)]);
+    if (!stepping && (word != s.suggested_for || s.picked >= 0)) {
         s.suggested_for = word;
         s.suggested.clear();
-        s.suggested_more = 0;
+        s.picked = -1;
         if (!word.empty()) {
             std::vector<std::string> holding;
             std::lock_guard lock(g_lock);
             for (const std::string& name : g_names) {
-                std::string lower = name;
-                for (char& c : lower) c = char(std::tolower(static_cast<unsigned char>(c)));
+                std::string lower = LowerCase(name);
                 size_t found = lower.find(word);
                 if (found == std::string::npos || lower == word) continue;
                 (found == 0 ? s.suggested : holding).push_back(name);
             }
             s.suggested_starting = s.suggested.size();
             s.suggested.insert(s.suggested.end(), holding.begin(), holding.end());
-            if (s.suggested.size() > kShown) {
-                s.suggested_more = s.suggested.size() - kShown;
-                s.suggested.resize(kShown);
-            }
         }
     }
     if (s.suggested.empty()) return;
+    // twelve rows, moved along so the one taken is among them
+    size_t count = s.suggested.size();
+    size_t first = stepping && size_t(s.picked) >= kShown ? size_t(s.picked) - kShown + 1 : 0;
+    size_t last = std::min(count, first + kShown);
     float em = ImGui::GetFontSize(), line = ImGui::GetTextLineHeightWithSpacing();
-    std::string more = s.suggested_more ? "... and " + std::to_string(s.suggested_more) + " more" : std::string();
+    std::string more = last < count ? "... and " + std::to_string(count - last) + " more (Tab steps through)" : std::string();
     float width = more.empty() ? 0.0f : ImGui::CalcTextSize(more.c_str()).x;
-    for (const std::string& name : s.suggested) width = std::max(width, ImGui::CalcTextSize(name.c_str()).x);
-    size_t rows = s.suggested.size() + (more.empty() ? 0 : 1);
+    for (size_t i = first; i < last; i++) width = std::max(width, ImGui::CalcTextSize(s.suggested[i].c_str()).x);
+    size_t rows = last - first + (more.empty() ? 0 : 1);
     ImVec2 a(at.x - em * 0.5f, at.y), b(at.x + width + em * 0.5f, at.y + line * float(rows) + em * 0.4f);
     ImDrawList* list = ImGui::GetForegroundDrawList();
     list->AddRectFilled(a, b, ImGui::GetColorU32(back));
     list->AddRect(a, b, ImGui::GetColorU32(edge));
     float y = at.y + em * 0.2f;
-    for (size_t i = 0; i < s.suggested.size(); i++, y += line) {
+    for (size_t i = first; i < last; i++, y += line) {
         const std::string& name = s.suggested[i];
+        if (stepping && i == size_t(s.picked))
+            list->AddRectFilled(ImVec2(a.x + 1, y - 1), ImVec2(b.x - 1, y + line - 1), ImGui::GetColorU32(ImVec4(same.x, same.y, same.z, 0.28f)));
         list->AddText(ImVec2(at.x, y), ImGui::GetColorU32(text), name.c_str());
         // the part typed, in the typed lines' colour, where the name starts with it
-        if (i < s.suggested_starting && word.size() <= name.size())
-            list->AddText(ImVec2(at.x, y), ImGui::GetColorU32(same), name.c_str(), name.c_str() + word.size());
+        if (i < s.suggested_starting && s.suggested_for.size() <= name.size())
+            list->AddText(ImVec2(at.x, y), ImGui::GetColorU32(same), name.c_str(), name.c_str() + s.suggested_for.size());
     }
     if (!more.empty()) list->AddText(ImVec2(at.x, y), ImGui::GetColorU32(ImVec4(text.x, text.y, text.z, 0.6f)), more.c_str());
 }
