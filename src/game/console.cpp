@@ -187,8 +187,8 @@ bool PlayerInMission() {
 }
 
 void Names() {
-    // cg_fov too: it is answered here, and in the menus the engine does not have it yet
-    std::vector<std::string> names = {"cg_fov", "clear", "cmdlist", "cvarlist", "help"};
+    // cg_fov and cg_drawFPS too: they are answered here, from the port's settings
+    std::vector<std::string> names = {"cg_drawFPS", "cg_fov", "clear", "cmdlist", "cvarlist", "help"};
     EachVariable([&](uint32_t var) {
         if (std::string name = Text(R32(var)); !name.empty()) names.push_back(name);
     });
@@ -293,6 +293,17 @@ void Run(X86Context& ctx, std::string line) {
         }
         console::Print("    cg_fov is \"" + std::to_string(Opt().fov) + "\", default \"" + std::to_string(kDefaultFov) +
                        "\" (the Field of View setting)");
+        return;
+    }
+    // cg_drawFPS is the port's FPS Counter setting: this build has no counter of its own
+    if (first == "cg_drawfps") {
+        if (!rest.empty()) {
+            Opt().fps_counter = std::atoi(rest.c_str() + (rest[0] == '"')) != 0;
+            app::Save();
+            LOGR("console: fps counter %s", Opt().fps_counter ? "on" : "off");
+        }
+        console::Print(std::string("    cg_drawFPS is \"") + (Opt().fps_counter ? "1" : "0") +
+                       "\", default \"0\" (the FPS Counter setting)");
         return;
     }
     if (Locked(first, rest)) {
