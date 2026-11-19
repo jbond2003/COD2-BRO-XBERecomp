@@ -9,6 +9,13 @@
 // loaded checkpoint brings one back as it would any entity. The entities are few (0x540 handles), so at most kKept
 // bodies stay beyond the game's own, and past that the farthest of them is freed as the game would have.
 //
+// Ragdolls. Every soldier is given a ragdoll as it spawns (Ragdoll_Alloc 0x234930, kept at entity +0x238) from a
+// pool of 48 ([0x8F0464] are out), and a body keeps its own until it is freed. The game counts on at most 32
+// soldiers and 16 bodies; with more bodies kept the pool ran dry and the next spawn wrote through a null ragdoll (a
+// player's prologue crashed at the 23rd kept body). So bodies are kept only while kRagdollsSpare ragdolls are left,
+// past that the kept ones go two a death; and a spawn that still finds the pool dry frees the farthest body first
+// (RagdollWanted).
+//
 // Drones. The soldiers a level's script runs across a battlefield are not actors but script models (entity type 7,
 // BroScr_DroneMain 0x169E50). One that is shot falls, and BroScr_DroneDeleteLater (0x1250A0) deletes it some seconds
 // later with the script's delete (GScr_Delete 0x2FD520, called at 0x12525E). With the setting on that one delete is
@@ -39,6 +46,7 @@ constexpr uint32_t kEntities = 0x97A968, kEntityCount = 0x540;  // {entity, gene
 constexpr uint32_t kFreeEntity = 0x2BE420;                      // G_FreeEntity (entity, 0), cdecl
 constexpr uint8_t kCorpseType = 13;
 constexpr size_t kKept = 64;
+constexpr uint32_t kRagdollsOut = 0x8F0464, kRagdolls = 0x30, kRagdollsSpare = 10, kEntityRagdoll = 0x238;
 constexpr uint32_t kScriptDelete = 0x2FD520;       // GScr_Delete (entity handle), cdecl
 constexpr uint32_t kDroneDeleteReturn = 0x125264;  // where BroScr_DroneDeleteLater's delete returns to
 constexpr size_t kDrones = 32;
@@ -79,8 +87,19 @@ bool HasSlot(uint32_t handle) {
     return false;
 }
 
-// no more than kKept bodies without a slot: the farthest go. (The soldier becoming a body now has no slot yet.)
-void Prune(X86Context& ctx, const Place& player, uint32_t dying) {
+// frees a body; a body without a slot clears slot 0 as it goes (0x2EDC49): slot 0 is kept
+void FreeBody(X86Context& ctx, uint32_t ent) {
+    uint32_t first = R32(kCorpses);
+    bool own = R32(ent + 0x224) == first;
+    kernel::CallGuest(ctx, kFreeEntity, {ent, 0});
+    if (!own) W32(kCorpses, first);
+}
+
+bool RagdollsLeft() { return R32(kRagdollsOut) + kRagdollsSpare <= kRagdolls; }
+
+// no more than `most` bodies without a slot, less two when `shed`: the farthest go. (The soldier becoming a body now
+// has no slot yet.)
+void Prune(X86Context& ctx, const Place& player, uint32_t dying, bool shed) {
     struct Body {
         uint32_t ent;
         float apart;
@@ -93,14 +112,12 @@ void Prune(X86Context& ctx, const Place& player, uint32_t dying) {
         if (Entity(handle) != ent || (handle & 0xFFF) != i || kernel::G<uint8_t>(ent) != kCorpseType) continue;
         if (!HasSlot(handle)) bodies.push_back({ent, Apart(Origin(ent), player)});
     }
-    while (bodies.size() > kKept) {
+    size_t most = shed ? bodies.size() - std::min<size_t>(bodies.size(), 2) : kKept;
+    while (bodies.size() > most) {
         size_t far = 0;
         for (size_t i = 1; i < bodies.size(); i++)
             if (bodies[i].apart > bodies[far].apart) far = i;
-        // freeing a corpse clears its slot, and slot 0 for a body that has none (0x2EDC49): slot 0 is kept
-        uint32_t first = R32(kCorpses);
-        kernel::CallGuest(ctx, kFreeEntity, {bodies[far].ent, 0});
-        W32(kCorpses, first);
+        FreeBody(ctx, bodies[far].ent);
         bodies.erase(bodies.begin() + far);
     }
 }
@@ -135,6 +152,15 @@ X86_FUNC(sub_002FD520) {
 // soldier in esi (0x213515).
 X86_FUNC(sub_00204C70) {
     if (!game::Opt().keep_bodies) return __imp__sub_00204C70(ctx, base);
+    if (!RagdollsLeft()) {
+        // few ragdolls left for the soldiers still to spawn: no more bodies are kept, and those kept go two a death,
+        // so their entities (and the ragdolls in them) are spawned in again
+        static bool said = false;
+        if (!said) LOGR("bodies stay: %u of %u ragdolls are out, no more bodies are kept", R32(kRagdollsOut), kRagdolls);
+        said = true;
+        Prune(ctx, Player(), ctx.esi, true);
+        return __imp__sub_00204C70(ctx, base);
+    }
     uint32_t in_use = std::min(std::max(R32(kCorpsesInUse), 1u), kCorpseSlots);
     Place player = Player();
     uint32_t far = 0;
@@ -148,8 +174,32 @@ X86_FUNC(sub_00204C70) {
     static int kept = 0;
     if (kept++ < 300) LOGR("bodies stay: body %d kept after the game's own %u", kept, in_use);
     W32(kCorpses + far * kCorpseBytes, 0);  // the body stays, without a slot
-    Prune(ctx, player, ctx.esi);
+    Prune(ctx, player, ctx.esi, false);
     kernel::Return(ctx, far, 0);
+}
+
+// Ragdoll_Alloc's first instruction, for the soldier spawning in entity edi: with every ragdoll out, the farthest
+// body is freed first (one the setting kept before one of the game's own), which hands its ragdoll back.
+void RagdollWanted(X86Context& ctx, uint8_t*) {
+    if (R32(kRagdollsOut) < kRagdolls || R32(ctx.edi + kEntityRagdoll)) return;
+    Place player = Player();
+    uint32_t far = 0;
+    float most = -1.0f;
+    for (uint32_t i = 0; i < kEntityCount; i++) {
+        uint32_t ent = R32(kEntities + i * 8);
+        if (!ent || ent == ctx.edi || kernel::G<uint8_t>(ent) != kCorpseType || !R32(ent + kEntityRagdoll)) continue;
+        uint32_t handle = R32(ent + 0x224);
+        if (Entity(handle) != ent || (handle & 0xFFF) != i) continue;
+        float apart = Apart(Origin(ent), player) + (HasSlot(handle) ? 0.0f : 1e12f);
+        if (apart > most) most = apart, far = ent;
+    }
+    static int said = 0;
+    if (!far) {
+        if (said++ < 50) LOGR("bodies stay: no ragdoll for a soldier and no body to take one from");
+        return;
+    }
+    FreeBody(ctx, far);
+    if (said++ < 50) LOGR("bodies stay: body %08x freed for its ragdoll, %u are out", far, R32(kRagdollsOut));
 }
 
 // BroScr_LetterboxFade, at its calls that place a bar: (element, y) on the stack. Off the picture, the bars are
