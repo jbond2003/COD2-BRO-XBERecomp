@@ -113,7 +113,7 @@ void ShowVariable(uint32_t var) {
 
 // The port's own settings as console variables: the ones the F10 panel and PC Options have. Each is the setting
 // itself, read where it always was and saved in the settings file. Where the PC games have a name for the thing it
-// is that name (cg_fov, cg_drawFPS, com_maxfps, r_gamma, sensitivity ...); the rest are pc_ names. cg_fov and
+// is that name (cg_fov, cg_drawFPS, com_maxfps, r_gamma, sensitivity ...); the rest are cg_ names of the port's own (his word: one prefix). cg_fov and
 // com_maxfps are the engine's too, but the port's settings rule those here (src/game/fov.cpp sets cg_fov from the
 // setting every frame; the frame rate is the window's limiter). The display mode and the resolution are not here:
 // they change the window, on the panel's Apply.
@@ -150,28 +150,29 @@ const PortVariable kPortVariables[] = {
      PORT_NUMBER(app::Get().aniso, uint32_t)},
     {"sensitivity", "Mouse Horizontal Sensitivity", "0.1 to 5", 0.1, 5, 1, 0.1,
      PORT_NUMBER(Opt().mouse_sensitivity, float)},
-    {"pc_sensitivityY", "Mouse Vertical Sensitivity", "0.1 to 5", 0.1, 5, 1, 0.1,
+    {"cg_sensitivityY", "Mouse Vertical Sensitivity", "0.1 to 5", 0.1, 5, 1, 0.1,
      PORT_NUMBER(Opt().mouse_vertical_sensitivity, float)},
-    {"pc_invertMouse", "Invert Vertical Look", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().invert_mouse)},
-    {"pc_invertMouseX", "Invert Horizontal Look", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().invert_mouse_x)},
-    {"pc_renderScale", "Render Resolution", "20 to 200, percent", 20, 200, 100, 5,
+    {"cg_invertMouse", "Invert Vertical Look", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().invert_mouse)},
+    {"cg_invertMouseX", "Invert Horizontal Look", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().invert_mouse_x)},
+    {"cg_renderScale", "Render Resolution", "20 to 200, percent", 20, 200, 100, 5,
      PORT_NUMBER(app::Get().render_percent, uint32_t)},
-    {"pc_viewDistance", "View Distance", "0 low (the game's own), 1 medium or 2 high", 0, 2, 0, 1,
+    {"cg_viewDistance", "View Distance", "0 low (the game's own), 1 medium or 2 high", 0, 2, 0, 1,
      [] { return Opt().view_distance <= 1 ? 0.0 : Opt().view_distance <= 5 ? 1.0 : 2.0; },
      [](double v) { Opt().view_distance = v < 0.5 ? 1 : v < 1.5 ? 4 : 8; }},
-    {"pc_bodiesStay", "Bodies Stay", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().keep_bodies)},
-    {"pc_cutsceneBars", "Cutscene Black Bars", "0 or 1", 0, 1, 1, 1, PORT_BOOL(Opt().cutscene_bars)},
-    {"pc_aimAssist", "Controller Aim Assist", "0 or 1", 0, 1, 1, 1, PORT_BOOL(Opt().aim_assist)},
-    {"pc_hints", "Tutorial Hints", "0 or 1", 0, 1, 1, 1, PORT_BOOL(Opt().hints)},
-    {"pc_hideHud", "Hide the HUD", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().hide_hud)},
-    {"pc_buttonPrompts", "Button Prompts", "0 automatic, 1 keyboard and mouse, 2 controller", 0, 2, 0, 1,
+    {"cg_bodiesStay", "Bodies Stay", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().keep_bodies)},
+    {"cg_cutsceneBars", "Cutscene Black Bars", "0 or 1", 0, 1, 1, 1, PORT_BOOL(Opt().cutscene_bars)},
+    {"cg_aimAssist", "Controller Aim Assist", "0 or 1", 0, 1, 1, 1, PORT_BOOL(Opt().aim_assist)},
+    {"cg_hints", "Tutorial Hints", "0 or 1", 0, 1, 1, 1, PORT_BOOL(Opt().hints)},
+    {"cg_drawHud", "Hide the HUD", "1 the HUD is drawn, 0 it is hidden", 0, 1, 1, 1,
+     [] { return Opt().hide_hud ? 0.0 : 1.0; }, [](double v) { Opt().hide_hud = v == 0; }},
+    {"cg_buttonPrompts", "Button Prompts", "0 automatic, 1 keyboard and mouse, 2 controller", 0, 2, 0, 1,
      PORT_NUMBER(Opt().button_prompts, uint32_t)},
-    {"pc_qwertyNames", "Profile Name Keys", "1 QWERTY, 0 ABC as the game had them", 0, 1, 1, 1,
+    {"cg_qwertyNames", "Profile Name Keys", "1 QWERTY, 0 ABC as the game had them", 0, 1, 1, 1,
      PORT_BOOL(Opt().qwerty_typewriter)},
-    {"pc_walkSpeed", "walk key speed", "10 to 100, percent of running", 10, 100, 50, 1,
+    {"cg_walkSpeed", "walk key speed", "10 to 100, percent of running", 10, 100, 50, 1,
      PORT_NUMBER(Opt().walk_speed, uint32_t)},
-    {"pc_customTextures", "Texture Replacement", "0 or 1", 0, 1, 1, 1, PORT_BOOL(app::Get().custom_textures)},
-    {"pc_dumpTextures", "Texture Dumping", "0 or 1", 0, 1, 0, 1, PORT_BOOL(app::Get().dump_textures)},
+    {"cg_customTextures", "Texture Replacement", "0 or 1", 0, 1, 1, 1, PORT_BOOL(app::Get().custom_textures)},
+    {"cg_dumpTextures", "Texture Dumping", "0 or 1", 0, 1, 0, 1, PORT_BOOL(app::Get().dump_textures)},
 };
 #undef PORT_BOOL
 #undef PORT_NUMBER
@@ -367,8 +368,8 @@ void Run(X86Context& ctx, std::string line) {
                        "    Cheat commands and variables (god, noclip, notarget, ufo, give, timescale ...) need the\n"
                        "    cheats password, typed here or in the F10 panel.\n"
                        "    In the menus, a line that needs a mission is held and runs when one starts.\n"
-                       "    The port's own settings are variables too: cvarlist pc_ shows most of them, and cg_fov,\n"
-                       "    cg_drawFPS, com_maxfps, r_swapInterval, r_gamma, r_anisotropy and sensitivity the rest.");
+                       "    The port's own settings are variables too: cg_fov, cg_drawFPS, cg_drawHud,\n"
+                       "    cg_viewDistance, cg_bodiesStay, com_maxfps, r_gamma, sensitivity ... (cvarlist marks them).");
         return;
     }
     if (first == "cmdlist" || first == "cvarlist") return List(first == "cvarlist", Lower(rest));
