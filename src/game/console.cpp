@@ -129,6 +129,63 @@ void List(bool variables, const std::string& holding) {
     console::Print(all + std::to_string(lines.size()) + (variables ? " variables" : " commands"));
 }
 
+// The variables a mission makes when it loads, from the two tables its register loops read: the client game's
+// (CG_RegisterCvars 0x27BB10: 0x8D9D60, 137 entries of {handle, name, default, flags}) and the game's
+// (G_RegisterCvars 0x2530A0: 0x8DA8E8, [0x8DAE40] entries of 0x18 bytes that start the same way). They are in the
+// image, so the menus can name them before they exist.
+struct MissionVariable {
+    std::string name, standard;
+    uint32_t flags = 0;
+};
+
+template <typename F>
+void EachMissionVariable(F f) {
+    constexpr uint32_t kClientTable = 0x8D9D60, kClientCount = 137, kGameTable = 0x8DA8E8, kGameCount = 0x8DAE40;
+    for (uint32_t i = 0; i < kClientCount; i++) {
+        uint32_t at = kClientTable + i * 0x10;
+        f(MissionVariable{Text(R32(at + 4)), Text(R32(at + 8)), R32(at + 0xC)});
+    }
+    uint32_t count = std::min<uint32_t>(R32(kGameCount), 512);
+    for (uint32_t i = 0; i < count; i++) {
+        uint32_t at = kGameTable + i * 0x18;
+        f(MissionVariable{Text(R32(at + 4)), Text(R32(at + 8)), R32(at + 0xC)});
+    }
+}
+
+bool FindMissionVariable(const std::string& lower, MissionVariable& found) {
+    bool any = false;
+    EachMissionVariable([&](const MissionVariable& v) {
+        if (!any && !v.name.empty() && Lower(v.name) == lower) found = v, any = true;
+    });
+    return any;
+}
+
+// Lines typed in the menus that need a mission (its variables, the game's own commands) are held, and run once one
+// is under way: nothing is made in the engine ahead of its time.
+std::vector<std::string> g_held;
+int g_mission_frames = 0;  // frames in a row with a mission up and the player in it
+
+bool Hold(const std::string& line) {
+    constexpr size_t kHeld = 16;
+    if (g_held.size() >= kHeld) {
+        console::Print("    Too many lines are waiting for a mission already.");
+        return false;
+    }
+    g_held.push_back(line);
+    console::Print("    Held: it runs when a mission starts.");
+    return true;
+}
+
+bool PlayerInMission() {
+    constexpr uint32_t kEntities = 0x97A968, kEntityCount = 0x540;
+    if (R32(kFrontEnd)) return false;
+    for (uint32_t i = 0; i < kEntityCount; i++) {
+        uint32_t ent = R32(kEntities + i * 8);
+        if (ent && R32(ent + 0x23C)) return true;
+    }
+    return false;
+}
+
 void Names() {
     // cg_fov too: it is answered here, and in the menus the engine does not have it yet
     std::vector<std::string> names = {"cg_fov", "clear", "cmdlist", "cvarlist", "help"};
@@ -137,6 +194,9 @@ void Names() {
     });
     EachCommand([&](const std::string& name) {
         if (!name.empty()) names.push_back(name);
+    });
+    EachMissionVariable([&](const MissionVariable& v) {
+        if (!v.name.empty() && !FindVariable(Lower(v.name))) names.push_back(v.name);
     });
     console::SetNames(std::move(names));
 }
@@ -168,7 +228,9 @@ bool Locked(const std::string& first, const std::string& rest) {
     if (name == first && (rest.empty() || RegisteredCommand(first))) return false;
     // the game rules (g_speed, g_gravity ...) are not marked as cheats, and are ones
     uint32_t var = FindVariable(name);
-    return var && ((R32(var + 0x10) & kCheatVariable) || name.rfind("g_", 0) == 0);
+    MissionVariable later;
+    uint32_t flags = var ? R32(var + 0x10) : FindMissionVariable(name, later) ? later.flags : 0;
+    return (var || !later.name.empty()) && ((flags & kCheatVariable) || name.rfind("g_", 0) == 0);
 }
 
 void Run(X86Context& ctx, std::string line);
@@ -203,7 +265,8 @@ void Run(X86Context& ctx, std::string line) {
                        "    either takes a word to look for (cvarlist cg_). A variable's name alone shows its value.\n"
                        "    Tab completes a name, Up and Down bring back earlier lines, Page Up and Page Down scroll.\n"
                        "    Cheat commands and variables (god, noclip, notarget, ufo, give, timescale ...) need the\n"
-                       "    cheats password, typed here or in the F10 panel.");
+                       "    cheats password, typed here or in the F10 panel.\n"
+                       "    In the menus, a line that needs a mission is held and runs when one starts.");
         return;
     }
     if (first == "cmdlist" || first == "cvarlist") return List(first == "cvarlist", Lower(rest));
@@ -244,13 +307,17 @@ void Run(X86Context& ctx, std::string line) {
         if (var) {
             g_set.push_back(first);
             g_set_in = 3;
+        } else if (MissionVariable later; !command && !GameCommand(first) && FindMissionVariable(first, later)) {
+            // one of a mission's variables, and no mission (in one it would have been found above)
+            if (rest.empty())
+                console::Print("    " + later.name + " is made when a mission loads, default \"" + later.standard + "\"");
+            else Hold(line);
+            return;
         } else if (!command && !GameCommand(first)) {
             console::Print("    Unknown command \"" + line.substr(0, space) + "\"");
-            // the client game's variables (cg_*) and the game's (g_*) are made when a mission loads
-            if (R32(kFrontEnd)) console::Print("    (in the menus: many variables only exist once a mission is running)");
             return;
-        } else if (!command && R32(kFrontEnd)) {
-            console::Print("    That one is the game's own: it needs a mission running.");
+        } else if (!command && !PlayerInMission()) {
+            Hold(line);  // the game's own command: it needs the player
             return;
         }
     }
@@ -273,6 +340,15 @@ void RunConsole(X86Context& ctx) {
         for (const std::string& name : g_set)
             if (uint32_t var = FindVariable(name)) ShowVariable(var);
         g_set.clear();
+    }
+    // the held lines, a moment into a mission
+    constexpr int kSettled = 120;
+    g_mission_frames = !g_held.empty() && PlayerInMission() ? std::min(g_mission_frames + 1, kSettled) : 0;
+    if (g_mission_frames == kSettled && !g_held.empty()) {
+        std::vector<std::string> held;
+        held.swap(g_held);
+        console::Print("The lines held in the menus:");
+        for (const std::string& waiting : held) RunLine(ctx, waiting);
     }
     std::string line;
     while (console::Take(line)) RunLine(ctx, line);
