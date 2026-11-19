@@ -229,8 +229,21 @@ void Draw() {
     constexpr ImVec4 kBack{0.03f, 0.04f, 0.05f, 0.90f}, kEdge{0.66f, 0.48f, 0.24f, 0.85f};
     constexpr ImVec4 kText{0.92f, 0.89f, 0.82f, 1.0f}, kTyped{0.93f, 0.66f, 0.26f, 1.0f};
     constexpr ImVec4 kField{0.10f, 0.11f, 0.14f, 1.0f}, kGrab{0.30f, 0.20f, 0.09f, 1.0f};
+    if (uint32_t serial = g_serial.load(std::memory_order_relaxed); serial != s.serial) {
+        std::lock_guard lock(g_lock);
+        s.lines.assign(g_lines.begin(), g_lines.end());
+        s.serial = serial;
+        s.to_end = true;
+    }
+    // as tall as its lines: the typing line alone when there are none, up to 45% of the picture
+    const ImGuiStyle& style = ImGui::GetStyle();
+    float edge = em * 0.5f, typing = ImGui::GetFrameHeight();
+    float most = float(int(vp->Size.y * 0.45f)) - edge * 2 - typing - style.ItemSpacing.y;
+    float lines_height = std::min(float(s.lines.size()) * ImGui::GetTextLineHeightWithSpacing(), std::max(most, 0.0f));
+    bool any = !s.lines.empty();
     ImGui::SetNextWindowPos(vp->Pos, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(vp->Size.x, float(int(vp->Size.y * 0.45f))), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(vp->Size.x, edge * 2 + typing + (any ? lines_height + style.ItemSpacing.y : 0.0f)),
+                             ImGuiCond_Always);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, kBack);
     ImGui::PushStyleColor(ImGuiCol_Border, kEdge);
     ImGui::PushStyleColor(ImGuiCol_Text, kText);
@@ -240,17 +253,11 @@ void Draw() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 2.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(em * 0.8f, em * 0.5f));
-    constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove |
+    constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar |
+                                        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove |
                                         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoTitleBar;
     if (ImGui::Begin("##console", nullptr, kFlags)) {
-        if (uint32_t serial = g_serial.load(std::memory_order_relaxed); serial != s.serial) {
-            std::lock_guard lock(g_lock);
-            s.lines.assign(g_lines.begin(), g_lines.end());
-            s.serial = serial;
-            s.to_end = true;
-        }
-        float below = ImGui::GetFrameHeightWithSpacing();
-        if (ImGui::BeginChild("##lines", ImVec2(0, -below), ImGuiChildFlags_None, ImGuiWindowFlags_NoNav)) {
+        if (any && ImGui::BeginChild("##lines", ImVec2(0, lines_height), ImGuiChildFlags_None, ImGuiWindowFlags_NoNav)) {
             ImGuiListClipper clipper;
             clipper.Begin(int(s.lines.size()));
             while (clipper.Step())
@@ -272,7 +279,7 @@ void Draw() {
                 s.to_end = false;
             }
         }
-        ImGui::EndChild();
+        if (any) ImGui::EndChild();
 
         ImGui::PushStyleColor(ImGuiCol_Text, kTyped);
         ImGui::AlignTextToFramePadding();
