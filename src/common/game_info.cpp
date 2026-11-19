@@ -16,6 +16,7 @@
 
 #include "app/app.h"
 #include "common/cheats.h"
+#include "common/console.h"
 #include "common/menu.h"
 #include "common/menu_state.h"
 #include "common/mouse_keyboard.h"
@@ -33,12 +34,38 @@ void ModernPad(input::Pad& pad);  // src/game/pad_layout.cpp: B to crouch, held 
 
 namespace {
 
+#ifdef _WIN32
+bool BacktickBound() {
+    size_t count;
+    input::Actions(&count);
+    for (size_t i = 0; i < count; i++)
+        for (int slot = 0; slot < 2; slot++)
+            if (input::Binding(i, slot) == "Backtick") return true;
+    return false;
+}
+#endif
+
 // window thread, each message after ImGui's
 bool Message(void*, uint32_t msg, uintptr_t wp, intptr_t lp, intptr_t* result) {
 #ifdef _WIN32
     constexpr intptr_t kKeyWasDown = 1 << 30;
     // F10 arrives as a system key: it would open the window menu
     if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && !(lp & kKeyWasDown)) {
+        // the console (console.h) on the key under Escape, by its place on the keyboard whatever it types there;
+        // not when the player has bound that key to something, nor over the panel or a name being typed
+        constexpr intptr_t kUnderEscape = 0x29;
+        if (((lp >> 16) & 0x1FF) == kUnderEscape && !app::PanelOpen() && !input::TextEntry() &&
+            (app::console::Open() || !BacktickBound())) {
+            app::console::Toggle();
+            if (app::console::Open()) input::ReleaseCursor();
+            *result = 0;
+            return true;
+        }
+        if (wp == VK_ESCAPE && app::console::Open()) {
+            app::console::Toggle();
+            *result = 0;
+            return true;
+        }
         if (wp == VK_F10 || (wp == VK_ESCAPE && app::MenuOpen() && !app::Capturing())) {
             app::ToggleMenu();
             *result = 0;

@@ -365,6 +365,20 @@ at = 0x0024448E
 call = "BodyLodLimit"
 
 # src/game/bodies.cpp: the level scripts' cutscene bars, about to be placed (the top one, then the bottom one)
+# The console (src/game/console.cpp): the print functions whose text is still formatted and then dropped, just after
+# their vsprintf (the game's, the client game's, the renderer's)
+[[hook]]
+at = 0x00248B0D
+call = "ConsolePrinted"
+
+[[hook]]
+at = 0x0027767D
+call = "ConsolePrinted"
+
+[[hook]]
+at = 0x002AB784
+call = "ConsolePrinted"
+
 # Ragdoll_Alloc for the entity in edi: with every ragdoll out, a body is freed first
 [[hook]]
 at = 0x00234930

@@ -11,7 +11,8 @@ struct Pad;
 namespace app {
 
 extern float g_zoom;  // the gameplay camera's zoom as a tangent ratio: 1 unzoomed, under 1 aiming down sights
-bool MenuOpen();
+bool MenuOpen();   // the panel, the PC Options page or the console is up: the game gets no input
+bool PanelOpen();  // the panel or the PC Options page
 void ToggleMenu();
 void OpenBindings();  // the panel with the key bindings alone
 // PC OPTIONS in the game's Options menu: the same settings and the key bindings on a page like the game's own

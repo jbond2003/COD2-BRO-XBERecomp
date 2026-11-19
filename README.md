@@ -90,6 +90,9 @@ regional release has its code at other addresses and is not supported.
 
 - **Cheats:** press F10, go to the end of the panel and enter the password `brooklyn`. The cheats stay unlocked until
   the game is closed, and they can break missions, so use them at your own risk.
+- **Console:** the key under Escape (`~`) opens the engine's developer console. `help` explains it, `cmdlist` and
+  `cvarlist` show what the game has, Tab completes a name. Cheat commands such as `god` and `noclip` need the same
+  password, which can be typed in the console too.
 - **Every mission unlocked:** create a profile named `thereisacow1337`.
 
 </details>

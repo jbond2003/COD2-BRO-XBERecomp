@@ -27,6 +27,7 @@ float app::g_zoom = 1.0f;
 #include "app/app.h"
 #include "common/menu.h"
 #include "common/cheats.h"
+#include "common/console.h"
 #include "common/mouse_keyboard.h"
 #include "common/options.h"
 #include "common/paper_page.h"
@@ -1252,12 +1253,15 @@ void Leave(bool applied) {
 
 }  // namespace pc
 
-bool MenuOpen() { return g_open.load(std::memory_order_relaxed); }
+// the panel, the PC Options page or the console (console.h): any of them has the keys, the mouse and the controller
+bool MenuOpen() { return g_open.load(std::memory_order_relaxed) || console::Open(); }
+bool PanelOpen() { return g_open.load(std::memory_order_relaxed); }
 
 bool Capturing() { return g_capture.action >= 0; }
 
 void ToggleMenu() {
-    bool open = !MenuOpen();
+    bool open = !PanelOpen();
+    if (open && console::Open()) console::Toggle();
     g_open.store(open, std::memory_order_relaxed);
     if (!open) {
         g_bindings_only.store(false, std::memory_order_relaxed);
@@ -1283,7 +1287,7 @@ void OpenPcOptions() {
     ToggleMenu();
 }
 
-bool PcOptionsOpen() { return MenuOpen() && g_paper.load(std::memory_order_relaxed); }
+bool PcOptionsOpen() { return PanelOpen() && g_paper.load(std::memory_order_relaxed); }
 
 void ExitToDesktop() {
     if (HWND window = static_cast<HWND>(Window())) PostMessageW(window, WM_CLOSE, 0, 0);
@@ -1322,10 +1326,11 @@ void DrawUi(double fps) {
     }
     if (paper) {
         DrawPaper();
-    } else if (MenuOpen()) {
+    } else if (PanelOpen()) {
         UpdateCapture();
         DrawPanel();
     }
+    console::Draw();
 }
 
 }  // namespace app
