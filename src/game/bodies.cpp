@@ -9,6 +9,12 @@
 // loaded checkpoint brings one back as it would any entity. The entities are few (0x540 handles), so at most kKept
 // bodies stay beyond the game's own, and past that the farthest of them is freed as the game would have.
 //
+// Drones. The soldiers a level's script runs across a battlefield are not actors but script models (entity type 7,
+// BroScr_DroneMain 0x169E50). One that is shot falls, and BroScr_DroneDeleteLater (0x1250A0) deletes it some seconds
+// later with the script's delete (GScr_Delete 0x2FD520, called at 0x12525E). With the setting on that one delete is
+// left out and the body lies where it fell; at most kDrones of them, and past that the farthest goes. (A drone that
+// reaches the end of its run alive is deleted elsewhere, 0x169F3D, and still is.)
+//
 // Bars. The level scripts' cutscenes call BroScr_LetterboxFade (0x141890): letterbox_enabled 1, no gun, no HUD, and
 // two "black" HUD elements 640 wide and 70 high, the top one placed at y 0 (0x141A03) and the bottom one at 410
 // (0x141BBA). With the setting off they are placed off the picture: the cutscene is the same but for the bars.
@@ -24,6 +30,7 @@
 #include "kernel/kernel.h"
 
 X86_EXTERN_FUNC(__imp__sub_00204C70);
+X86_EXTERN_FUNC(__imp__sub_002FD520);
 
 namespace {
 
@@ -32,6 +39,10 @@ constexpr uint32_t kEntities = 0x97A968, kEntityCount = 0x540;  // {entity, gene
 constexpr uint32_t kFreeEntity = 0x2BE420;                      // G_FreeEntity (entity, 0), cdecl
 constexpr uint8_t kCorpseType = 13;
 constexpr size_t kKept = 64;
+constexpr uint32_t kScriptDelete = 0x2FD520;       // GScr_Delete (entity handle), cdecl
+constexpr uint32_t kDroneDeleteReturn = 0x125264;  // where BroScr_DroneDeleteLater's delete returns to
+constexpr size_t kDrones = 32;
+std::vector<uint32_t> g_drones;  // the handles of the fallen drones that were kept
 
 using kernel::R32;
 using kernel::W32;
@@ -95,6 +106,30 @@ void Prune(X86Context& ctx, const Place& player, uint32_t dying) {
 }
 
 }  // namespace
+
+// GScr_Delete (handle), cdecl: the script's delete. A fallen drone's is left out while the setting is on.
+X86_FUNC(sub_002FD520) {
+    uint32_t handle = R32(ctx.esp + 4);
+    if (!game::Opt().keep_bodies || R32(ctx.esp) != kDroneDeleteReturn || !Entity(handle))
+        return __imp__sub_002FD520(ctx, base);
+    std::erase_if(g_drones, [handle](uint32_t h) { return h == handle || !Entity(h); });
+    g_drones.push_back(handle);
+    Place player = Player();
+    while (g_drones.size() > kDrones) {
+        size_t far = 0;
+        float most = -1.0f;
+        for (size_t i = 0; i + 1 < g_drones.size(); i++) {  // (not the one that has just fallen)
+            float apart = Apart(Origin(Entity(g_drones[i])), player);
+            if (apart > most) most = apart, far = i;
+        }
+        uint32_t gone = g_drones[far];
+        g_drones.erase(g_drones.begin() + far);
+        kernel::CallGuest(ctx, kScriptDelete, {gone});  // (not from the drone's script: the game's own delete)
+    }
+    static int kept = 0;
+    if (kept++ < 300) LOGR("bodies stay: fallen drone %d kept, %zu lying", kept, g_drones.size());
+    kernel::Return(ctx, 0, 0);
+}
 
 // Actor_FreeFarthestCorpse: () -> eax, a free slot of g_actorCorpses. Its one caller, Actor_BecomeCorpse, has the
 // soldier in esi (0x213515).
