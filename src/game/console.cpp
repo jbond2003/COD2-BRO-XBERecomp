@@ -143,7 +143,7 @@ const PortVariable kPortVariables[] = {
     {"cg_drawFPS", "FPS Counter", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().fps_counter)},
     // any whole rate from 5 to 999 (his ask), not only the menu's six; 0 is no limit
     {"com_maxfps", "Max Frame Rate", "5 to 999, or 0 for no limit", 0, 999, 60, 1,
-     [] { return double(app::Get().fps_cap); }, PORT_NUMBER(app::Get().fps_cap, uint32_t)},
+     PORT_NUMBER(app::Get().fps_cap, uint32_t)},
     {"r_swapInterval", "VSync", "0 or 1", 0, 1, 1, 1, PORT_BOOL(app::Get().vsync)},
     {"r_gamma", "Brightness", "0.5 to 2, 1 the game's own", 0.5, 2, 1, 0.1,
      [] { return double(Opt().brightness) / 100.0; }, [](double v) { Opt().brightness = uint32_t(v * 100.0 + 0.5); }},
