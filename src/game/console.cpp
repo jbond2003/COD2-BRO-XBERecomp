@@ -130,7 +130,8 @@ void List(bool variables, const std::string& holding) {
 }
 
 void Names() {
-    std::vector<std::string> names = {"clear", "cmdlist", "cvarlist", "help"};
+    // cg_fov too: it is answered here, and in the menus the engine does not have it yet
+    std::vector<std::string> names = {"cg_fov", "clear", "cmdlist", "cvarlist", "help"};
     EachVariable([&](uint32_t var) {
         if (std::string name = Text(R32(var)); !name.empty()) names.push_back(name);
     });
@@ -245,6 +246,8 @@ void Run(X86Context& ctx, std::string line) {
             g_set_in = 3;
         } else if (!command && !GameCommand(first)) {
             console::Print("    Unknown command \"" + line.substr(0, space) + "\"");
+            // the client game's variables (cg_*) and the game's (g_*) are made when a mission loads
+            if (R32(kFrontEnd)) console::Print("    (in the menus: many variables only exist once a mission is running)");
             return;
         } else if (!command && R32(kFrontEnd)) {
             console::Print("    That one is the game's own: it needs a mission running.");
