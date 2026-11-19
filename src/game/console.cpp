@@ -444,6 +444,10 @@ void Heard(std::string text) {
 
 // each client frame (RunCommands, src/game/pad_layout.cpp)
 void RunConsole(X86Context& ctx) {
+    // a profile is signed in: the profile in use (the block at 0x8DCE30, its name first) has a name. It has none from
+    // the start until one is picked or made in the Profile Manager.
+    constexpr uint32_t kProfileName = 0x8DCE30;
+    console::SetAllowed(kernel::G<uint8_t>(kProfileName) != 0);
     if (console::NamesWanted()) Names();
     if (g_listen > 0) g_listen--;
     if (g_set_in > 0 && --g_set_in == 0) {

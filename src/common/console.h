@@ -12,6 +12,10 @@ namespace app::console {
 
 bool Open();
 void Toggle();  // any thread
+// The console only opens once a profile is signed in (his ask): the game's thread says so each frame
+// (src/game/console.cpp), and an open console closes when it stops being so.
+void SetAllowed(bool allowed);
+bool Allowed();
 void Draw();    // the UI's thread, each frame
 
 // any thread. A text may hold several lines; the last few hundred are kept

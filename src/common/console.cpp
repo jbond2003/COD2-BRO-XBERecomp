@@ -22,11 +22,19 @@ std::deque<std::string> g_submitted;  // under g_lock
 std::vector<std::string> g_names;     // under g_lock, sorted
 std::atomic<uint32_t> g_serial{0};    // moves when g_lines does
 std::atomic<bool> g_open{false};
+std::atomic<bool> g_allowed{false};
 std::atomic<bool> g_names_wanted{false};
 
 }  // namespace
 
 bool Open() { return g_open.load(std::memory_order_relaxed); }
+
+bool Allowed() { return g_allowed.load(std::memory_order_relaxed); }
+
+void SetAllowed(bool allowed) {
+    g_allowed.store(allowed, std::memory_order_relaxed);
+    if (!allowed) g_open.store(false, std::memory_order_relaxed);
+}
 
 void Toggle() {
     bool open = !Open();
