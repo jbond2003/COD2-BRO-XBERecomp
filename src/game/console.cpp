@@ -19,6 +19,9 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <cstdio>
+#include <iterator>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -108,15 +111,112 @@ void ShowVariable(uint32_t var) {
     console::Print("    " + Text(R32(var)) + " is \"" + Text(R32(var + 4)) + "\", default \"" + Text(R32(var + 8)) + "\"");
 }
 
+// The port's own settings as console variables: the ones the F10 panel and PC Options have. Each is the setting
+// itself, read where it always was and saved in the settings file. Where the PC games have a name for the thing it
+// is that name (cg_fov, cg_drawFPS, com_maxfps, r_gamma, sensitivity ...); the rest are pc_ names. cg_fov and
+// com_maxfps are the engine's too, but the port's settings rule those here (src/game/fov.cpp sets cg_fov from the
+// setting every frame; the frame rate is the window's limiter). The display mode and the resolution are not here:
+// they change the window, on the panel's Apply.
+struct PortVariable {
+    const char* name;
+    const char* what;   // the setting's name in the menus
+    const char* takes;  // the values it takes, in words
+    double low, high, standard;
+    double step;        // values are rounded to a multiple of this
+    double (*get)();
+    void (*set)(double);
+};
+
+constexpr double kFrameRates[] = {0, 30, 60, 120, 144, 240}, kFilters[] = {0, 2, 4, 8, 16};
+
+double Nearest(const double* values, size_t count, double v) {
+    double best = values[0];
+    for (size_t i = 1; i < count; i++)
+        if (std::abs(values[i] - v) < std::abs(best - v)) best = values[i];
+    return best;
+}
+
+#define PORT_BOOL(field) [] { return field ? 1.0 : 0.0; }, [](double v) { field = v != 0; }
+#define PORT_NUMBER(field, type) [] { return double(field); }, [](double v) { field = type(v); }
+const PortVariable kPortVariables[] = {
+    {"cg_fov", "Field of View", "60 to 110", kMinFov, kMaxFov, kDefaultFov, 1, PORT_NUMBER(Opt().fov, uint32_t)},
+    {"cg_drawFPS", "FPS Counter", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().fps_counter)},
+    {"com_maxfps", "Max Frame Rate", "30, 60, 120, 144, 240, or 0 for no limit", 0, 240, 60, 1,
+     PORT_NUMBER(app::Get().fps_cap, uint32_t)},
+    {"r_swapInterval", "VSync", "0 or 1", 0, 1, 1, 1, PORT_BOOL(app::Get().vsync)},
+    {"r_gamma", "Brightness", "0.5 to 2, 1 the game's own", 0.5, 2, 1, 0.1,
+     [] { return double(Opt().brightness) / 100.0; }, [](double v) { Opt().brightness = uint32_t(v * 100.0 + 0.5); }},
+    {"r_anisotropy", "Anisotropic Filtering", "0 (as the game asks), 2, 4, 8 or 16", 0, 16, 0, 1,
+     PORT_NUMBER(app::Get().aniso, uint32_t)},
+    {"sensitivity", "Mouse Horizontal Sensitivity", "0.1 to 5", 0.1, 5, 1, 0.1,
+     PORT_NUMBER(Opt().mouse_sensitivity, float)},
+    {"pc_sensitivityY", "Mouse Vertical Sensitivity", "0.1 to 5", 0.1, 5, 1, 0.1,
+     PORT_NUMBER(Opt().mouse_vertical_sensitivity, float)},
+    {"pc_invertMouse", "Invert Vertical Look", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().invert_mouse)},
+    {"pc_invertMouseX", "Invert Horizontal Look", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().invert_mouse_x)},
+    {"pc_renderScale", "Render Resolution", "20 to 200, percent", 20, 200, 100, 5,
+     PORT_NUMBER(app::Get().render_percent, uint32_t)},
+    {"pc_viewDistance", "View Distance", "0 low (the game's own), 1 medium or 2 high", 0, 2, 0, 1,
+     [] { return Opt().view_distance <= 1 ? 0.0 : Opt().view_distance <= 5 ? 1.0 : 2.0; },
+     [](double v) { Opt().view_distance = v < 0.5 ? 1 : v < 1.5 ? 4 : 8; }},
+    {"pc_bodiesStay", "Bodies Stay", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().keep_bodies)},
+    {"pc_cutsceneBars", "Cutscene Black Bars", "0 or 1", 0, 1, 1, 1, PORT_BOOL(Opt().cutscene_bars)},
+    {"pc_aimAssist", "Controller Aim Assist", "0 or 1", 0, 1, 1, 1, PORT_BOOL(Opt().aim_assist)},
+    {"pc_hints", "Tutorial Hints", "0 or 1", 0, 1, 1, 1, PORT_BOOL(Opt().hints)},
+    {"pc_hideHud", "Hide the HUD", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().hide_hud)},
+    {"pc_buttonPrompts", "Button Prompts", "0 automatic, 1 keyboard and mouse, 2 controller", 0, 2, 0, 1,
+     PORT_NUMBER(Opt().button_prompts, uint32_t)},
+    {"pc_qwertyNames", "Profile Name Keys", "1 QWERTY, 0 ABC as the game had them", 0, 1, 1, 1,
+     PORT_BOOL(Opt().qwerty_typewriter)},
+    {"pc_walkSpeed", "walk key speed", "10 to 100, percent of running", 10, 100, 50, 1,
+     PORT_NUMBER(Opt().walk_speed, uint32_t)},
+    {"pc_customTextures", "Texture Replacement", "0 or 1", 0, 1, 1, 1, PORT_BOOL(app::Get().custom_textures)},
+    {"pc_dumpTextures", "Texture Dumping", "0 or 1", 0, 1, 0, 1, PORT_BOOL(app::Get().dump_textures)},
+};
+#undef PORT_BOOL
+#undef PORT_NUMBER
+
+const PortVariable* FindPortVariable(const std::string& lower) {
+    for (const PortVariable& v : kPortVariables)
+        if (Lower(v.name) == lower) return &v;
+    return nullptr;
+}
+
+// a typed value as the setting takes it
+double Fit(const PortVariable& v, double typed) {
+    double value = std::clamp(typed, v.low, v.high);
+    value = std::round(value / v.step) * v.step;
+    if (std::strcmp(v.name, "com_maxfps") == 0) value = Nearest(kFrameRates, std::size(kFrameRates), value);
+    if (std::strcmp(v.name, "r_anisotropy") == 0) value = Nearest(kFilters, std::size(kFilters), value);
+    return std::clamp(value, v.low, v.high);
+}
+
+std::string Number(double v) {
+    char text[32];
+    std::snprintf(text, sizeof(text), "%.2f", v);
+    std::string out = text;
+    while (out.back() == '0') out.pop_back();
+    if (out.back() == '.') out.pop_back();
+    return out;
+}
+
+void ShowPortVariable(const PortVariable& v) {
+    console::Print(std::string("    ") + v.name + " is \"" + Number(v.get()) + "\", default \"" + Number(v.standard) +
+                   "\" (the " + v.what + " setting: " + v.takes + ")");
+}
+
 // cmdlist and cvarlist, with an optional word the names must hold
 void List(bool variables, const std::string& holding) {
     std::vector<std::string> lines;
     if (variables) {
         EachVariable([&](uint32_t var) {
             std::string name = Text(R32(var));
-            if (!name.empty() && Lower(name).find(holding) != std::string::npos)
+            if (!name.empty() && Lower(name).find(holding) != std::string::npos && !FindPortVariable(Lower(name)))
                 lines.push_back("    " + name + " \"" + Text(R32(var + 4)) + "\"");
         });
+        for (const PortVariable& v : kPortVariables)
+            if (Lower(v.name).find(holding) != std::string::npos)
+                lines.push_back(std::string("    ") + v.name + " \"" + Number(v.get()) + "\" (" + v.what + ")");
     } else {
         EachCommand([&](const std::string& name) {
             if (!name.empty() && Lower(name).find(holding) != std::string::npos) lines.push_back("    " + name);
@@ -187,16 +287,16 @@ bool PlayerInMission() {
 }
 
 void Names() {
-    // cg_fov and cg_drawFPS too: they are answered here, from the port's settings
-    std::vector<std::string> names = {"cg_drawFPS", "cg_fov", "clear", "cmdlist", "cvarlist", "help"};
+    std::vector<std::string> names = {"clear", "cmdlist", "cvarlist", "help"};
+    for (const PortVariable& v : kPortVariables) names.push_back(v.name);
     EachVariable([&](uint32_t var) {
-        if (std::string name = Text(R32(var)); !name.empty()) names.push_back(name);
+        if (std::string name = Text(R32(var)); !name.empty() && !FindPortVariable(Lower(name))) names.push_back(name);
     });
     EachCommand([&](const std::string& name) {
         if (!name.empty()) names.push_back(name);
     });
     EachMissionVariable([&](const MissionVariable& v) {
-        if (!v.name.empty() && !FindVariable(Lower(v.name))) names.push_back(v.name);
+        if (!v.name.empty() && !FindVariable(Lower(v.name)) && !FindPortVariable(Lower(v.name))) names.push_back(v.name);
     });
     console::SetNames(std::move(names));
 }
@@ -266,7 +366,9 @@ void Run(X86Context& ctx, std::string line) {
                        "    Tab completes a name, Up and Down bring back earlier lines, Page Up and Page Down scroll.\n"
                        "    Cheat commands and variables (god, noclip, notarget, ufo, give, timescale ...) need the\n"
                        "    cheats password, typed here or in the F10 panel.\n"
-                       "    In the menus, a line that needs a mission is held and runs when one starts.");
+                       "    In the menus, a line that needs a mission is held and runs when one starts.\n"
+                       "    The port's own settings are variables too: cvarlist pc_ shows most of them, and cg_fov,\n"
+                       "    cg_drawFPS, com_maxfps, r_swapInterval, r_gamma, r_anisotropy and sensitivity the rest.");
         return;
     }
     if (first == "cmdlist" || first == "cvarlist") return List(first == "cvarlist", Lower(rest));
@@ -274,36 +376,31 @@ void Run(X86Context& ctx, std::string line) {
         console::Print("    Cheats are on until the game is closed.");
         return;
     }
-    // cg_fov is the port's Field of View setting (src/game/fov.cpp sets the variable from it every frame, and keeps
-    // the gun's size): typed here it changes the setting, in the menus too, where the variable does not exist yet
-    if (first == "cg_fov") {
+    // set and toggle of one of the port's settings: the engine's set would make a variable of its own
+    if (first == "set" || first == "seta" || first == "sets" || first == "toggle") {
+        size_t gap = rest.find_first_of(" \t");
+        if (const PortVariable* port = FindPortVariable(Lower(rest.substr(0, gap)))) {
+            if (first == "toggle") return Run(ctx, std::string(port->name) + (port->get() != 0 ? " 0" : " 1"));
+            return Run(ctx, rest);
+        }
+    }
+    // one of the port's own settings
+    if (const PortVariable* port = FindPortVariable(first)) {
         if (!rest.empty()) {
+            const char* from = rest.c_str() + (rest[0] == '"');
             char* end = nullptr;
-            double typed = std::strtod(rest.c_str() + (rest[0] == '"'), &end);
-            if (end == rest.c_str() + (rest[0] == '"')) {
-                console::Print("    cg_fov takes a number");
+            double typed = std::strtod(from, &end);
+            if (end == from) {
+                console::Print(std::string("    ") + port->name + " takes a number");
                 return;
             }
-            uint32_t fov = ClampFov(uint32_t(std::clamp(typed, 0.0, 1000.0) + 0.5));
-            Opt().fov = fov;
+            double value = Fit(*port, typed);
+            port->set(value);
             app::Save();
-            LOGR("console: field of view %u", fov);
-            if (double(fov) != typed)
-                console::Print("    The field of view goes from " + std::to_string(kMinFov) + " to " + std::to_string(kMaxFov));
+            LOGR("console: %s %s", port->name, Number(value).c_str());
+            if (value != typed) console::Print(std::string("    ") + port->name + " takes " + port->takes);
         }
-        console::Print("    cg_fov is \"" + std::to_string(Opt().fov) + "\", default \"" + std::to_string(kDefaultFov) +
-                       "\" (the Field of View setting)");
-        return;
-    }
-    // cg_drawFPS is the port's FPS Counter setting: this build has no counter of its own
-    if (first == "cg_drawfps") {
-        if (!rest.empty()) {
-            Opt().fps_counter = std::atoi(rest.c_str() + (rest[0] == '"')) != 0;
-            app::Save();
-            LOGR("console: fps counter %s", Opt().fps_counter ? "on" : "off");
-        }
-        console::Print(std::string("    cg_drawFPS is \"") + (Opt().fps_counter ? "1" : "0") +
-                       "\", default \"0\" (the FPS Counter setting)");
+        ShowPortVariable(*port);
         return;
     }
     if (Locked(first, rest)) {
