@@ -19,12 +19,15 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
 
+#include "app/app.h"
 #include "common/cheats.h"
 #include "common/console.h"
+#include "common/options.h"
 #include "core/log.h"
 #include "cpu/x86_ops.h"
 #include "kernel/kernel.h"
@@ -205,6 +208,27 @@ void Run(X86Context& ctx, std::string line) {
     if (first == "cmdlist" || first == "cvarlist") return List(first == "cvarlist", Lower(rest));
     if (!cheats::Unlocked() && cheats::TryUnlock(line.c_str())) {
         console::Print("    Cheats are on until the game is closed.");
+        return;
+    }
+    // cg_fov is the port's Field of View setting (src/game/fov.cpp sets the variable from it every frame, and keeps
+    // the gun's size): typed here it changes the setting, in the menus too, where the variable does not exist yet
+    if (first == "cg_fov") {
+        if (!rest.empty()) {
+            char* end = nullptr;
+            double typed = std::strtod(rest.c_str() + (rest[0] == '"'), &end);
+            if (end == rest.c_str() + (rest[0] == '"')) {
+                console::Print("    cg_fov takes a number");
+                return;
+            }
+            uint32_t fov = ClampFov(uint32_t(std::clamp(typed, 0.0, 1000.0) + 0.5));
+            Opt().fov = fov;
+            app::Save();
+            LOGR("console: field of view %u", fov);
+            if (double(fov) != typed)
+                console::Print("    The field of view goes from " + std::to_string(kMinFov) + " to " + std::to_string(kMaxFov));
+        }
+        console::Print("    cg_fov is \"" + std::to_string(Opt().fov) + "\", default \"" + std::to_string(kDefaultFov) +
+                       "\" (the Field of View setting)");
         return;
     }
     if (Locked(first, rest)) {
