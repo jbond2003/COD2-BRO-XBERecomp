@@ -103,6 +103,9 @@ struct Screen {
     int recalled = -1;                 // index into history, -1 the line being typed
     bool was_open = false;
     bool to_end = true;
+    std::string suggested_for;           // the word the suggestions are for, lower case
+    std::vector<std::string> suggested;  // those starting with it first
+    size_t suggested_starting = 0, suggested_more = 0;
 } g_screen;
 
 bool SameStart(const std::string& name, const char* word, size_t length) {
@@ -161,6 +164,59 @@ void Recall(ImGuiInputTextCallbackData* data) {
     if (s.recalled == was) return;
     data->DeleteChars(0, data->BufTextLen);
     if (s.recalled >= 0) data->InsertChars(0, s.history[size_t(s.recalled)].c_str());
+}
+
+// The names like the word being typed, listed under the console as in the PC games' own: those that start with it
+// first, then those that hold it. Tab completes from the first kind.
+void Suggest(ImVec2 at, ImVec4 back, ImVec4 edge, ImVec4 text, ImVec4 same) {
+    Screen& s = g_screen;
+    constexpr size_t kShown = 12;
+    size_t length = std::strlen(s.input), start = length;
+    while (start > 0 && s.input[start - 1] != ' ' && s.input[start - 1] != ';') start--;
+    if (start < length && (s.input[start] == '/' || s.input[start] == '\\')) start++;
+    std::string word(s.input + start, length - start);
+    for (char& c : word) c = char(std::tolower(static_cast<unsigned char>(c)));
+    if (word != s.suggested_for) {
+        s.suggested_for = word;
+        s.suggested.clear();
+        s.suggested_more = 0;
+        if (!word.empty()) {
+            std::vector<std::string> holding;
+            std::lock_guard lock(g_lock);
+            for (const std::string& name : g_names) {
+                std::string lower = name;
+                for (char& c : lower) c = char(std::tolower(static_cast<unsigned char>(c)));
+                size_t found = lower.find(word);
+                if (found == std::string::npos || lower == word) continue;
+                (found == 0 ? s.suggested : holding).push_back(name);
+            }
+            s.suggested_starting = s.suggested.size();
+            s.suggested.insert(s.suggested.end(), holding.begin(), holding.end());
+            if (s.suggested.size() > kShown) {
+                s.suggested_more = s.suggested.size() - kShown;
+                s.suggested.resize(kShown);
+            }
+        }
+    }
+    if (s.suggested.empty()) return;
+    float em = ImGui::GetFontSize(), line = ImGui::GetTextLineHeightWithSpacing();
+    std::string more = s.suggested_more ? "... and " + std::to_string(s.suggested_more) + " more" : std::string();
+    float width = more.empty() ? 0.0f : ImGui::CalcTextSize(more.c_str()).x;
+    for (const std::string& name : s.suggested) width = std::max(width, ImGui::CalcTextSize(name.c_str()).x);
+    size_t rows = s.suggested.size() + (more.empty() ? 0 : 1);
+    ImVec2 a(at.x - em * 0.5f, at.y), b(at.x + width + em * 0.5f, at.y + line * float(rows) + em * 0.4f);
+    ImDrawList* list = ImGui::GetForegroundDrawList();
+    list->AddRectFilled(a, b, ImGui::GetColorU32(back));
+    list->AddRect(a, b, ImGui::GetColorU32(edge));
+    float y = at.y + em * 0.2f;
+    for (size_t i = 0; i < s.suggested.size(); i++, y += line) {
+        const std::string& name = s.suggested[i];
+        list->AddText(ImVec2(at.x, y), ImGui::GetColorU32(text), name.c_str());
+        // the part typed, in the typed lines' colour, where the name starts with it
+        if (i < s.suggested_starting && word.size() <= name.size())
+            list->AddText(ImVec2(at.x, y), ImGui::GetColorU32(same), name.c_str(), name.c_str() + word.size());
+    }
+    if (!more.empty()) list->AddText(ImVec2(at.x, y), ImGui::GetColorU32(ImVec4(text.x, text.y, text.z, 0.6f)), more.c_str());
 }
 
 int InputEvent(ImGuiInputTextCallbackData* data) {
@@ -257,6 +313,8 @@ void Draw() {
             s.input[0] = 0;
             s.to_end = true;
         }
+        ImVec2 typed_at = ImGui::GetItemRectMin();
+        Suggest(ImVec2(typed_at.x, ImGui::GetWindowPos().y + ImGui::GetWindowSize().y), kBack, kEdge, kText, kTyped);
         // the typing line keeps the keys for as long as the console is open
         ImGui::SetItemDefaultFocus();
         if (opened || entered || (!ImGui::IsAnyItemActive() && !ImGui::IsMouseDown(ImGuiMouseButton_Left)))
