@@ -150,9 +150,10 @@ const PortVariable kPortVariables[] = {
      [] { return double(Opt().brightness) / 100.0; }, [](double v) { Opt().brightness = uint32_t(v * 100.0 + 0.5); }},
     {"r_anisotropy", "Anisotropic Filtering", "0 (as the game asks), 2, 4, 8 or 16", 0, 16, 0, 1,
      PORT_NUMBER(app::Get().aniso, uint32_t)},
-    {"sensitivity", "Mouse Horizontal Sensitivity", "0.1 to 5", 0.1, 5, 1, 0.1,
-     PORT_NUMBER(Opt().mouse_sensitivity, float)},
-    // the same setting under the name its vertical twin has
+    // both directions at once, as the PC games' one sensitivity is (it shows the horizontal one)
+    {"sensitivity", "Mouse Sensitivity, both directions", "0.1 to 5", 0.1, 5, 1, 0.1,
+     [] { return double(Opt().mouse_sensitivity); },
+     [](double v) { Opt().mouse_sensitivity = Opt().mouse_vertical_sensitivity = float(v); }},
     {"m_sensitivityX", "Mouse Horizontal Sensitivity", "0.1 to 5", 0.1, 5, 1, 0.1,
      PORT_NUMBER(Opt().mouse_sensitivity, float)},
     {"m_sensitivityY", "Mouse Vertical Sensitivity", "0.1 to 5", 0.1, 5, 1, 0.1,
