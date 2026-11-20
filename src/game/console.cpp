@@ -152,6 +152,9 @@ const PortVariable kPortVariables[] = {
      PORT_NUMBER(app::Get().aniso, uint32_t)},
     {"sensitivity", "Mouse Horizontal Sensitivity", "0.1 to 5", 0.1, 5, 1, 0.1,
      PORT_NUMBER(Opt().mouse_sensitivity, float)},
+    // the same setting under the name its vertical twin has
+    {"m_sensitivityX", "Mouse Horizontal Sensitivity", "0.1 to 5", 0.1, 5, 1, 0.1,
+     PORT_NUMBER(Opt().mouse_sensitivity, float)},
     {"m_sensitivityY", "Mouse Vertical Sensitivity", "0.1 to 5", 0.1, 5, 1, 0.1,
      PORT_NUMBER(Opt().mouse_vertical_sensitivity, float)},
     {"m_invertMouse", "Invert Vertical Look", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().invert_mouse)},
