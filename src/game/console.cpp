@@ -113,7 +113,8 @@ void ShowVariable(uint32_t var) {
 
 // The port's own settings as console variables: the ones the F10 panel and PC Options have. Each is the setting
 // itself, read where it always was and saved in the settings file. Where the PC games have a name for the thing it
-// is that name (cg_fov, cg_drawFPS, com_maxfps, r_gamma, sensitivity ...); the rest are cg_ names of the port's own (his word: one prefix). cg_fov and
+// is that name (cg_fov, cg_drawFPS, com_maxfps, r_gamma, sensitivity ...); the rest are the port's own, with the engine's prefix for their kind
+// (cg_ what the player sees, r_ the renderer, m_ the mouse). cg_fov and
 // com_maxfps are the engine's too, but the port's settings rule those here (src/game/fov.cpp sets cg_fov from the
 // setting every frame; the frame rate is the window's limiter). The display mode and the resolution are not here:
 // they change the window, on the panel's Apply.
@@ -151,11 +152,11 @@ const PortVariable kPortVariables[] = {
      PORT_NUMBER(app::Get().aniso, uint32_t)},
     {"sensitivity", "Mouse Horizontal Sensitivity", "0.1 to 5", 0.1, 5, 1, 0.1,
      PORT_NUMBER(Opt().mouse_sensitivity, float)},
-    {"cg_sensitivityY", "Mouse Vertical Sensitivity", "0.1 to 5", 0.1, 5, 1, 0.1,
+    {"m_sensitivityY", "Mouse Vertical Sensitivity", "0.1 to 5", 0.1, 5, 1, 0.1,
      PORT_NUMBER(Opt().mouse_vertical_sensitivity, float)},
-    {"cg_invertMouse", "Invert Vertical Look", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().invert_mouse)},
-    {"cg_invertMouseX", "Invert Horizontal Look", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().invert_mouse_x)},
-    {"cg_renderScale", "Render Resolution", "20 to 200, percent", 20, 200, 100, 5,
+    {"m_invertMouse", "Invert Vertical Look", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().invert_mouse)},
+    {"m_invertMouseX", "Invert Horizontal Look", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().invert_mouse_x)},
+    {"r_renderScale", "Render Resolution", "20 to 200, percent", 20, 200, 100, 5,
      PORT_NUMBER(app::Get().render_percent, uint32_t)},
     {"cg_viewDistance", "View Distance", "0 low (the game's own), 1 medium or 2 high", 0, 2, 0, 1,
      [] { return Opt().view_distance <= 1 ? 0.0 : Opt().view_distance <= 5 ? 1.0 : 2.0; },
@@ -173,8 +174,8 @@ const PortVariable kPortVariables[] = {
      PORT_BOOL(Opt().qwerty_typewriter)},
     {"cg_walkSpeed", "walk key speed", "10 to 100, percent of running", 10, 100, 50, 1,
      PORT_NUMBER(Opt().walk_speed, uint32_t)},
-    {"cg_customTextures", "Texture Replacement", "0 or 1", 0, 1, 1, 1, PORT_BOOL(app::Get().custom_textures)},
-    {"cg_dumpTextures", "Texture Dumping", "0 or 1", 0, 1, 0, 1, PORT_BOOL(app::Get().dump_textures)},
+    {"r_customTextures", "Texture Replacement", "0 or 1", 0, 1, 1, 1, PORT_BOOL(app::Get().custom_textures)},
+    {"r_dumpTextures", "Texture Dumping", "0 or 1", 0, 1, 0, 1, PORT_BOOL(app::Get().dump_textures)},
 };
 #undef PORT_BOOL
 #undef PORT_NUMBER
