@@ -25,6 +25,7 @@ struct Options {
     bool aim_assist = true;     // the game's sticky aim on a controller (never on the keyboard and mouse)
     bool hints = true;          // the level scripts' tutorial hints
     bool hide_hud = false;      // no HUD in a level
+    bool lean_toggle = false;   // a lean stays until its button is pressed again (src/game/lean.cpp), else while held
     bool modern_layout = true;  // the Modern controller configuration (src/game/pad_layout.cpp), else the game's own
     // the game's own look sensitivities (its Controller screen, pause Options), kept here as the game saves its profile
     // only now and then: -1 none kept yet, the profile's own (src/game/pad_layout.cpp)

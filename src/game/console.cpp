@@ -166,6 +166,7 @@ const PortVariable kPortVariables[] = {
     {"cg_hints", "Tutorial Hints", "0 or 1", 0, 1, 1, 1, PORT_BOOL(Opt().hints)},
     {"cg_drawHud", "Hide the HUD", "1 the HUD is drawn, 0 it is hidden", 0, 1, 1, 1,
      [] { return Opt().hide_hud ? 0.0 : 1.0; }, [](double v) { Opt().hide_hud = v == 0; }},
+    {"cg_leanToggle", "Leaning", "1 toggle, 0 hold as the game had it", 0, 1, 0, 1, PORT_BOOL(Opt().lean_toggle)},
     {"cg_buttonPrompts", "Button Prompts", "0 automatic, 1 keyboard and mouse, 2 controller", 0, 2, 0, 1,
      PORT_NUMBER(Opt().button_prompts, uint32_t)},
     {"cg_qwertyNames", "Profile Name Keys", "1 QWERTY, 0 ABC as the game had them", 0, 1, 1, 1,

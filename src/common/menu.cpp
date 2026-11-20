@@ -125,7 +125,7 @@ const std::vector<Mode>& Modes() {
 
 enum RowId { kSection, kDisplayMode, kResolution, kRenderResolution, kFov, kMaxFps, kVsync, kFpsCounter, kAniso,
              kTextureReplacement, kTextureDumping, kDumpFormat, kMouseX, kMouseY, kInvertY, kInvertX, kQwerty, kPrompts,
-             kBrightness, kAimAssist, kHints, kHideHud, kViewDistance, kKeepBodies, kCutsceneBars };
+             kBrightness, kAimAssist, kHints, kHideHud, kViewDistance, kKeepBodies, kCutsceneBars, kLeanToggle };
 
 struct Row {
     RowId id;
@@ -162,6 +162,7 @@ constexpr Row kRows[] = {
     {kAimAssist, "CONTROLLER AIM ASSIST"},
     {kHints, "TUTORIAL HINTS"},
     {kHideHud, "HIDE THE HUD"},
+    {kLeanToggle, "LEANING"},
 };
 
 bool DisplayRow(RowId id) { return id == kDisplayMode || id == kResolution; }
@@ -251,6 +252,9 @@ std::string RowText(RowId id, int step, Settings& s) {
         case kHideHud:
             if (step) O().hide_hud = !O().hide_hud;
             return OnOff(O().hide_hud);
+        case kLeanToggle:
+            if (step) O().lean_toggle = !O().lean_toggle;
+            return O().lean_toggle ? "TOGGLE" : "HOLD (ORIGINAL)";
         case kKeepBodies:
             if (step) O().keep_bodies = !O().keep_bodies;
             return OnOff(O().keep_bodies);
@@ -392,6 +396,7 @@ void SetDefaults(Settings& s, game::Options& o, int parts) {
         o.aim_assist = true;
         o.hints = true;
         o.hide_hud = false;
+        o.lean_toggle = false;
     }
     if (parts & kGraphicsPart) {
         s.aniso = d.aniso;
@@ -437,6 +442,7 @@ void CopyRows(Settings& s, game::Options& o, const Settings& from, const game::O
     o.aim_assist = from_o.aim_assist;
     o.hints = from_o.hints;
     o.hide_hud = from_o.hide_hud;
+    o.lean_toggle = from_o.lean_toggle;
     o.view_distance = from_o.view_distance;
     o.keep_bodies = from_o.keep_bodies;
     o.cutscene_bars = from_o.cutscene_bars;
@@ -452,7 +458,7 @@ bool RowsDiffer(const Settings& a, const game::Options& c, const Settings& b, co
            c.invert_mouse != d.invert_mouse || c.invert_mouse_x != d.invert_mouse_x ||
            c.qwerty_typewriter != d.qwerty_typewriter || c.button_prompts != d.button_prompts ||
            c.brightness != d.brightness || c.aim_assist != d.aim_assist || c.hints != d.hints ||
-           c.hide_hud != d.hide_hud || c.view_distance != d.view_distance || c.keep_bodies != d.keep_bodies ||
+           c.hide_hud != d.hide_hud || c.lean_toggle != d.lean_toggle || c.view_distance != d.view_distance || c.keep_bodies != d.keep_bodies ||
            c.cutscene_bars != d.cutscene_bars;
 }
 
@@ -1003,7 +1009,7 @@ const PageSpec& Spec(int page) {
         {"Graphics", kGraphicsPart, {kAniso, kViewDistance, kKeepBodies, kTextureReplacement, kTextureDumping, kDumpFormat}, false},
         {"Mouse", kMousePart, {kMouseX, kMouseY, kInvertY, kInvertX}, false},
         {"Keyboard", kKeysPart, {kPrompts, kQwerty}, true},
-        {"Gameplay", kGameplayPart, {kAimAssist, kHints, kHideHud}, false},
+        {"Gameplay", kGameplayPart, {kAimAssist, kHints, kHideHud, kLeanToggle}, false},
     };
     return specs[page];
 }
