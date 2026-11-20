@@ -12,8 +12,9 @@
 // 0x277660, the renderer's 0x2AB760, each ending in a bare vsprintf) are shown for a moment after a typed line:
 // "godmode ON", where's position.
 //
-// Cheats stay behind the password (src/game/cheats.cpp), which can be typed here too. A mission runs with sv_cheats
-// on whether or not it was typed, so the engine itself would let god through: until the password is in, the console
+// Cheats want sv_cheats 1 typed first, as in the PC games (or the F10 panel's password, src/game/cheats.cpp, which
+// can be typed here too). A mission runs with the engine's sv_cheats on whether or not it was typed, so the engine
+// itself would let god through: sv_cheats here is the console's own, and until it is 1 the console
 // refuses the game's cheat commands, devmap, and writes to cheat protected variables (flag 0x200) and to the game
 // rules (g_*).
 
@@ -118,6 +119,10 @@ void ShowVariable(uint32_t var) {
 // com_maxfps are the engine's too, but the port's settings rule those here (src/game/fov.cpp sets cg_fov from the
 // setting every frame; the frame rate is the window's limiter). The display mode and the resolution are not here:
 // they change the window, on the panel's Apply.
+// sv_cheats 1 typed here: the console's cheats are open until the game closes or sv_cheats 0 (the F10 panel's own
+// cheats still want the password)
+bool g_cheats = false;
+
 struct PortVariable {
     const char* name;
     const char* what;   // the setting's name in the menus
@@ -140,6 +145,8 @@ double Nearest(const double* values, size_t count, double v) {
 #define PORT_BOOL(field) [] { return field ? 1.0 : 0.0; }, [](double v) { field = v != 0; }
 #define PORT_NUMBER(field, type) [] { return double(field); }, [](double v) { field = type(v); }
 const PortVariable kPortVariables[] = {
+    {"sv_cheats", "Console cheats", "1 the cheat commands and variables can be typed, 0 they are locked", 0, 1, 0, 1,
+     [] { return double(g_cheats || cheats::Unlocked()); }, [](double v) { g_cheats = v != 0; }},
     {"cg_fov", "Field of View", "60 to 110", kMinFov, kMaxFov, kDefaultFov, 1, PORT_NUMBER(Opt().fov, uint32_t)},
     {"cg_drawFPS", "FPS Counter", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().fps_counter)},
     // any whole rate from 5 to 999 (his ask), not only the menu's six; 0 is no limit
@@ -324,7 +331,7 @@ void Send(X86Context& ctx, const std::string& line) {
 // the password is not in and the command is a cheat: one of the game's player commands (all but the harmless
 // three), devmap, or a write to a cheat protected variable, direct or through set, toggle and the like
 bool Locked(const std::string& first, const std::string& rest) {
-    if (cheats::Unlocked()) return false;
+    if (g_cheats || cheats::Unlocked()) return false;
     constexpr uint32_t kCheatVariable = 0x200;
     for (uint32_t i = 0; i < kPlayerCommandCount; i++)
         if (Lower(Text(R32(kPlayerCommands + i * 8))) == first)
@@ -412,7 +419,7 @@ void Run(X86Context& ctx, std::string line) {
         return;
     }
     if (Locked(first, rest)) {
-        console::Print("    Cheats are locked: type the cheats password here or in the F10 panel.");
+        console::Print("    Cheats are locked: type sv_cheats 1.");
         return;
     }
     // what the engine would have said about it
@@ -455,6 +462,15 @@ void RunConsole(X86Context& ctx) {
     constexpr uint32_t kProfileName = 0x8DCE30;
     console::SetAllowed(kernel::G<uint8_t>(kProfileName) != 0);
     if (console::NamesWanted()) Names();
+    // the engine holds its cheat variables at their defaults unless its own sv_cheats is on (as cheats.cpp keeps it)
+    if (g_cheats) {
+        constexpr uint32_t kGameCheats = 0x954F34, kCheatsVar = 0x940358;
+        kernel::W32(kGameCheats, 1);
+        if (uint32_t var = R32(kCheatsVar)) {
+            kernel::W32(var + 0x20, 1);
+            kernel::G<float>(var + 0x1C) = 1.0f;
+        }
+    }
     if (g_listen > 0) g_listen--;
     if (g_set_in > 0 && --g_set_in == 0) {
         for (const std::string& name : g_set)
