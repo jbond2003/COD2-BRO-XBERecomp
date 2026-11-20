@@ -6,7 +6,8 @@
 //
 // Here the choice goes to 4 = Modern: its letter reads "Modern", and whenever the game execs a style while Modern is
 // picked (Options().modern_layout, kept in the settings file) the binds below follow it. Modern: RT fire, LT aim
-// down the sights, A jump, X use and reload, Y and the dpad's right next weapon, dpad left the one before, RB a
+// down the sights, A jump, X use and reload, Y next weapon, dpad left and right lean (as the game's own A has
+// them; they were the weapon before and after until his ask of 2026-11-20), RB a
 // grenade, R3 melee, LB nothing, L3 sprint, dpad up and Back objectives, Start the pause menu. B crouches and
 // stands, held it goes prone (ModernPad: B is bound to nothing and sends the commands).
 //
@@ -51,8 +52,8 @@ constexpr const char* kModernBinds =
     "bind L3 \"+sprint\"\n"
     "bind UPARROW \"+scores\"\n"
     "bind DOWNARROW \"\"\n"
-    "bind LEFTARROW \"weapprev\"\n"
-    "bind RIGHTARROW \"weapnext\"\n"
+    "bind LEFTARROW \"+leanleft\"\n"
+    "bind RIGHTARROW \"+leanright\"\n"
     "bind TAB \"+scores\"\n";
 
 uint32_t g_text = 0;  // a guest buffer for our text
