@@ -190,6 +190,7 @@ void Load(const void* table) {
     o.mouse_vertical_sensitivity = ReadFloat(t, "mouse_vertical_sensitivity", o.mouse_vertical_sensitivity);
     o.look_sensitivity_x = int32_t(t["look_sensitivity_x"].value_or(int64_t(-1)));
     o.look_sensitivity_y = int32_t(t["look_sensitivity_y"].value_or(int64_t(-1)));
+    o.settings_profile = t["profile"].value_or(std::string());
     o.keys.clear();
     if (const toml::table* keys = t["keys"].as_table())
         for (auto&& [id, value] : *keys)
@@ -204,6 +205,7 @@ void Save(void* table) {
     t.insert_or_assign("mouse_vertical_sensitivity", double(o.mouse_vertical_sensitivity));
     if (o.look_sensitivity_x >= 0) t.insert_or_assign("look_sensitivity_x", int64_t(o.look_sensitivity_x));
     if (o.look_sensitivity_y >= 0) t.insert_or_assign("look_sensitivity_y", int64_t(o.look_sensitivity_y));
+    t.insert_or_assign("profile", o.settings_profile);
     size_t count;
     const input::Action* actions = input::Actions(&count);
     toml::table keys;

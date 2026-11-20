@@ -186,6 +186,10 @@ void KeepLookSensitivity() {
     LOGR("look sensitivity kept: %d, %d", x, y);
 }
 
+namespace game {
+void ProfileSettings(const std::string& profile);  // src/game/profile_settings.cpp
+}
+
 X86_EXTERN_FUNC(__imp__sub_003361C0);
 X86_EXTERN_FUNC(__imp__sub_00331340);
 X86_EXTERN_FUNC(__imp__sub_00332E20);
@@ -205,6 +209,11 @@ X86_FUNC(sub_00331340) {
 
 // a profile applied (edi the profile: its look sensitivities at +0x44, +0x48)
 X86_FUNC(sub_00332E20) {
+    // first the profile's own settings (src/game/profile_settings.cpp): its name is the profile's first field
+    if (ctx.edi) {
+        const char* name = static_cast<const char*>(kernel::HostPtr(ctx.edi));
+        game::ProfileSettings(std::string(name, strnlen(name, 32)));
+    }
     const game::Options& o = game::Opt();
     if (ctx.edi && o.look_sensitivity_x >= 0 && o.look_sensitivity_y >= 0) {
         W32(ctx.edi + 0x44, uint32_t(o.look_sensitivity_x));

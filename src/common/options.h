@@ -31,6 +31,8 @@ struct Options {
     int32_t look_sensitivity_x = -1;
     int32_t look_sensitivity_y = -1;
     uint32_t walk_speed = 50;  // percent of running, while the walk key is held
+    // the profile these settings are (src/game/profile_settings.cpp): empty none yet, "*" a deleted one
+    std::string settings_profile;
     std::map<std::string, std::string> keys;  // action id to key names, absent is the default
 };
 
