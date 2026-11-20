@@ -19,7 +19,8 @@
 // Drones. The soldiers a level's script runs across a battlefield are not actors but script models (entity type 7,
 // BroScr_DroneMain 0x169E50). One that is shot falls, and BroScr_DroneDeleteLater (0x1250A0) deletes it some seconds
 // later with the script's delete (GScr_Delete 0x2FD520, called at 0x12525E). With the setting on that one delete is
-// left out and the body lies where it fell; at most kDrones of them, and past that the farthest goes. (A drone that
+// left out and the body lies where it fell; at most kDrones of them, and past that the farthest goes, and at most
+// kHeap at one place (his report: they run to the same spot and die there, in a clump). (A drone that
 // reaches the end of its run alive is deleted elsewhere, 0x169F3D, and still is.)
 //
 // Bars. The level scripts' cutscenes call BroScr_LetterboxFade (0x141890): letterbox_enabled 1, no gun, no HUD, and
@@ -50,6 +51,8 @@ constexpr uint32_t kRagdollsOut = 0x8F0464, kRagdolls = 0x30, kRagdollsSpare = 1
 constexpr uint32_t kScriptDelete = 0x2FD520;       // GScr_Delete (entity handle), cdecl
 constexpr uint32_t kDroneDeleteReturn = 0x125264;  // where BroScr_DroneDeleteLater's delete returns to
 constexpr size_t kDrones = 32;
+constexpr size_t kHeap = 3;          // fallen drones kept at one place
+constexpr float kHeapApart = 96.0f;  // ... which is this many units across (about 2.4 m)
 std::vector<uint32_t> g_drones;  // the handles of the fallen drones that were kept
 
 using kernel::R32;
@@ -131,6 +134,20 @@ X86_FUNC(sub_002FD520) {
         return __imp__sub_002FD520(ctx, base);
     std::erase_if(g_drones, [handle](uint32_t h) { return h == handle || !Entity(h); });
     g_drones.push_back(handle);
+    // Drones run the same path and many fall at the same place, where the game had cleared each before the next:
+    // kept, they made a heap. A heap is kept to kHeap bodies, the one that has lain longest going first.
+    Place here = Origin(Entity(handle));
+    for (;;) {
+        size_t near = 0, oldest = 0;
+        for (size_t i = g_drones.size() - 1; i-- > 0;)
+            if (Apart(Origin(Entity(g_drones[i])), here) < kHeapApart * kHeapApart) near++, oldest = i;
+        if (near < kHeap) break;
+        uint32_t gone = g_drones[oldest];
+        g_drones.erase(g_drones.begin() + oldest);
+        kernel::CallGuest(ctx, kScriptDelete, {gone});
+        static int said = 0;
+        if (said++ < 100) LOGR("bodies stay: a fallen drone removed from a heap of %zu", near + 1);
+    }
     Place player = Player();
     while (g_drones.size() > kDrones) {
         size_t far = 0;
