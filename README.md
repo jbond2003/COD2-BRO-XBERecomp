@@ -93,6 +93,6 @@ regional release has its code at other addresses and is not supported.
 - **Console:** the key under Escape (`~`) opens the engine's developer console. `help` explains it, `cmdlist` and
   `cvarlist` show what the game has, Tab completes a name. Cheat commands such as `god` and `noclip` need
   `sv_cheats 1` typed first.
-- **Every mission unlocked:** create a profile named `thereisacow1337`.
+- **Every mission unlocked:** create a profile named `thereisacow1337`, or type that word in the console.
 
 </details>

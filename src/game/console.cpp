@@ -387,6 +387,10 @@ void Run(X86Context& ctx, std::string line) {
         return;
     }
     if (first == "cmdlist" || first == "cvarlist") return List(first == "cvarlist", Lower(rest));
+    if (rest.empty() && cheats::UnlockMissions(first.c_str())) {
+        console::Print("    Every mission is unlocked for this profile.");
+        return;
+    }
     if (!cheats::Unlocked() && cheats::TryUnlock(line.c_str())) {
         console::Print("    Cheats are on until the game is closed.");
         return;
