@@ -8,8 +8,8 @@
 // A hint on the screen when the device changes is given again in the new words (ShowAgain).
 //
 // Lines of our own in the first mission: sprint, 5 seconds after the game's "to move around" hint (the level
-// script's, as the player gains control after the opening scene), and on the keyboard and mouse leaning 5 seconds
-// after that and the Hide HUD key 5 seconds after leaning. Each waits until a hint of the game's own has gone, and one
+// script's, as the player gains control after the opening scene), leaning 5 seconds after that (the lean keys, or
+// the dpad's left and right on a controller) and on the keyboard and mouse the Hide HUD key 5 seconds after leaning. Each waits until a hint of the game's own has gone, and one
 // the game's hint cut short comes again (UpdateLines). The script's hint (0x2FEF80: the text's key hash) goes to the HUD (0x32CED0, esi the HUD [0x95F8F0], eax
 // the hash): the text found in the global table is given to the hint widget ([HUD+0x3C], vtable +0x140 = 0x32EE50:
 // text, 400, -1.0) and the HUD's timer at +0x60 restarted. Ours go the same way, so they look and move like the game's.
@@ -159,7 +159,12 @@ bool InLevel() { return !kernel::R32(0x95F8F8) && kernel::R32(0x95F8FC); }
 double Now() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 
 
-std::string Lean() { return std::string("Press ") + kKeyTokens[0] + " and " + kKeyTokens[1] + " to lean"; }
+// On a controller the dpad's left and right lean in every layout the game has, and in Modern (config/style_*.cfg,
+// src/game/pad_layout.cpp): the line shows their two pictures (~left, ~right). On the keys, the lean keys' caps.
+std::string Lean() {
+    if (!g_keyboard) return "Press ~left and ~right to lean";
+    return std::string("Press ") + kKeyTokens[0] + " and " + kKeyTokens[1] + " to lean";
+}
 
 void ShowLine(X86Context& ctx, const std::string& text) {
     constexpr uint32_t kBytes = 256;
@@ -200,8 +205,8 @@ void UpdateLines(X86Context& ctx) {
     double now = Now();
     if (now < g_next) return;
     if (GameHintUp() && now < g_next + kWaitMost) return;
-    // the lines left out on a controller (leaning and Hide HUD are keys)
-    while (g_lines > 0 && g_lines < 3 && !g_keyboard) g_lines++;
+    // the line left out on a controller (Hide HUD is a key)
+    if (g_lines == 2 && !g_keyboard) g_lines++;
     if (g_lines >= 3) {
         g_first = 0;
         return;
@@ -247,8 +252,8 @@ void ShowAgain(X86Context& ctx) {
     }
     if (g_hash == 0xFFFFFFFFu && !g_own) return;
     g_again = true;
-    if (g_own == 1) {
-        ShowLine(ctx, SprintLine());
+    if (g_own == 1 || g_own == 2) {
+        ShowLine(ctx, g_own == 1 ? SprintLine() : Lean());
     } else {
         // the script's hint again; a line of ours for the keys only goes when a controller is taken up
         uint32_t esi = ctx.esi, eax = ctx.eax;
