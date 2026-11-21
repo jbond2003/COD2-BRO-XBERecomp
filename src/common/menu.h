@@ -14,7 +14,8 @@ extern float g_zoom;  // the gameplay camera's zoom as a tangent ratio: 1 unzoom
 bool MenuOpen();   // the panel, the PC Options page or the console is up: the game gets no input
 bool PanelOpen();  // the panel or the PC Options page
 void ToggleMenu();
-void OpenSettings();  // any thread: the settings menu opens at the next frame, if nothing of ours is up
+void OpenSettings();
+void CloseSettings();  // the settings menu leaves, asking first about changes not applied  // any thread: the settings menu opens at the next frame, if nothing of ours is up
 void OpenBindings();  // the panel with the key bindings alone
 // PC OPTIONS in the game's Options menu: the same settings and the key bindings on a page like the game's own
 // option pages (paper_page.h), mouse, keys and controller

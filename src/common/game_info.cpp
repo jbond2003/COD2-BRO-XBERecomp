@@ -68,7 +68,8 @@ bool Message(void*, uint32_t msg, uintptr_t wp, intptr_t lp, intptr_t* result) {
             return true;
         }
         if (wp == VK_F10 || (wp == VK_ESCAPE && app::MenuOpen() && !app::Capturing())) {
-            app::ToggleMenu();
+            if (app::PanelOpen()) app::CloseSettings();
+            else app::ToggleMenu();
             *result = 0;
             return true;
         }

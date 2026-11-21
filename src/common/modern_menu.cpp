@@ -359,6 +359,34 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
                    page.hint.empty() ? Spaced(middle) : middle, 0.5f, ax0 - dx1 - 10);
     }
 
+    // leaving with changes waiting: the sheet dimmed, a slip in its middle with the choices
+    if (page.confirm) {
+        c.Fill(kSheetLeft, kSheetTop, kSheetRight, kSheetBottom, IM_COL32(0, 0, 0, 120));
+        const float w = 250.0f, h = 92.0f, mx = (kFrameLeft + kFrameRight) / 2, x0 = mx - w / 2, x1 = mx + w / 2;
+        const float y0 = 205.0f, y1 = y0 + h;
+        dl->AddRectFilled(ImVec2(c.X(x0) + c.Line(1.6f), c.Y(y0) + c.Line(2.4f)),
+                          ImVec2(c.X(x1) + c.Line(1.6f), c.Y(y1) + c.Line(2.4f)), IM_COL32(0, 0, 0, 110));
+        c.Fill(x0, y0, x1, y1, IM_COL32(238, 230, 208, 250));
+        c.Box(x0, y0, x1, y1, Ink(0.6f), 0.8f);
+        c.Text(17.0f, mx, y0 + 17.0f, Red(), "Unsaved Changes", 0.5f, w - 20);
+        c.Fill(x0 + 12, y0 + 28.0f, x1 - 12, y0 + 28.6f, Red(0.6f));
+        std::string text = page.changes == 1 ? "1 change has not been applied."
+                                             : std::to_string(page.changes) + " changes have not been applied.";
+        c.Text(10.5f, mx, y0 + 42.0f, Ink(0.9f), text, 0.5f, w - 20);
+        int n = int(page.confirm_choices.size());
+        const float gap = 6.0f, by0 = y1 - 30.0f, by1 = y1 - 11.0f;
+        float bw = (w - 24.0f - gap * float(std::max(0, n - 1))) / float(std::max(1, n));
+        hits.confirm.resize(size_t(n));
+        for (int i = 0; i < n; i++) {
+            float bx0 = x0 + 12.0f + (bw + gap) * float(i), bx1 = bx0 + bw;
+            bool on = i == page.confirm_selected;
+            if (on) c.Fill(bx0, by0, bx1, by1, Red(0.13f));
+            c.Box(bx0, by0, bx1, by1, on ? Red() : Ink(0.5f), on ? 1.0f : 0.7f);
+            c.Text(10.5f, (bx0 + bx1) / 2, (by0 + by1) / 2, on ? Red() : Ink(0.75f), page.confirm_choices[size_t(i)], 0.5f, bw - 6);
+            hits.confirm[size_t(i)] = {c.P(bx0, by0), c.P(bx1, by1)};
+        }
+    }
+
     // along the bottom of the screen: the keys, or the controller's buttons
     {
         struct Item {

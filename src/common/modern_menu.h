@@ -36,6 +36,10 @@ struct Page {
     int changes = 0;       // lines waiting for Apply
     bool controller = false;  // the bottom line shows the controller's buttons, else the keys
     std::string hint;      // a line over the foot, in place of the count of changes
+    // leaving with changes waiting: a slip over the sheet asks what to do with them
+    bool confirm = false;
+    std::vector<std::string> confirm_choices;
+    int confirm_selected = 0;
 };
 
 struct Rect {
@@ -55,6 +59,7 @@ struct Hits {
     Rect tab_prev, tab_next;
     std::vector<Line> rows;
     Rect defaults, apply;
+    std::vector<Rect> confirm;  // the slip's choices
 };
 
 void Draw(const Page& page, float& scroll, Hits& hits);

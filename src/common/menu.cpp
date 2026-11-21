@@ -838,6 +838,8 @@ struct ModernState {
     std::string code;         // the cheats password as typed so far
     int drag = -1;            // the slider line the mouse holds, while its button is down
     bool held = false;        // the left button, as Windows had it last frame
+    bool confirm = false;     // leaving with changes waiting: the slip that asks about them is up
+    int confirm_choice = 0;
     ui::modern::Hits hits;
 } g_modern;
 
@@ -1117,6 +1119,9 @@ void ModernActivate(const ModernRow& r, const ui::modern::Row& shown, int step, 
     }
 }
 
+// F10 or Escape over the settings menu (the window's messages): it leaves as Backspace does, asking first
+std::atomic<bool> g_close_request{false};
+
 void DrawModern() {
     ModernState& p = g_modern;
     ui::modern::Page page;
@@ -1146,6 +1151,50 @@ void DrawModern() {
     if (pressed) p.controller = true;
 
     ImGuiIO& io = ImGui::GetIO();
+    // leaving: at once with nothing waiting, else the slip asks (Apply, Discard, Stay)
+    bool close = g_close_request.exchange(false, std::memory_order_relaxed);
+    auto leave = [&] {
+        if (ModernChanges() > 0) {
+            g_capture = {};
+            p.confirm = true;
+            p.confirm_choice = 0;
+            p.drag = -1;
+            return false;
+        }
+        ToggleMenu();
+        return true;
+    };
+    constexpr const char* kConfirmChoices[] = {"Apply", "Discard", "Stay"};
+    if (p.confirm) {
+        auto once = [](ImGuiKey k) { return ImGui::IsKeyPressed(k, false); };
+        int n = int(std::size(kConfirmChoices));
+        if (once(ImGuiKey_LeftArrow) || once(ImGuiKey_UpArrow) || (pressed & (kPadLeft | kPadUp)))
+            p.confirm_choice = (p.confirm_choice + n - 1) % n;
+        if (once(ImGuiKey_RightArrow) || once(ImGuiKey_DownArrow) || once(ImGuiKey_Tab) || (pressed & (kPadRight | kPadDown)))
+            p.confirm_choice = (p.confirm_choice + 1) % n;
+        int pick = -1;
+        if (once(ImGuiKey_Enter) || once(ImGuiKey_KeypadEnter) || (pressed & kPadA)) pick = p.confirm_choice;
+        if (close || once(ImGuiKey_Backspace) || (pressed & kPadB)) pick = 2;
+        ImVec2 m = io.MousePos;
+        bool moved = m.x != p.mouse.x || m.y != p.mouse.y;
+        p.mouse = m;
+        bool click = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+        if (moved || click) p.controller = false;
+        for (size_t i = 0; i < p.hits.confirm.size() && i < size_t(n); i++)
+            if (p.hits.confirm[i].Has(m)) {
+                if (moved || click) p.confirm_choice = int(i);
+                if (click) pick = int(i);
+            }
+        p.held = true;  // a click on the slip is not one on the page under it
+        if (pick == 0) ApplyPanel();
+        if (pick == 0 || pick == 1) {
+            ToggleMenu();
+            return;
+        }
+        if (pick == 2) p.confirm = false;
+    } else if (close && leave()) {
+        return;
+    }
     bool typing = rows[size_t(p.selected)].kind == ModernRow::kPassword;
     auto to_tab = [&](int tab) {
         p.tab = ((tab % kTabs) + kTabs) % kTabs;
@@ -1155,7 +1204,7 @@ void DrawModern() {
         build();
     };
     // capture takes every key until it ends; a key that ended it does nothing else this frame
-    if (!capturing && !was_capturing) {
+    if (!capturing && !was_capturing && !p.confirm) {
         auto key = [](ImGuiKey k) { return ImGui::IsKeyPressed(k, true); };
         auto once = [](ImGuiKey k) { return ImGui::IsKeyPressed(k, false); };
         int move = 0, step = 0, turn = 0;
@@ -1184,8 +1233,9 @@ void DrawModern() {
             }
         }
         if (back) {
-            ToggleMenu();
-            return;
+            if (leave()) return;
+            turn = move = step = 0;
+            enter = clear = defaults = apply = false;
         }
         if (turn) to_tab(p.tab + turn);
         if (move) {
@@ -1295,6 +1345,9 @@ void DrawModern() {
     if (row.kind == ModernRow::kSetting && sel.changed)
         page.note_change = "Now " + Sentence(LiveText(row.row)) + ", after Apply " + Sentence(PanelText(row.row, 0));
     if (capturing) page.hint = "Press a key for it. Escape keeps the old one.";
+    page.confirm = p.confirm;
+    page.confirm_choices.assign(std::begin(kConfirmChoices), std::end(kConfirmChoices));
+    page.confirm_selected = p.confirm_choice;
     ui::modern::Draw(page, p.scroll, p.hits);
     p.follow = false;
 }
@@ -1628,10 +1681,16 @@ void ToggleMenu() {
     g_capture = {};
     if (open) {
         g_modern = {};
+        g_close_request.store(false, std::memory_order_relaxed);
         g_modern.pad_prev = ~0u;  // a button held as it opens (the A that picked PC Options) is let go of first
         if (g_bindings_only.load(std::memory_order_relaxed)) g_modern.tab = kControlsTab;
         input::ReleaseCursor();
     }
+}
+
+void CloseSettings() {
+    if (PanelOpen() && !g_paper.load(std::memory_order_relaxed)) g_close_request.store(true, std::memory_order_relaxed);
+    else ToggleMenu();
 }
 
 std::atomic<bool> g_open_request{false};
@@ -1828,6 +1887,7 @@ void OpenBindings() {}
 void OpenPcOptions() {}
 void ExitToDesktop() {}
 bool PcOptionsOpen() { return false; }
+void CloseSettings() {}
 void PcOptionsPad(const input::Pad&) {}
 }  // namespace app
 #endif
