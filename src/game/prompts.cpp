@@ -42,6 +42,7 @@
 namespace game {
 int PadTarget(size_t i);  // src/game/mouse_look.cpp
 void HintKeys(const char* (&actions)[2]);  // src/game/hints.cpp
+std::vector<uint8_t> BoldGaramond();       // src/game/sharp_text.cpp: the menus' bold Garamond, empty for none
 // src/game/sharp_text.cpp: a game font sheet drawn again sharp, null for any other texture
 std::shared_ptr<const gpu::texture_override::Picture> SharpText(const gpu::TextureDesc& d, const uint8_t* guest,
                                                                 float render_scale);
@@ -210,7 +211,9 @@ uint32_t Level0Size(const std::vector<uint8_t>& dds, uint32_t width, uint32_t he
 }
 
 bool ReadFont() {
-    // the game's own Garamond, the face its typewriter keys are lettered in
+    // the bold Garamond of the settings menu's keys, else the game's own regular one
+    g_ttf = game::BoldGaramond();
+    if (!g_ttf.empty() && stbtt_InitFont(&g_font, g_ttf.data(), stbtt_GetFontOffsetForIndex(g_ttf.data(), 0))) return true;
     if (kernel::ReadGameFile("D:\\media\\GARA.TTF", g_ttf) && !g_ttf.empty() &&
         stbtt_InitFont(&g_font, g_ttf.data(), stbtt_GetFontOffsetForIndex(g_ttf.data(), 0)))
         return true;
@@ -404,15 +407,14 @@ void Text(Canvas& canvas, float cx, float cy, float max_w, float max_h, const st
     }
 }
 
-// The look of the profile name typewriter's keys: round, a bright metal ring around a near black face, the name in
-// off-white in the game's own Garamond (d:\media\GARA.TTF), a soft shadow below.
-constexpr Color kInk{0.95f, 0.93f, 0.88f, 1.0f};
-constexpr Color kShadow{0.0f, 0.0f, 0.0f, 0.55f};
-constexpr Color kRingTop{0.88f, 0.87f, 0.84f, 1.0f};
-constexpr Color kRingBottom{0.36f, 0.35f, 0.33f, 1.0f};
-constexpr Color kFaceTop{0.27f, 0.26f, 0.25f, 1.0f};
-constexpr Color kFaceBottom{0.07f, 0.07f, 0.07f, 1.0f};
-constexpr Color kLit{0.80f, 0.16f, 0.15f, 1.0f};
+// The look of the settings menu's keys (common/modern_menu.cpp): a cream cap with rounded corners, the key's name on
+// it in dark ink in a bold Garamond, a thin dark edge and a soft shadow so it also reads on the menus' paper.
+constexpr Color kInk{0.14f, 0.11f, 0.08f, 1.0f};
+constexpr Color kShadow{0.0f, 0.0f, 0.0f, 0.45f};
+constexpr Color kCapTop{0.95f, 0.91f, 0.82f, 1.0f};
+constexpr Color kCapBottom{0.89f, 0.84f, 0.73f, 1.0f};
+constexpr Color kEdge{0.10f, 0.08f, 0.06f, 0.85f};
+constexpr Color kLit{0.66f, 0.13f, 0.10f, 1.0f};
 
 Color Mix(Color a, Color b, float t) {
     return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t};
@@ -452,20 +454,22 @@ void Mouse(Canvas& canvas, float cx, float cy, float size, int button) {
 
 void Keycap(Canvas& canvas, float left, float top, float w, float h, const std::string& label) {
     float size = std::min(w, h);
+    bool name = label.size() > 1 && label[0] != '@';  // a name's cap is as wide as its place, a letter's square
     float cx = left + w / 2, cy = top + h / 2 - size * 0.02f;
-    float r = size * 0.46f, ring = std::max(1.0f, size * 0.085f), drop = size * 0.04f;
-    auto disc = [&](float rr) { return [&, rr](float px, float py) { return std::hypot(px - cx, py - cy) - rr; }; };
-    // the shadow, the metal ring lit from the top, the face dark below
-    canvas.Fill(cx - r, cy - r + drop, cx + r, cy + r + drop, kShadow,
-                [&](float px, float py) { return std::hypot(px - cx, py - cy - drop) - r; });
-    Shade(canvas, cy - r, cy + r, cx - r, cx + r, kRingTop, kRingBottom, disc(r));
-    float face = r - ring;
-    Shade(canvas, cy - face, cy + face, cx - face, cx + face, kFaceTop, kFaceBottom, disc(face));
-    // a thin dark line inside the ring, as the game's keys have
-    canvas.Fill(cx - face, cy - face, cx + face, cy + face, Color{0, 0, 0, 0.7f},
-                [&](float px, float py) { return std::abs(std::hypot(px - cx, py - cy) - face) - std::max(0.5f, size * 0.012f); });
+    float hh = size * 0.42f, hw = name ? std::max(hh, w * 0.5f - std::max(0.5f, size * 0.02f)) : hh;
+    float radius = hh * 0.28f, edge = std::max(0.6f, size * 0.03f), drop = size * 0.045f;
+    auto cap = [&](float grow, float down) {
+        return [&, grow, down](float px, float py) {
+            return RoundedRect(px, py, cx, cy + down, hw + grow, hh + grow, radius + grow);
+        };
+    };
+    // the shadow, the dark edge, the cream face a little lighter at the top
+    canvas.Fill(cx - hw, cy - hh + drop, cx + hw, cy + hh + drop, kShadow, cap(0, drop));
+    canvas.Fill(cx - hw, cy - hh, cx + hw, cy + hh, kEdge, cap(0, 0));
+    Shade(canvas, cy - hh + edge, cy + hh - edge, cx - hw + edge, cx + hw - edge, kCapTop, kCapBottom, cap(-edge, 0));
+    float face = hh - edge;
     float inner = face * 2 * 0.80f;  // the text's width inside the face
-    float a = face * 0.95f;          // arrow size
+    float a = face * 0.8f;           // arrow size
     if (label == "@lmb" || label == "@rmb" || label == "@mmb") {
         Mouse(canvas, cx, cy, face * 1.25f, label == "@lmb" ? 0 : label == "@rmb" ? 1 : 2);
     } else if (label == "@up" || label == "@down" || label == "@left" || label == "@right") {
@@ -484,11 +488,8 @@ void Keycap(Canvas& canvas, float left, float top, float w, float h, const std::
         Arrow(canvas, cx - o, cy, s, -1, 0, kInk);
         Arrow(canvas, cx + o, cy, s, 1, 0, kInk);
     } else {
-        // a letter as big as the typewriter's, a capital as on a keyboard; longer names as wide as fits
-        std::string text = label;
-        // names fill the face edge to edge, a few letters still read at icon size
-        Text(canvas, cx, cy, text.size() == 1 ? inner : face * 1.92f, text.size() == 1 ? face * 0.95f : face * 0.9f,
-             text, kInk);
+        // a letter at the menu's size, a capital as on a keyboard; a name as wide as fits its cap
+        Text(canvas, cx, cy, name ? (hw - edge) * 2 * 0.86f : inner, name ? face * 0.8f : face * 0.9f, label, kInk);
     }
 }
 

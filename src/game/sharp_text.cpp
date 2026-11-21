@@ -163,6 +163,14 @@ void Load() {
 
 }  // namespace
 
+// the menus' bold Garamond (Windows' own, else the built in look-alike), for the key prompts
+std::vector<uint8_t> BoldGaramond() {
+    Font font;
+    font.spec = &kFonts[0];
+    ReadTtf(font);
+    return font.ttf;
+}
+
 // for the texture override provider: the redrawn sheet when the texture is one of the game's font sheets, else null
 std::shared_ptr<const Picture> SharpText(const gpu::TextureDesc& d, const uint8_t* guest, float render_scale) {
     std::call_once(g_loaded, Load);
