@@ -678,12 +678,13 @@ bool RequestPcScreen();  // below
 bool PcScreenPending();   // asked for, not up yet
 
 void OpenPcOptions() {
-    // the front end's Options menu: the game's own Gameplay screen, made PC Options (PcScreenPoll). PC OPTIONS stays
-    // selected until that is up, so no other line lights up on the way
-    if (RequestPcScreen()) return;
-    LOGR("PC Options opened from the game's menus");
+    // PC OPTIONS on the front end's Options menu and PC Options on the pause menu open the settings menu (the one on
+    // F10, src/common/modern_menu.h), which has every setting the PC Options pages had. The line stays selected under
+    // it. (RequestPcScreen made the game's Gameplay screen into those pages; it still gives that screen its second
+    // page.)
+    LOGR("PC Options: the settings menu opened from the game's menus");
 #ifdef _WIN32
-    app::OpenPcOptions();
+    app::OpenSettings();
 #endif
 }
 

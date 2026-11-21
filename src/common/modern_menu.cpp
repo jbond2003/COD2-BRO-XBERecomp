@@ -300,7 +300,7 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
         c.Fill(x - 1.0f, at, x + 1.0f, at + len, Ink(0.8f));
     }
 
-    // the note about the selected line, a slip clipped to the sheet
+    // the note about the selected line, a slip on the sheet
     if (!page.note_title.empty()) {
         const float n0 = 314.0f, n1 = kFrameRight - 5, top = 176.0f, pad = 8.0f;
         float wrap = (n1 - n0 - pad * 2) * c.sx, text_px = 9.6f * c.sy;
@@ -312,9 +312,6 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
                           ImVec2(c.X(n1) + c.Line(1.2f), c.Y(bottom) + c.Line(1.8f)), IM_COL32(0, 0, 0, 70));
         c.Fill(n0, top, n1, bottom, IM_COL32(238, 230, 208, 215));
         c.Box(n0, top, n1, bottom, Ink(0.35f), 0.4f);
-        // the clip
-        dl->AddRect(c.P(n0 + 12, top - 7), c.P(n0 + 18, top + 9), IM_COL32(96, 94, 88, 255), c.sy * 3.0f, 0, c.Line(1.0f));
-        dl->AddRect(c.P(n0 + 13.6f, top - 4), c.P(n0 + 16.4f, top + 6), IM_COL32(96, 94, 88, 255), c.sy * 1.4f, 0, c.Line(0.8f));
         float ty = top + 16.0f;
         c.Text(14.0f, n0 + pad, ty, Red(), page.note_title, 0.0f, n1 - n0 - pad * 2);
         c.Fill(n0 + pad, ty + 8.5f, n1 - pad, ty + 9.1f, Red(0.6f));

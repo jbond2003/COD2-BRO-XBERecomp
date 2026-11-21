@@ -35,8 +35,9 @@ Direct3D 12, and adds a few things of its own:
 - Tutorial hints for sprinting, leaning and hiding the HUD, and the others reworded for the keyboard.
 - H hides the HUD and brings it back (the key can be changed).
 - The M1 Garand can be reloaded before its clip is empty.
-- A built in, dedicated PC Options menu in the game's own style, with pages for display (with brightness, and cutscenes without black bars), graphics (with level of detail, and bodies that stay),
-  mouse, and keyboard with key bindings; F10 opens the settings menu, with a tab each for display, graphics, gameplay, controls and cheats.
+- A PC settings menu on the game's own paper, opened by PC Options in the game's menus or by F10, with a tab each
+  for display (with brightness, and cutscenes without black bars), graphics (with level of detail, and bodies that
+  stay), gameplay, controls (mouse and key bindings) and cheats.
 - More lines in the game's Gameplay menu, and in the pause menu's options: controller aim assist, tutorial hints,
   and hiding the HUD.
 - No title screen: the game starts at the profile menu, and the title's picture is the splash shown while the game

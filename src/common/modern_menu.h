@@ -6,7 +6,7 @@
 
 // The settings menu on F10: the game's own option sheet (paper_page.h has the paper and the face) filling the screen,
 // a row of tabs under its title rule, a line per setting with its value in a box (a choice between two arrows, a
-// slider, or On and Off), a clipped note about the selected line on the right, the page's two actions at the foot
+// slider, or On and Off), a note about the selected line on the right, the page's two actions at the foot
 // and the keys and buttons along the bottom of the screen. Drawing only; menu.cpp keeps the settings and the input.
 namespace ui::modern {
 

@@ -1518,10 +1518,14 @@ void ToggleMenu() {
     g_capture = {};
     if (open) {
         g_modern = {};
+        g_modern.pad_prev = ~0u;  // a button held as it opens (the A that picked PC Options) is let go of first
         if (g_bindings_only.load(std::memory_order_relaxed)) g_modern.tab = kControlsTab;
         input::ReleaseCursor();
     }
 }
+
+std::atomic<bool> g_open_request{false};
+void OpenSettings() { g_open_request.store(true, std::memory_order_relaxed); }
 
 void OpenBindings() {
     if (MenuOpen()) return;
@@ -1562,6 +1566,7 @@ void DrawUi(double fps) {
     ImGuiIO& io = ImGui::GetIO();
     // the arrow is ImGui's own, drawn only while the panel is open; Windows' stays hidden
     io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange | ImGuiConfigFlags_NavEnableKeyboard;
+    if (g_open_request.exchange(false, std::memory_order_relaxed) && !MenuOpen()) ToggleMenu();
     bool paper = PcOptionsOpen();
     io.MouseDrawCursor = MenuOpen() && !paper;  // the PC Options page has the game's own pointer
     io.KeyRepeatRate = 0.1f;
