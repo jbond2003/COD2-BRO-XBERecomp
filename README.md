@@ -8,7 +8,6 @@ An unofficial native PC port of the original Xbox version of Call of Duty 2: Big
 - **Modern controls.** The awful original Xbox controller scheme isn't the default anymore. A new Modern layout is:
   right trigger fires, left trigger aims down the sights, A jumps, B crouches (hold it to go prone), click the left
   stick to sprint and the right stick to melee. The game's four old layouts are still there if you want them.
-- **Q and E leaning**, like the PC Call of Duty games, to peek around corners and over cover.
 - **Full keyboard and mouse.** Mouse look, rebindable keys, the mouse in every menu, and
   button prompts that switch between keyboard and controller the moment you do.
 - **High refresh rate gameplay.** Play at 60, 120, 144 or 240 fps, or with no limit at all, with VSync if you want
@@ -50,7 +49,7 @@ Direct3D 12, and adds a few things of its own:
 - Texture packs: replace a texture with your own image, or dump the game's.
 - The port's version in the corner of the menus.
 
-Like the loader, it has 60 fps play, higher resolutions, a field of view setting, mouse look, Q and E to lean, the
+Like the loader, it has 60 fps play, higher resolutions, a field of view setting, mouse look, the
 mouse in the menus, sharp text, and button prompts that switch between keyboard and controller as you do.
 
 ## Known issues
