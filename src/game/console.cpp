@@ -115,7 +115,7 @@ void ShowVariable(uint32_t var) {
 // The port's own settings as console variables: the ones the F10 panel and PC Options have. Each is the setting
 // itself, read where it always was and saved in the settings file. Where the PC games have a name for the thing it
 // is that name (cg_fov, cg_drawFPS, com_maxfps, r_gamma, sensitivity ...); the rest are the port's own, with the engine's prefix for their kind
-// (cg_ what the player sees, r_ the renderer, m_ the mouse). cg_fov and
+// (cg_ what the player sees, r_ the renderer, m_ the mouse, snd_ the sound). cg_fov and
 // com_maxfps are the engine's too, but the port's settings rule those here (src/game/fov.cpp sets cg_fov from the
 // setting every frame; the frame rate is the window's limiter). The display mode and the resolution are not here:
 // they change the window, on the panel's Apply.
@@ -179,6 +179,12 @@ const PortVariable kPortVariables[] = {
     {"cg_drawHud", "Hide the HUD", "1 the HUD is drawn, 0 it is hidden", 0, 1, 1, 1,
      [] { return Opt().hide_hud ? 0.0 : 1.0; }, [](double v) { Opt().hide_hud = v == 0; }},
     {"cg_leanToggle", "Leaning", "1 toggle, 0 hold as the game had it", 0, 1, 0, 1, PORT_BOOL(Opt().lean_toggle)},
+    {"snd_musicVolume", "Music volume", "0 to 100", 0, 100, 100, 1, PORT_NUMBER(Opt().music_volume, uint32_t)},
+    {"snd_menuMusicVolume", "Main Menu Music volume", "0 to 100", 0, 100, 100, 1,
+     PORT_NUMBER(Opt().menu_music_volume, uint32_t)},
+    {"snd_effectsVolume", "Sound Effects volume", "0 to 100", 0, 100, 100, 1,
+     PORT_NUMBER(Opt().effects_volume, uint32_t)},
+    {"snd_voiceVolume", "Dialogue volume", "0 to 100", 0, 100, 100, 1, PORT_NUMBER(Opt().voice_volume, uint32_t)},
     {"cg_buttonPrompts", "Button Prompts", "0 automatic, 1 keyboard and mouse, 2 controller", 0, 2, 0, 1,
      PORT_NUMBER(Opt().button_prompts, uint32_t)},
     {"cg_qwertyNames", "Profile Name Keys", "1 QWERTY, 0 ABC as the game had them", 0, 1, 1, 1,

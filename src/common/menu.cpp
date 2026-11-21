@@ -7,6 +7,7 @@ float app::g_zoom = 1.0f;
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <iterator>
 #include <map>
@@ -109,7 +110,8 @@ const std::vector<Mode>& Modes() {
 
 enum RowId { kSection, kDisplayMode, kResolution, kRenderResolution, kFov, kMaxFps, kVsync, kFpsCounter, kAniso,
              kTextureReplacement, kTextureDumping, kDumpFormat, kMouseX, kMouseY, kInvertY, kInvertX, kQwerty, kPrompts,
-             kBrightness, kAimAssist, kHints, kHideHud, kViewDistance, kKeepBodies, kCutsceneBars, kLeanToggle };
+             kBrightness, kAimAssist, kHints, kHideHud, kViewDistance, kKeepBodies, kCutsceneBars, kLeanToggle,
+             kMusicVolume, kMenuMusicVolume, kEffectsVolume, kVoiceVolume };
 
 struct Row {
     RowId id;
@@ -281,6 +283,16 @@ std::string RowText(RowId id, int step, Settings& s) {
         case kInvertX:
             if (step) O().invert_mouse_x = !O().invert_mouse_x;
             return OnOff(O().invert_mouse_x);
+        case kMusicVolume:
+        case kMenuMusicVolume:
+        case kEffectsVolume:
+        case kVoiceVolume: {
+            uint32_t& v = id == kMusicVolume ? O().music_volume : id == kMenuMusicVolume ? O().menu_music_volume :
+                          id == kEffectsVolume ? O().effects_volume : O().voice_volume;
+            if (step) v = uint32_t(StepRange(int(v), 0, 100, 5, step));
+            std::snprintf(text, sizeof(text), "%u", v);
+            break;
+        }
         case kQwerty:
             if (step) O().qwerty_typewriter = !O().qwerty_typewriter;
             return O().qwerty_typewriter ? "QWERTY" : "ABC (ORIGINAL)";
@@ -309,7 +321,8 @@ void Apply() {
 }
 
 // the settings as they come into s and o, a part of them (a PC Options page resets its own) or all
-constexpr int kDisplayPart = 1, kGraphicsPart = 2, kMousePart = 4, kKeysPart = 8, kGameplayPart = 16, kEveryPart = 31;
+constexpr int kDisplayPart = 1, kGraphicsPart = 2, kMousePart = 4, kKeysPart = 8, kGameplayPart = 16, kAudioPart = 32,
+              kEveryPart = 63;
 void SetDefaults(Settings& s, game::Options& o, int parts) {
     Settings d;
     if (parts & kDisplayPart) {
@@ -329,6 +342,12 @@ void SetDefaults(Settings& s, game::Options& o, int parts) {
         o.hints = true;
         o.hide_hud = false;
         o.lean_toggle = false;
+    }
+    if (parts & kAudioPart) {
+        o.music_volume = 100;
+        o.menu_music_volume = 100;
+        o.effects_volume = 100;
+        o.voice_volume = 100;
     }
     if (parts & kGraphicsPart) {
         s.aniso = d.aniso;
@@ -378,6 +397,10 @@ void CopyRows(Settings& s, game::Options& o, const Settings& from, const game::O
     o.view_distance = from_o.view_distance;
     o.keep_bodies = from_o.keep_bodies;
     o.cutscene_bars = from_o.cutscene_bars;
+    o.music_volume = from_o.music_volume;
+    o.menu_music_volume = from_o.menu_music_volume;
+    o.effects_volume = from_o.effects_volume;
+    o.voice_volume = from_o.voice_volume;
 }
 
 // one set of the rows' values differs from another
@@ -391,7 +414,9 @@ bool RowsDiffer(const Settings& a, const game::Options& c, const Settings& b, co
            c.qwerty_typewriter != d.qwerty_typewriter || c.button_prompts != d.button_prompts ||
            c.brightness != d.brightness || c.aim_assist != d.aim_assist || c.hints != d.hints ||
            c.hide_hud != d.hide_hud || c.lean_toggle != d.lean_toggle || c.view_distance != d.view_distance || c.keep_bodies != d.keep_bodies ||
-           c.cutscene_bars != d.cutscene_bars;
+           c.cutscene_bars != d.cutscene_bars || c.music_volume != d.music_volume ||
+           c.menu_music_volume != d.menu_music_volume || c.effects_volume != d.effects_volume ||
+           c.voice_volume != d.voice_volume;
 }
 
 // The F10 panel's changes, every row's, are held until its Apply (his ask: nothing changes before Apply, as in PC
@@ -726,8 +751,9 @@ void DrawPaper() {
 
 // ---- the settings menu on F10: the settings by tab on the game's sheet (modern_menu.h) ----
 
-constexpr int kDisplayTab = 0, kGraphicsTab = 1, kGameplayTab = 2, kControlsTab = 3, kCheatsTab = 4, kTabs = 5;
-const char* const kTabNames[kTabs] = {"Display", "Graphics", "Gameplay", "Controls", "Cheats"};
+constexpr int kDisplayTab = 0, kGraphicsTab = 1, kGameplayTab = 2, kAudioTab = 3, kControlsTab = 4, kCheatsTab = 5,
+              kTabs = 6;
+const char* const kTabNames[kTabs] = {"Display", "Graphics", "Gameplay", "Audio", "Controls", "Cheats"};
 
 // a tab's settings: kSection is a heading. The note is what the slip at the right says, the variable the console's
 // name for the same setting (src/game/console.cpp)
@@ -766,6 +792,11 @@ constexpr TabRow kTabRows[] = {
     {kGameplayTab, kSection, "Menus", "", ""},
     {kGameplayTab, kQwerty, "Profile Name Keys", "The order of the letters on the screen where a profile is named.", "cg_qwertyNames"},
     {kGameplayTab, kPrompts, "Button Prompts", "Whether the game shows keys or a controller's buttons. Automatic follows what you last used.", "cg_buttonPrompts"},
+    {kAudioTab, kSection, "Volume", "", ""},
+    {kAudioTab, kMusicVolume, "Music", "How loud the music is in a mission.", "snd_musicVolume"},
+    {kAudioTab, kMenuMusicVolume, "Main Menu Music", "How loud the music is in the menus.", "snd_menuMusicVolume"},
+    {kAudioTab, kEffectsVolume, "Sound Effects", "Gunfire, explosions, vehicles and the menus' own sounds.", "snd_effectsVolume"},
+    {kAudioTab, kVoiceVolume, "Dialogue", "The voices of your squad and the enemy.", "snd_voiceVolume"},
     {kControlsTab, kSection, "Mouse", "", ""},
     {kControlsTab, kMouseX, "Horizontal Sensitivity", "How far a move of the mouse turns you left and right.", "m_sensitivityX"},
     {kControlsTab, kMouseY, "Vertical Sensitivity", "How far a move of the mouse looks up and down.", "m_sensitivityY"},
@@ -805,19 +836,69 @@ struct ModernState {
     double pad_repeat = 0;
     bool controller = false;  // the controller was the last thing used: the bottom line shows its buttons
     std::string code;         // the cheats password as typed so far
+    int drag = -1;            // the slider line the mouse holds, while its button is down
     ui::modern::Hits hits;
 } g_modern;
 
+// A slider row's range and step, and its value in a set of settings; false for a row that is not one. Sensitivities
+// are in tenths.
+struct SliderRange {
+    float lo, hi, step;
+};
+bool Slider(RowId id, SliderRange& r) {
+    switch (id) {
+        case kFov: r = {float(game::kMinFov), float(game::kMaxFov), 1}; return true;
+        case kBrightness: r = {50, 200, 10}; return true;
+        case kRenderResolution: r = {20, 200, 5}; return true;
+        case kMouseX:
+        case kMouseY: r = {1, 50, 1}; return true;
+        case kMusicVolume:
+        case kMenuMusicVolume:
+        case kEffectsVolume:
+        case kVoiceVolume: r = {0, 100, 5}; return true;
+        default: return false;
+    }
+}
+float SliderValue(RowId id, const Settings& s, const game::Options& o) {
+    switch (id) {
+        case kFov: return float(o.fov);
+        case kBrightness: return float(o.brightness);
+        case kRenderResolution: return float(s.render_percent);
+        case kMouseX: return o.mouse_sensitivity * 10.0f;
+        case kMouseY: return o.mouse_vertical_sensitivity * 10.0f;
+        case kMusicVolume: return float(o.music_volume);
+        case kMenuMusicVolume: return float(o.menu_music_volume);
+        case kEffectsVolume: return float(o.effects_volume);
+        case kVoiceVolume: return float(o.voice_volume);
+        default: return 0;
+    }
+}
 // a slider's place, 0 to 1; under 0 for a row that is not one
 float RowFill(RowId id, const Settings& s, const game::Options& o) {
-    auto at = [](float v, float lo, float hi) { return std::clamp((v - lo) / (hi - lo), 0.0f, 1.0f); };
+    SliderRange r;
+    if (!Slider(id, r)) return -1.0f;
+    return std::clamp((SliderValue(id, s, o) - r.lo) / (r.hi - r.lo), 0.0f, 1.0f);
+}
+// a slider dragged to a place, 0 to 1: the nearest of its steps, held like any other change
+void DragSlider(RowId id, float place) {
+    SliderRange r;
+    if (!Slider(id, r)) return;
+    float value = r.lo + std::round(std::clamp(place, 0.0f, 1.0f) * (r.hi - r.lo) / r.step) * r.step;
+    HoldPanel();
+    Settings& s = g_panel_settings;
+    game::Options& o = g_panel_options;
+    uint32_t whole = uint32_t(value + 0.5f);
     switch (id) {
-        case kFov: return at(float(o.fov), float(game::kMinFov), float(game::kMaxFov));
-        case kBrightness: return at(float(o.brightness), 50, 200);
-        case kRenderResolution: return at(float(s.render_percent), 20, 200);
-        case kMouseX: return at(o.mouse_sensitivity, 0.1f, 5.0f);
-        case kMouseY: return at(o.mouse_vertical_sensitivity, 0.1f, 5.0f);
-        default: return -1.0f;
+        case kFov: o.fov = whole; break;
+        case kBrightness: o.brightness = whole; break;
+        case kRenderResolution: s.render_percent = whole; break;
+        case kMouseX: o.mouse_sensitivity = float(whole) / 10.0f; break;
+        case kMouseY: o.mouse_vertical_sensitivity = float(whole) / 10.0f; break;
+        case kMusicVolume: o.music_volume = whole; break;
+        case kMenuMusicVolume: o.menu_music_volume = whole; break;
+        case kEffectsVolume: o.effects_volume = whole; break;
+        case kVoiceVolume: o.voice_volume = whole; break;
+        default: break;
     }
 }
 
@@ -1069,6 +1150,7 @@ void DrawModern() {
         p.tab = ((tab % kTabs) + kTabs) % kTabs;
         p.selected = -1;
         p.scroll = 0;
+        p.drag = -1;
         build();
     };
     // capture takes every key until it ends; a key that ended it does nothing else this frame
@@ -1155,8 +1237,18 @@ void DrawModern() {
                 if (left && (in_left || in_right)) ModernActivate(o, shown, 0, in_left ? 1 : 0);
             } else if (shown.kind == ui::modern::Row::kAction) {
                 if (left) ModernActivate(o, shown, 0);
-            } else if (left && (in_left || in_right)) {
+            } else if (shown.kind != ui::modern::Row::kSlider && left && (in_left || in_right)) {
                 ModernActivate(o, shown, in_left ? -1 : 1);
+            }
+        }
+        // a slider's bar is held and slid: the handle follows the pointer until the button is let go
+        if (left && over >= 0 && h.rows[size_t(over)].bar.Has(m) && rows[size_t(over)].kind == ModernRow::kSetting) p.drag = over;
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) p.drag = -1;
+        if (p.drag >= 0 && p.drag < int(rows.size()) && size_t(p.drag) < h.rows.size()) {
+            const ui::modern::Rect& bar = h.rows[size_t(p.drag)].bar;
+            if (bar.max.x > bar.min.x) {
+                p.selected = p.drag;
+                DragSlider(rows[size_t(p.drag)].row, (m.x - bar.min.x) / (bar.max.x - bar.min.x));
             }
         }
         if (io.MouseWheel != 0) {

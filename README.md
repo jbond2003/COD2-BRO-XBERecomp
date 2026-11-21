@@ -37,7 +37,8 @@ Direct3D 12, and adds a few things of its own:
 - The M1 Garand can be reloaded before its clip is empty.
 - A PC settings menu on the game's own paper, opened by PC Options in the game's menus or by F10, with a tab each
   for display (with brightness, and cutscenes without black bars), graphics (with level of detail, and bodies that
-  stay), gameplay, controls (mouse and key bindings) and cheats.
+  stay), gameplay, audio (music, main menu music, sound effects and dialogue volumes), controls (mouse and key
+  bindings) and cheats.
 - More lines in the game's Gameplay menu, and in the pause menu's options: controller aim assist, tutorial hints,
   and hiding the HUD.
 - No title screen: the game starts at the profile menu, and the title's picture is the splash shown while the game

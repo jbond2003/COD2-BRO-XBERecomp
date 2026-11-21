@@ -261,6 +261,10 @@ const app::GameInfo app::kGame = {
                 {"hints", &game::Opt().hints, nullptr},
                 {"hide_hud", &game::Opt().hide_hud, nullptr},
                 {"lean_toggle", &game::Opt().lean_toggle, nullptr},
+                {"music_volume", nullptr, &game::Opt().music_volume},
+                {"menu_music_volume", nullptr, &game::Opt().menu_music_volume},
+                {"effects_volume", nullptr, &game::Opt().effects_volume},
+                {"voice_volume", nullptr, &game::Opt().voice_volume},
                 {"walk_speed", nullptr, &game::Opt().walk_speed}},  // game settings kept in the settings file
     .load = game::Load,  // reads more from the settings file's toml::table: mouse sensitivities, [keys]
     .save = game::Save,  // writes more into it

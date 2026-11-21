@@ -249,12 +249,14 @@ void ModernPad(input::Pad& pad) {
 }
 
 void RunConsole(X86Context& ctx);  // src/game/console.cpp
+void ApplyVolumes();               // src/game/audio.cpp
 
 // each client frame: the queued console commands, and the console's typed lines
 void RunCommands(X86Context& ctx) {
     cheats::Tick(ctx);
     cheats::CutsceneBars(ctx);
     RunConsole(ctx);
+    ApplyVolumes();
     std::string command;
     while (input::TakeCommand(command)) {
         if (kernel::R32(0x95F8F8)) continue;  // the front end: no player
