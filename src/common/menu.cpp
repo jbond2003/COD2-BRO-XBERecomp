@@ -540,6 +540,24 @@ struct PaperRow {
 };
 
 // the page's words in the game's own case: "Field of view", "On"; short names stay capitals
+// a name with a capital on every word ("Lean Left"), for the settings menu's key list
+std::string TitleCase(const std::string& text) {
+    static constexpr const char* kKeep[] = {"HUD", "FPS", "FOV", "D-PAD"};
+    std::string out;
+    size_t i = 0;
+    while (i < text.size()) {
+        size_t j = i;
+        while (j < text.size() && text[j] != ' ' && text[j] != '/') j++;
+        std::string word = text.substr(i, j - i);
+        if (std::none_of(std::begin(kKeep), std::end(kKeep), [&](const char* k) { return word == k; }))
+            for (size_t k = 1; k < word.size(); k++) word[k] = char(std::tolower(static_cast<unsigned char>(word[k])));
+        out += word;
+        if (j < text.size()) out += text[j];
+        i = j + 1;
+    }
+    return out;
+}
+
 std::string Sentence(const std::string& text) {
     static constexpr const char* kKeep[] = {"PNG", "DDS", "QWERTY", "ABC", "FPS", "FOV", "D-PAD"};
     std::string out;
@@ -988,7 +1006,7 @@ void BuildModern(ui::modern::Page& page, std::vector<ModernRow>& rows) {
         for (size_t i = 0; i < count; i++) {
             Row r;
             r.kind = Row::kBinding;
-            r.label = Sentence(input::Label(i));
+            r.label = TitleCase(input::Label(i));
             r.value = input::Binding(i, 0);
             r.value2 = input::Binding(i, 1);
             ModernRow m;

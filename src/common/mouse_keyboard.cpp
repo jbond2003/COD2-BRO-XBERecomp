@@ -93,7 +93,6 @@ constexpr Target kActions[] = {
     {{"grenade", "G"}, 5},                // white
     {{"sprint", "Shift"}, 14},            // left stick click
     {{"next_weapon", "1,Wheel Up,Wheel Down"}, 8},  // dpad up
-    {{"dpad_down", "2"}, 9},
     {{"lean_left", "Q"}, 10},             // dpad left
     {{"lean_right", "E"}, 11},            // dpad right
     {{"objectives", "Tab"}, 13},          // back
@@ -511,7 +510,7 @@ namespace {
 constexpr const char* kLabels[] = {
     "MOVE FORWARD", "MOVE BACK", "STRAFE LEFT", "STRAFE RIGHT", "WALK", "FIRE", "AIM DOWN SIGHTS", "USE",
     "CROUCH", "PRONE", "RELOAD", "JUMP / STAND", "MELEE", "THROW GRENADE", "SPRINT",
-    "NEXT WEAPON", "D-PAD DOWN", "LEAN LEFT", "LEAN RIGHT", "OBJECTIVES", "PAUSE", "HIDE HUD", "LOOK UP",
+    "NEXT WEAPON", "LEAN LEFT", "LEAN RIGHT", "OBJECTIVES", "PAUSE", "HIDE HUD", "LOOK UP",
     "LOOK DOWN",
     "LOOK LEFT", "LOOK RIGHT",
 };
