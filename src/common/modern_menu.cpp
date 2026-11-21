@@ -347,9 +347,10 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
         hits.defaults = {c.P(dx0, y0), c.P(dx1, y1)};
         float ax1 = kFrameRight - 5, ax0 = ax1 - 90;
         bool waiting = page.changes > 0;
-        if (waiting) c.Fill(ax0, y0, ax1, y1, Red(0.12f));
-        c.Box(ax0, y0, ax1, y1, waiting ? Red() : Ink(0.3f), 1.0f);
-        c.Text(11.0f, (ax0 + ax1) / 2, cy, waiting ? Red() : Ink(0.35f), "Apply Changes", 0.5f, 82);
+        // waiting: a solid red button lettered in cream, plain to see on the dark of the sheet's foot
+        if (waiting) c.Fill(ax0, y0, ax1, y1, Red());
+        c.Box(ax0, y0, ax1, y1, waiting ? Ink(0.9f) : Ink(0.45f), 1.0f);
+        c.Text(11.0f, (ax0 + ax1) / 2, cy, waiting ? Col(kCream) : Ink(0.5f), "Apply Changes", 0.5f, 82);
         hits.apply = {c.P(ax0, y0), c.P(ax1, y1)};
         std::string middle = page.hint;
         if (middle.empty() && waiting)

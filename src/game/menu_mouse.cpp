@@ -2531,6 +2531,19 @@ X86_FUNC(sub_0030F900) {
         g_prompts[prompt] = Frame();
     }
     // (a mission's "Press A to start the game" is put in the string table: src/game/pc_texts.cpp)
+    // the pause menu's "Start or B Continue": on the keys both are Escape, so the first of them and its "or" are
+    // blanked in the piece's own copy of the line while the keyboard is in use, and put back for a controller
+    if (R32(prompt) == 0x82A450 && R32(prompt + 0x78) == 1) {
+        uint32_t line = R32(R32(prompt + 0x80) + 0x14);
+        static constexpr char kBoth[] = "- or % Continue", kOne[] = "     % Continue";
+        if (line && kernel::G<uint16_t>(line + 2) == 15) {
+            char* text = static_cast<char*>(kernel::HostPtr(line + 6));
+            uint32_t mode = game::Opt().button_prompts;
+            bool keyboard = mode == 1 || (mode != 2 && input::KeyboardActive());
+            if (keyboard && !std::memcmp(text, kBoth, 15)) std::memcpy(text, kOne, 15);
+            else if (!keyboard && !std::memcmp(text, kOne, 15)) std::memcpy(text, kBoth, 15);
+        }
+    }
     Foot foot = R32(prompt) == 0x82A450 ? FootBegin(ctx, prompt, 0x30F900) : Foot{};
     __imp__sub_0030F900(ctx, base);
     FootEnd(prompt, foot);

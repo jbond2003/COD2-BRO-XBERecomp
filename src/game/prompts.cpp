@@ -41,6 +41,7 @@
 
 namespace game {
 int PadTarget(size_t i);  // src/game/mouse_look.cpp
+bool PadSameBinding(size_t a, size_t b);
 void HintKeys(const char* (&actions)[2]);  // src/game/hints.cpp
 std::vector<uint8_t> BoldGaramond();       // src/game/sharp_text.cpp: the menus' bold Garamond, empty for none
 // src/game/sharp_text.cpp: a game font sheet drawn again sharp, null for any other texture
@@ -663,6 +664,14 @@ void Update() {
         Icon icon = kControlIcons[to];
         if (icon != kIconCount && labels[icon].empty()) labels[icon] = CapLabel(key);
     }
+    // two buttons with one command (the Modern layout's LB and RB both throw a grenade): the key on both, whichever
+    // of them a hint draws
+    for (size_t i = 0; i < std::size(kControlIcons); i++)
+        for (size_t j = 0; j < std::size(kControlIcons); j++) {
+            Icon from = kControlIcons[i], to = kControlIcons[j];
+            if (from == kIconCount || to == kIconCount || labels[from].empty() || !labels[to].empty()) continue;
+            if (game::PadSameBinding(i, j)) labels[to] = labels[from];
+        }
     // a control that runs its command itself is on no button: the lean keys are the dpad's left and right, and use's
     // key the X of "Press X to pick up" where the layout joins use and reload
     auto own = [&](Icon icon, const char* action) {
