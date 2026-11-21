@@ -122,16 +122,16 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
     }
 
     // the title over the rule, the profile at its right
-    c.Text(30.0f, kFrameLeft + 6, 122.0f, Ink(0.95f), page.title, 0.0f, 250);
+    c.Text(30.0f, kFrameLeft + 9, 122.0f, Ink(0.95f), page.title, 0.0f, 250);
     if (!page.profile.empty()) {
-        c.Text(6.2f, kFrameRight - 6, 112.0f, Ink(0.65f), Spaced("Profile"), 1.0f);
-        c.Text(13.0f, kFrameRight - 6, 127.0f, Ink(0.92f), page.profile, 1.0f, 150);
+        c.Text(6.2f, kFrameRight - 5, 112.0f, Ink(0.65f), Spaced("Profile"), 1.0f);
+        c.Text(13.0f, kFrameRight - 5, 127.0f, Ink(0.92f), page.profile, 1.0f, 150);
     }
 
     // the tabs under the rule, a key each end
     {
         const float y0 = 149.0f, y1 = 165.0f, key_w = 12.0f, gap = 2.5f;
-        float left = kFrameLeft + 3, right = kFrameRight - 3;
+        float left = kFrameLeft + 5, right = kFrameRight - 5;
         auto key = [&](float x0, const char* text, Rect& hit) {
             c.Fill(x0, y0 + 2, x0 + key_w, y1 - 2, Col(kCream, 0.35f));
             c.Box(x0, y0 + 2, x0 + key_w, y1 - 2, Ink(0.9f), 0.7f);
@@ -195,14 +195,15 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
         float a = on ? 1.0f : kIdle;
         if (r.kind == Row::kHeading) {
             float ty = y + h - 4.5f;
-            c.Text(6.4f, list_left, ty, Red(0.95f), Spaced(r.label));
+            // (in line with the settings' names under it)
+            c.Text(6.4f, list_left + 4, ty, Red(0.95f), Spaced(r.label));
             float tw = c.Measure(6.4f, Spaced(r.label)).x / c.sx;
-            c.Fill(list_left + tw + 4, ty - 0.2f, list_right, ty + 0.2f, Red(0.5f));
+            c.Fill(list_left + 4 + tw + 4, ty - 0.2f, list_right, ty + 0.2f, Red(0.5f));
             y += h;
             continue;
         }
         if (r.kind == Row::kText) {
-            c.Text(9.0f, list_left + 3, cy, Ink(0.75f), r.label, 0.0f, list_right - list_left - 6);
+            c.Text(9.0f, list_left + 4, cy, Ink(0.75f), r.label, 0.0f, list_right - list_left - 8);
             y += h;
             continue;
         }
@@ -217,7 +218,7 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
         float by0 = cy - 7.0f, by1 = cy + 7.0f;
         if (r.kind == Row::kAction) {
             float tw = c.Measure(10.0f, r.label).x / c.sx + 14;
-            float x0 = list_left + 3;
+            float x0 = list_left + 4;
             c.Box(x0, by0, x0 + tw, by1, Ink(on ? 0.95f : 0.5f), 0.8f);
             c.Text(10.0f, x0 + tw / 2, cy, Ink(a), r.label, 0.5f);
             y += h;
