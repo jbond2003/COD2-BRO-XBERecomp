@@ -785,7 +785,7 @@ constexpr TabRow kTabRows[] = {
     {kGraphicsTab, kTextureDumping, "Texture Dumping", "Writes each texture the game uses into textures\\dumps beside the game, once.", "r_dumpTextures"},
     {kGraphicsTab, kDumpFormat, "Dump Format", "The kind of file the dumped textures are written as.", ""},
     {kGameplayTab, kSection, "Play", "", ""},
-    {kGameplayTab, kAimAssist, "Controller Aim Assist", "The game's pull towards an enemy under the sight, on a controller. The mouse never has it.", "cg_aimAssist"},
+    {kGameplayTab, kAimAssist, "Controller Aim Assist", "The game's pull towards an enemy under the sight, on a controller.", "cg_aimAssist"},
     {kGameplayTab, kHints, "Tutorial Hints", "The lines that tell you how to crouch, lean, throw and the like.", "cg_hints"},
     {kGameplayTab, kHideHud, "Hide the HUD", "Takes the compass, the health and the ammunition off the screen.", "cg_drawHud"},
     {kGameplayTab, kLeanToggle, "Leaning", "Hold: you lean while the key is down. Toggle: a press leans and the next one straightens you.", "cg_leanToggle"},
