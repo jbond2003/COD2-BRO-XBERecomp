@@ -685,7 +685,7 @@ void Update() {
         labels[kDpadLeft] = "@left";
         labels[kDpadRight] = "@right";
         labels[kA] = "Enter";
-        labels[kB] = input::TextEntry() ? "Esc" : "Bksp";  // a name entry screen's Backspace deletes
+        labels[kB] = "Esc";  // Escape and Backspace both back out; a name entry screen's Backspace deletes
         labels[kX] = "Del";
     }
     bool arrows = labels[kDpadLeft] == "@left" && labels[kDpadRight] == "@right";

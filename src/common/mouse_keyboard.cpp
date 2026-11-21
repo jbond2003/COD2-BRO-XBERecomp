@@ -241,16 +241,22 @@ struct Held {
     int stick[8] = {};  // move forward back left right, look up down left right
 };
 
+// Escape backs out of a menu as Backspace does, and in play does what it is bound to (pause). One press is one or
+// the other: held from play into the pause menu it does not back out of it, held from a menu into play it does not
+// pause again. 0 not down, 1 pressed in play, 2 pressed in a menu
+int g_escape_from = 0;
+
 Held PressActions(const Binds& binds, bool play, Pad& p) {
     Held held;
-    // in a menu the wheel and the mouse buttons do nothing, a bound key presses its button, and Enter and Backspace
-    // are the menu's own (A and B) whatever they are bound to
+    // in a menu the wheel and the mouse buttons do nothing, a bound key presses its button, and Enter, Backspace and
+    // Escape are the menu's own (A, B and B) whatever they are bound to
     auto pressed = [&](size_t action, int vk) {
         constexpr int buttons[] = {VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2};
         uint32_t mask = 0;
         for (int i = 0; i < 5; i++) if (buttons[i] == vk) mask = 1u << i;
         bool mouse = Wheel(vk) || mask;
-        bool menu_own = vk == VK_RETURN || vk == VK_BACK;
+        bool menu_own = vk == VK_RETURN || vk == VK_BACK || vk == VK_ESCAPE;
+        if (vk == VK_ESCAPE && g_escape_from != 1) return false;
         return Down(vk) && (play || !(mouse || menu_own)) && !(mask & g_block_mouse.load());
     };
     for (size_t i = 0; i < kCount; i++) {
@@ -365,6 +371,8 @@ void Keyboard(Pad& p) {
     }
     bool play = Playing();
     bool fixed_down = std::any_of(std::begin(kFixed), std::end(kFixed), Down);
+    if (!Down(VK_ESCAPE)) g_escape_from = 0;
+    else if (!g_escape_from) g_escape_from = play ? 1 : 2;
     Held held = PressActions(binds, play, p);
     g_game_actions = held.game;
     static uint32_t commands_held = 0;
@@ -378,7 +386,7 @@ void Keyboard(Pad& p) {
         if (NowMs() < g_accept_until) p.analog[0] = 0xFF;
     } else {
         if (!play && Down(VK_RETURN)) p.analog[0] = 0xFF;
-        if (!play && Down(VK_BACK)) p.analog[1] = 0xFF;
+        if (!play && (Down(VK_BACK) || g_escape_from == 2)) p.analog[1] = 0xFF;
         // and Delete X, the profile screen's delete
         if (!play && Down(VK_DELETE)) {
             p.analog[2] = 0xFF;
