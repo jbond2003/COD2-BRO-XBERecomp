@@ -99,8 +99,8 @@ bool Ready() { return g_rect >= 0; }
 
 void Draw() {
     // a controller used last hides it until the mouse moves or clicks in a menu again
-    // the PC Options page always has it
-    bool page = app::PcOptionsOpen();
+    // the settings menu always has it
+    bool page = app::PanelOpen();
     if (!Ready() || GetForegroundWindow() != g_hwnd) return;
     if (!page && (!MenuMouseCursorVisible() || input::Playing() || !input::KeyboardActive())) return;
     POINT point;

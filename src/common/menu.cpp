@@ -837,6 +837,7 @@ struct ModernState {
     bool controller = false;  // the controller was the last thing used: the bottom line shows its buttons
     std::string code;         // the cheats password as typed so far
     int drag = -1;            // the slider line the mouse holds, while its button is down
+    bool held = false;        // the left button, as Windows had it last frame
     ui::modern::Hits hits;
 } g_modern;
 
@@ -1202,10 +1203,26 @@ void DrawModern() {
         if (!pressed && (move || step || turn || enter || io.InputQueueCharacters.Size)) p.controller = false;
 
         // the mouse: hovering selects, a click does the line's job, the wheel scrolls
+        // the pointer and its left button are read from Windows each frame, as the game's own pointer is drawn: a
+        // slider held and slid is followed whatever becomes of the window's mouse messages
         ImVec2 m = io.MousePos;
+        bool held = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+        {
+            HWND hwnd = static_cast<HWND>(ImGui::GetMainViewport()->PlatformHandleRaw);
+            POINT point;
+            RECT client;
+            if (hwnd && GetForegroundWindow() == hwnd && GetCursorPos(&point) && ScreenToClient(hwnd, &point) &&
+                GetClientRect(hwnd, &client) && client.right > 0 && client.bottom > 0) {
+                m = ImVec2(float(point.x) * io.DisplaySize.x / float(client.right),
+                           float(point.y) * io.DisplaySize.y / float(client.bottom));
+                held = GetAsyncKeyState(GetSystemMetrics(SM_SWAPBUTTON) ? VK_RBUTTON : VK_LBUTTON) < 0;
+            }
+        }
         bool moved = m.x != p.mouse.x || m.y != p.mouse.y;
         p.mouse = m;
-        bool left = ImGui::IsMouseClicked(ImGuiMouseButton_Left), right = ImGui::IsMouseClicked(ImGuiMouseButton_Right);
+        bool left = (held && !p.held) || ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+        if (left && p.held) left = false;  // one press, once
+        bool right = ImGui::IsMouseClicked(ImGuiMouseButton_Right);
         if (moved || left || right) p.controller = false;
         const ui::modern::Hits& h = p.hits;
         if (left) {
@@ -1243,7 +1260,8 @@ void DrawModern() {
         }
         // a slider's bar is held and slid: the handle follows the pointer until the button is let go
         if (left && over >= 0 && h.rows[size_t(over)].bar.Has(m) && rows[size_t(over)].kind == ModernRow::kSetting) p.drag = over;
-        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) p.drag = -1;
+        if (!held) p.drag = -1;
+        p.held = held;
         if (p.drag >= 0 && p.drag < int(rows.size()) && size_t(p.drag) < h.rows.size()) {
             const ui::modern::Rect& bar = h.rows[size_t(p.drag)].bar;
             if (bar.max.x > bar.min.x) {
@@ -1660,7 +1678,7 @@ void DrawUi(double fps) {
     io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange | ImGuiConfigFlags_NavEnableKeyboard;
     if (g_open_request.exchange(false, std::memory_order_relaxed) && !MenuOpen()) ToggleMenu();
     bool paper = PcOptionsOpen();
-    io.MouseDrawCursor = MenuOpen() && !paper;  // the PC Options page has the game's own pointer
+    io.MouseDrawCursor = console::Open() && !PanelOpen();  // the settings menu has the game's own pointer
     io.KeyRepeatRate = 0.1f;
     io.FontGlobalScale = std::max(1.0f, io.DisplaySize.y / 720.0f);
     if (game::Opt().fps_counter) DrawFpsCounter(fps);

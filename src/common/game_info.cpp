@@ -171,7 +171,7 @@ void Ui(double fps) {
     game::UpdateFrameBand();
 #ifdef _WIN32
     app::DrawUi(fps);
-    if (!app::MenuOpen() || app::PcOptionsOpen()) cursor::Draw();
+    if (!app::MenuOpen() || app::PanelOpen()) cursor::Draw();
 #else
     (void)fps;
 #endif

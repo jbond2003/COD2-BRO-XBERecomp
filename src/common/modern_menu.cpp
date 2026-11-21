@@ -281,9 +281,12 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
             case Row::kEntry: {
                 c.Fill(value_x0, by0, value_x1, by1, Col(kCream, on ? 0.5f : 0.25f));
                 c.Box(value_x0, by0, value_x1, by1, edge);
-                std::string dots(r.value.size(), '*');
-                if (on && std::fmod(ImGui::GetTime(), 1.0) < 0.5) dots += '|';
-                c.Text(11.0f, value_x0 + 5, cy + (dots.empty() ? 0.0f : 1.0f), Ink(0.9f), dots, 0.0f, value_w - 10);
+                // a dot a letter, on the middle of the box, and the caret after the last
+                const float step = 6.0f;
+                float x = value_x0 + 6;
+                for (size_t k = 0; k < r.value.size() && x < value_x1 - 6; k++, x += step)
+                    dl->AddCircleFilled(ImVec2(c.o.x + (x + 1.5f) * c.sx, c.o.y + cy * c.sy), 1.6f * c.sy, Ink(0.9f), 16);
+                if (on && std::fmod(ImGui::GetTime(), 1.0) < 0.5) c.Fill(x, cy - 4.5f, x + 0.6f, cy + 4.5f, Ink(0.9f));
                 break;
             }
             default:
