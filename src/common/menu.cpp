@@ -1,4 +1,4 @@
-// the settings panel on F10, after BLACK-XBERecomp's
+// the settings menu on F10 (drawn by modern_menu.cpp) and the PC Options pages
 #include "common/menu.h"
 
 float app::g_zoom = 1.0f;
@@ -28,6 +28,7 @@ float app::g_zoom = 1.0f;
 #include "common/menu.h"
 #include "common/cheats.h"
 #include "common/console.h"
+#include "common/modern_menu.h"
 #include "common/mouse_keyboard.h"
 #include "common/options.h"
 #include "common/paper_page.h"
@@ -40,24 +41,7 @@ namespace {
 std::atomic<bool> g_open{false};
 std::atomic<bool> g_bindings_only{false};  // opened from PC Options: the key bindings alone
 
-// brass over dark olive, after the game's own menus
-constexpr ImVec4 kPanelBg{0.04f, 0.05f, 0.07f, 0.94f};
-constexpr ImVec4 kBorder{0.66f, 0.48f, 0.24f, 0.85f};
-constexpr ImVec4 kText{0.92f, 0.89f, 0.82f, 1.0f};
-constexpr ImVec4 kHighlight{0.30f, 0.20f, 0.09f, 1.0f};
-constexpr ImVec4 kHeading{0.93f, 0.66f, 0.26f, 1.0f};
-constexpr ImVec4 kDim{0.62f, 0.60f, 0.55f, 1.0f};
-constexpr ImVec4 kFrame{0.10f, 0.11f, 0.14f, 1.0f};
-constexpr ImVec4 kButton{0.16f, 0.13f, 0.09f, 1.0f};
-constexpr ImVec4 kButtonHovered{0.42f, 0.29f, 0.12f, 1.0f};
-constexpr ImVec4 kLine{0.93f, 0.66f, 0.26f, 0.35f};
-constexpr std::pair<ImGuiCol, ImVec4> kPanelColors[] = {
-    {ImGuiCol_WindowBg, kPanelBg}, {ImGuiCol_Border, kBorder}, {ImGuiCol_Text, kText},
-    {ImGuiCol_Header, kHighlight}, {ImGuiCol_HeaderHovered, kHighlight}, {ImGuiCol_HeaderActive, kHighlight},
-    {ImGuiCol_Button, kButton}, {ImGuiCol_ButtonHovered, kButtonHovered}, {ImGuiCol_ButtonActive, kButtonHovered},
-    {ImGuiCol_FrameBg, kFrame}, {ImGuiCol_ScrollbarGrab, kHighlight}, {ImGuiCol_ScrollbarGrabHovered, kButtonHovered},
-    {ImGuiCol_ScrollbarGrabActive, kHeading}, {ImGuiCol_Separator, kLine}, {ImGuiCol_NavHighlight, kHeading},
-};
+constexpr ImVec4 kHeading{0.93f, 0.66f, 0.26f, 1.0f};  // the FPS counter's brass
 
 constexpr uint32_t kAnisoValues[] = {0, 2, 4, 8, 16};
 const char* const kAnisoNames[] = {"GAME DEFAULT", "2x", "4x", "8x", "16x"};
@@ -313,58 +297,6 @@ std::string RowText(RowId id, int step, Settings& s) {
     return text;
 }
 
-void Section(const char* title) {
-    float em = ImGui::GetFontSize();
-    ImGui::Dummy(ImVec2(0, em * 0.5f));
-    ImGui::PushStyleColor(ImGuiCol_Text, kHeading);
-    ImGui::TextUnformatted(title);
-    ImGui::PopStyleColor();
-    ImGui::Separator();
-    ImGui::Dummy(ImVec2(0, em * 0.2f));
-}
-
-constexpr float kValueEms = 12.0f;  // the value column's width
-
-// label left, an arrow each side of the value right; the row is the only nav stop. Returns -1, 0 or 1
-int OptionRow(const char* label, const char* value) {
-    const ImGuiStyle& style = ImGui::GetStyle();
-    float em = ImGui::GetFontSize();
-    float row_w = ImGui::GetContentRegionAvail().x;
-    float row_h = ImGui::GetFrameHeight();
-    float value_w = em * kValueEms;
-    float block_w = row_h * 2 + value_w + style.ItemSpacing.x * 2;
-    float x = ImGui::GetCursorPosX();
-    float y = ImGui::GetCursorPosY();
-    ImGui::PushID(label);
-    int step = 0;
-    ImGui::Selectable("##row", false, ImGuiSelectableFlags_AllowOverlap, ImVec2(row_w, row_h));
-    if (ImGui::IsItemFocused()) {
-        ImGui::GetWindowDrawList()->AddRectFilled(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
-                                                  ImGui::GetColorU32(ImGuiCol_Header));
-        if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) step = -1;
-        if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) step = 1;
-    }
-    ImGui::SetCursorPos(ImVec2(x + style.ItemInnerSpacing.x, y));
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(label);
-    ImGui::PushItemFlag(ImGuiItemFlags_NoNav | ImGuiItemFlags_ButtonRepeat, true);
-    float block_x = x + row_w - block_w;
-    ImGui::SetCursorPos(ImVec2(block_x, y));
-    if (ImGui::ArrowButton("##dec", ImGuiDir_Left)) step = -1;
-    float value_x = block_x + row_h + style.ItemSpacing.x;
-    float pad = (value_w - ImGui::CalcTextSize(value).x) * 0.5f;
-    ImGui::SetCursorPos(ImVec2(value_x + std::max(pad, 0.0f), y));
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(value);
-    ImGui::SetCursorPos(ImVec2(value_x + value_w + style.ItemSpacing.x, y));
-    if (ImGui::ArrowButton("##inc", ImGuiDir_Right)) step = 1;
-    ImGui::PopItemFlag();
-    ImGui::PopID();
-    ImGui::SetCursorPos(ImVec2(x, y));
-    ImGui::Dummy(ImVec2(row_w, row_h));
-    return step;
-}
-
 void Apply() {
     if (!g_held_set) return;
     Settings& s = Get();
@@ -535,17 +467,6 @@ void Defaults() {
     SetDefaults(g_panel_settings, g_panel_options, kEveryPart);
 }
 
-void DrawRows() {
-    for (const Row& r : kRows) {
-        if (r.id == kSection) {
-            Section(r.label);
-            continue;
-        }
-        int step = OptionRow(r.label, PanelText(r.id, 0).c_str());
-        if (step) PanelText(r.id, step);
-    }
-}
-
 // a binding box waiting for a key: the action and slot, the keys let go of first
 struct Capture {
     int action = -1;
@@ -553,34 +474,6 @@ struct Capture {
     bool released = false;
 };
 Capture g_capture;
-
-// one action: its label, then a box for each of its two keys. A click waits for a key, right click clears
-void BindingRow(size_t action, const char* label) {
-    const ImGuiStyle& style = ImGui::GetStyle();
-    float em = ImGui::GetFontSize();
-    float row_w = ImGui::GetContentRegionAvail().x;
-    float box_w = em * 7.5f;
-    ImGui::PushID(int(action));
-    ImGui::AlignTextToFramePadding();
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + style.ItemInnerSpacing.x);
-    ImGui::TextUnformatted(label);
-    for (int slot = 0; slot < 2; slot++) {
-        ImGui::SameLine(row_w - box_w * float(2 - slot) - style.ItemSpacing.x * float(1 - slot));
-        bool waiting = g_capture.action == int(action) && g_capture.slot == slot;
-        std::string key = waiting ? "PRESS A KEY" : input::Binding(action, slot);
-        if (key.empty()) key = "-";
-        ImGui::PushID(slot);
-        if (waiting) ImGui::PushStyleColor(ImGuiCol_Button, kHighlight);
-        if (ImGui::Button(key.c_str(), ImVec2(box_w, 0)) && !waiting) g_capture = {int(action), slot, false};
-        if (waiting) ImGui::PopStyleColor();
-        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-            if (waiting) g_capture = {};
-            input::Bind(action, 0, slot);
-        }
-        ImGui::PopID();
-    }
-    ImGui::PopID();
-}
 
 // the key a waiting box takes: none until every key is up, then the first one down; Escape and Backspace (the
 // menus' back keys) cancel
@@ -596,133 +489,13 @@ void UpdateCapture() {
     g_capture = {};
 }
 
-void DrawBindings() {
-    Section("CONTROLS");
-    ImGui::PushStyleColor(ImGuiCol_Text, kDim);
-    ImGui::TextWrapped("The keys do the same whichever controller layout is picked in the game's options. In menus "
-                       "the arrows, Enter and Backspace move, pick and go back. Click a box and press a key, right "
-                       "click to clear it.");
-    ImGui::PopStyleColor();
-    size_t count = 0;
-    input::Actions(&count);
-    for (size_t i = 0; i < count; i++) BindingRow(i, input::Label(i));
-    float em = ImGui::GetFontSize();
-    ImGui::Dummy(ImVec2(0, em * 0.3f));
-    if (ImGui::Button("Reset controls", ImVec2(em * 10, 0))) {
-        g_capture = {};
-        input::ResetBindings();
-    }
-}
-
-// Cheats (src/game/cheats.cpp): a small box for the code, and with the right one typed the engine's own cheats
-void DrawCheats() {
-    namespace cheats = game::cheats;
-    float em = ImGui::GetFontSize();
-    Section("CHEATS");
-    if (!cheats::Unlocked()) {
-        static char code[16] = "";
-        ImGui::PushStyleColor(ImGuiCol_Text, kDim);
-        ImGui::TextUnformatted("Enter password");
-        ImGui::PopStyleColor();
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(em * 8);
-        ImGui::InputText("##cheatcode", code, sizeof(code), ImGuiInputTextFlags_Password);
-        if (cheats::TryUnlock(code)) code[0] = 0;
-        return;
-    }
-    ImGui::PushStyleColor(ImGuiCol_Text, kDim);
-    ImGui::TextWrapped("Cheats are on until the game is closed. They can break missions: use them at your own risk.");
-    ImGui::PopStyleColor();
-    static constexpr struct {
-        cheats::Toggle toggle;
-        const char* label;
-    } kToggleRows[] = {{cheats::kGod, "God mode"},
-                     {cheats::kNoTarget, "Enemies ignore you"},
-                     {cheats::kLowGravity, "Low gravity (you only)"},
-                     {cheats::kFastRun, "Run fast"},
-                     {cheats::kBackwards, "sdrawkcaB"}};
-    // ticked here, in force on Apply like the settings above
-    HeldCheats& held = g_held_cheats;
-    for (const auto& row : kToggleRows) {
-        bool on = held.pending ? held.on[row.toggle] : cheats::On(row.toggle);
-        if (ImGui::Checkbox(row.label, &on)) {
-            HoldCheats();
-            held.on[row.toggle] = on;
-        }
-    }
-    bool ammo = held.pending ? held.ammo : cheats::UnlimitedAmmo();
-    if (ImGui::Checkbox("Unlimited ammo", &ammo)) {
-        HoldCheats();
-        held.ammo = ammo;
-    }
-    bool heal = held.pending && held.heal;
-    if (ImGui::Checkbox("Full health (once, on Apply)", &heal)) {
-        HoldCheats();
-        held.heal = heal;
-    }
-}
-
-void DrawFooter(float em) {
-    ImGui::Separator();
-    ImGui::PushStyleColor(ImGuiCol_Text, kDim);
-    bool only = g_bindings_only.load(std::memory_order_relaxed);
-    ImGui::TextUnformatted(PanelChanged() ? "Changes take effect on Apply" :
-                           only ? "Escape or Back returns to PC Options" : "F10 or Escape closes");
-    ImGui::PopStyleColor();
-    float bw = em * 8;
-    float pad = ImGui::GetContentRegionAvail().x - bw * 3 - ImGui::GetStyle().ItemSpacing.x * 2;
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(pad, 0.0f));
-    if (ImGui::Button("Back", ImVec2(bw, 0))) ToggleMenu();
-    if (only) return;
-    ImGui::SameLine();
-    if (ImGui::Button("Defaults", ImVec2(bw, 0))) Defaults();
-    ImGui::SameLine();
-    bool changed = PanelChanged();
-    ImGui::BeginDisabled(!changed);
-    if (ImGui::Button("Apply", ImVec2(bw, 0))) ApplyPanel();
-    ImGui::EndDisabled();
-}
-
-void DrawPanel() {
-    const ImGuiViewport* vp = ImGui::GetMainViewport();
-    float em = ImGui::GetFontSize();
-    ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(em * 44, std::min(em * 32, vp->Size.y * 0.92f)), ImGuiCond_Always);
-    for (const auto& [col, color] : kPanelColors) ImGui::PushStyleColor(col, color);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 2.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(em * 1.6f, em * 1.2f));
-    constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse |
-                                        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoTitleBar;
-    if (ImGui::Begin("##settings", nullptr, kFlags)) {
-        bool only = g_bindings_only.load(std::memory_order_relaxed);
-        const char* title = only ? "KEY BINDINGS" : "SETTINGS";
-        float title_pad = (ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(title).x) * 0.5f;
-        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(title_pad, 0.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text, kHeading);
-        ImGui::TextUnformatted(title);
-        ImGui::PopStyleColor();
-        float footer = ImGui::GetTextLineHeightWithSpacing() + ImGui::GetFrameHeightWithSpacing() + em;
-        ImGui::BeginChild("##rows", ImVec2(0, -footer), ImGuiChildFlags_NavFlattened);
-        if (!only) DrawRows();
-        DrawBindings();
-        if (!only) DrawCheats();
-        ImGui::EndChild();
-        DrawFooter(em);
-    }
-    ImGui::End();
-    ImGui::PopStyleVar(4);
-    ImGui::PopStyleColor(int(std::size(kPanelColors)));
-}
-
 // ---- the PC Options page: the same settings on one of the game's own paper option pages (paper_page.h) ----
 
 std::atomic<bool> g_paper{false};
 std::atomic<uint32_t> g_paper_pad{0};  // the controller as kPad* bits, from the game thread's poll
 
 constexpr uint32_t kPadUp = 1, kPadDown = 2, kPadLeft = 4, kPadRight = 8, kPadA = 0x100, kPadB = 0x200,
-                   kPadX = 0x400;
+                   kPadX = 0x400, kPadY = 0x800, kPadPrev = 0x1000, kPadNext = 0x2000;
 
 struct PaperState {
     int selected = -1;  // a line index
@@ -948,6 +721,471 @@ void DrawPaper() {
                        g_held_set ? "Display changes take effect on Apply and Exit" :
                        "Arrows or the mouse to change, Delete or right click clears a key, Escape goes back";
     ui::paper::Draw("PC OPTIONS", lines, p.selected, p.scroll, p.follow, note, p.hits);
+    p.follow = false;
+}
+
+// ---- the settings menu on F10: the settings by tab on the game's sheet (modern_menu.h) ----
+
+constexpr int kDisplayTab = 0, kGraphicsTab = 1, kGameplayTab = 2, kControlsTab = 3, kCheatsTab = 4, kTabs = 5;
+const char* const kTabNames[kTabs] = {"Display", "Graphics", "Gameplay", "Controls", "Cheats"};
+
+// a tab's settings: kSection is a heading. The note is what the slip at the right says, the variable the console's
+// name for the same setting (src/game/console.cpp)
+struct TabRow {
+    int tab;
+    RowId id;
+    const char* label;
+    const char* note;
+    const char* variable;
+};
+constexpr TabRow kTabRows[] = {
+    {kDisplayTab, kSection, "Screen", "", ""},
+    {kDisplayTab, kDisplayMode, "Display Mode", "Fullscreen, a borderless window the size of the desktop, or a window.", ""},
+    {kDisplayTab, kResolution, "Resolution", "The size of the game's window or screen mode.", ""},
+    {kDisplayTab, kVsync, "VSync", "Each frame waits for the monitor. No tearing, a little more delay on the mouse.", "r_swapInterval"},
+    {kDisplayTab, kMaxFps, "Max Frame Rate", "The most frames a second. The game's own is 30; its speed is the same at any rate.", "com_maxfps"},
+    {kDisplayTab, kSection, "Picture", "", ""},
+    {kDisplayTab, kFov, "Field of View", "How wide you see. Higher shows more of the battlefield and makes things look further away.", "cg_fov"},
+    {kDisplayTab, kBrightness, "Brightness", "Lightens or darkens the whole picture. 100 is the game's own.", "r_gamma"},
+    {kDisplayTab, kCutsceneBars, "Cutscene Black Bars", "The black bars the game puts over its cutscenes.", "cg_cutsceneBars"},
+    {kDisplayTab, kFpsCounter, "FPS Counter", "The frame rate, at the top right of the screen.", "cg_drawFPS"},
+    {kGraphicsTab, kSection, "Quality", "", ""},
+    {kGraphicsTab, kRenderResolution, "Render Resolution", "The size the game is drawn at, as a share of the window. Over 100 is sharper and costs frame rate, under it is the other way.", "r_renderScale"},
+    {kGraphicsTab, kAniso, "Anisotropic Filtering", "Keeps the ground and walls sharp at a shallow angle.", "r_anisotropy"},
+    {kGraphicsTab, kViewDistance, "Level of Detail", "How far away soldiers and objects keep their detailed models. Low is the game's own.", "cg_viewDistance"},
+    {kGraphicsTab, kKeepBodies, "Bodies Stay", "The fallen stay where they fell and are not cleared away.", "cg_bodiesStay"},
+    {kGraphicsTab, kSection, "Textures", "", ""},
+    {kGraphicsTab, kTextureReplacement, "Texture Replacement", "Pictures in textures\\replacement beside the game take the place of the game's own.", "r_customTextures"},
+    {kGraphicsTab, kTextureDumping, "Texture Dumping", "Writes each texture the game uses into textures\\dumps beside the game, once.", "r_dumpTextures"},
+    {kGraphicsTab, kDumpFormat, "Dump Format", "The kind of file the dumped textures are written as.", ""},
+    {kGameplayTab, kSection, "Play", "", ""},
+    {kGameplayTab, kAimAssist, "Controller Aim Assist", "The game's pull towards an enemy under the sight, on a controller. The mouse never has it.", "cg_aimAssist"},
+    {kGameplayTab, kHints, "Tutorial Hints", "The lines that tell you how to crouch, lean, throw and the like.", "cg_hints"},
+    {kGameplayTab, kHideHud, "Hide the HUD", "Takes the compass, the health and the ammunition off the screen.", "cg_drawHud"},
+    {kGameplayTab, kLeanToggle, "Leaning", "Hold: you lean while the key is down. Toggle: a press leans and the next one straightens you.", "cg_leanToggle"},
+    {kGameplayTab, kSection, "Menus", "", ""},
+    {kGameplayTab, kQwerty, "Profile Name Keys", "The order of the letters on the screen where a profile is named.", "cg_qwertyNames"},
+    {kGameplayTab, kPrompts, "Button Prompts", "Whether the game shows keys or a controller's buttons. Automatic follows what you last used.", "cg_buttonPrompts"},
+    {kControlsTab, kSection, "Mouse", "", ""},
+    {kControlsTab, kMouseX, "Horizontal Sensitivity", "How far a move of the mouse turns you left and right.", "m_sensitivityX"},
+    {kControlsTab, kMouseY, "Vertical Sensitivity", "How far a move of the mouse looks up and down.", "m_sensitivityY"},
+    {kControlsTab, kInvertY, "Invert Vertical Look", "Pushing the mouse away looks down.", "m_invertMouse"},
+    {kControlsTab, kInvertX, "Invert Horizontal Look", "Moving the mouse left looks right.", "m_invertMouseX"},
+};
+
+constexpr struct {
+    game::cheats::Toggle toggle;
+    const char* label;
+    const char* note;
+} kCheatRows[] = {
+    {game::cheats::kGod, "God Mode", "Nothing hurts you."},
+    {game::cheats::kNoTarget, "Enemies Ignore You", "The enemy does not see you."},
+    {game::cheats::kLowGravity, "Low Gravity", "You fall slowly. The world keeps its own."},
+    {game::cheats::kFastRun, "Run Fast", "Twice your speed."},
+    {game::cheats::kBackwards, "sdrawkcaB", "Moving, looking and the HUD are turned round."},
+};
+
+// what each line of the menu's page is
+struct ModernRow {
+    enum Kind { kNone, kSetting, kBind, kResetKeys, kCheat, kAmmo, kHeal, kPassword } kind = kNone;
+    RowId row = kSection;
+    size_t action = 0;
+    int cheat = 0;
+    const char* note = "";
+    const char* variable = "";
+};
+
+struct ModernState {
+    int tab = 0;
+    int selected = -1;
+    float scroll = 0;
+    bool follow = true;
+    ImVec2 mouse{-1, -1};
+    uint32_t pad_prev = 0;
+    double pad_repeat = 0;
+    bool controller = false;  // the controller was the last thing used: the bottom line shows its buttons
+    std::string code;         // the cheats password as typed so far
+    ui::modern::Hits hits;
+} g_modern;
+
+// a slider's place, 0 to 1; under 0 for a row that is not one
+float RowFill(RowId id, const Settings& s, const game::Options& o) {
+    auto at = [](float v, float lo, float hi) { return std::clamp((v - lo) / (hi - lo), 0.0f, 1.0f); };
+    switch (id) {
+        case kFov: return at(float(o.fov), float(game::kMinFov), float(game::kMaxFov));
+        case kBrightness: return at(float(o.brightness), 50, 200);
+        case kRenderResolution: return at(float(s.render_percent), 20, 200);
+        case kMouseX: return at(o.mouse_sensitivity, 0.1f, 5.0f);
+        case kMouseY: return at(o.mouse_vertical_sensitivity, 0.1f, 5.0f);
+        default: return -1.0f;
+    }
+}
+
+// a row's words with what is in use, whatever is held
+std::string LiveText(RowId id) {
+    game::Options* held = g_row_options;
+    g_row_options = nullptr;
+    std::string text = RowText(id, 0, Get());
+    g_row_options = held;
+    return text;
+}
+
+// the lines waiting for Apply, over every tab
+int ModernChanges() {
+    int n = 0;
+    if (g_panel_pending)
+        for (const TabRow& r : kTabRows)
+            if (r.id != kSection && PanelText(r.id, 0) != LiveText(r.id)) n++;
+    const HeldCheats& h = g_held_cheats;
+    if (h.pending) {
+        for (int t = 0; t < game::cheats::kToggles; t++)
+            if (h.on[t] != game::cheats::On(game::cheats::Toggle(t))) n++;
+        if (h.ammo != game::cheats::UnlimitedAmmo()) n++;
+        if (h.heal) n++;
+    }
+    return n;
+}
+
+void BuildModern(ui::modern::Page& page, std::vector<ModernRow>& rows) {
+    using ui::modern::Row;
+    namespace cheats = game::cheats;
+    page.rows.clear();
+    rows.clear();
+    auto add = [&](Row r, ModernRow m) {
+        page.rows.push_back(std::move(r));
+        rows.push_back(m);
+    };
+    auto heading = [&](const char* label) {
+        Row r;
+        r.kind = Row::kHeading;
+        r.label = label;
+        add(r, {});
+    };
+    auto words = [&](const char* text) {
+        Row r;
+        r.kind = Row::kText;
+        r.label = text;
+        add(r, {});
+    };
+    int tab = g_modern.tab;
+    for (const TabRow& t : kTabRows) {
+        if (t.tab != tab) continue;
+        if (t.id == kSection) {
+            heading(t.label);
+            continue;
+        }
+        Row r;
+        r.label = t.label;
+        std::string text = PanelText(t.id, 0);
+        r.changed = g_panel_pending && text != LiveText(t.id);
+        float fill = RowFill(t.id, g_panel_pending ? g_panel_settings : Get(), g_panel_pending ? g_panel_options : game::Opt());
+        if (fill >= 0) {
+            r.kind = Row::kSlider;
+            r.fill = fill;
+            r.value = text.substr(0, text.find(" ("));
+        } else if (text == "ON" || text == "OFF") {
+            r.kind = Row::kToggle;
+            r.on = text == "ON";
+        } else {
+            r.kind = Row::kChoice;
+            r.value = Sentence(text);
+        }
+        ModernRow m;
+        m.kind = ModernRow::kSetting;
+        m.row = t.id;
+        m.note = t.note;
+        m.variable = t.variable;
+        add(r, m);
+    }
+    if (tab == kControlsTab) {
+        heading("Key Bindings");
+        size_t count = 0;
+        input::Actions(&count);
+        for (size_t i = 0; i < count; i++) {
+            Row r;
+            r.kind = Row::kBinding;
+            r.label = Sentence(input::Label(i));
+            r.value = input::Binding(i, 0);
+            r.value2 = input::Binding(i, 1);
+            ModernRow m;
+            m.kind = ModernRow::kBind;
+            m.action = i;
+            m.note = "Click a box or press Enter, then press the new key. Delete or a right click empties a box. The keys do "
+                     "the same whichever controller layout is picked in the game's options.";
+            add(r, m);
+        }
+        Row r;
+        r.kind = Row::kAction;
+        r.label = "Reset Controls";
+        ModernRow m;
+        m.kind = ModernRow::kResetKeys;
+        m.note = "Every key back to the one it came with, at once.";
+        add(r, m);
+    }
+    if (tab == kCheatsTab) {
+        const char* risk = "Cheats are on until the game is closed. They can break missions: use them at your own risk.";
+        if (!cheats::Unlocked()) {
+            words("Cheats are locked. Type the password. Tab goes to the next page.");
+            Row r;
+            r.kind = Row::kEntry;
+            r.label = "Password";
+            r.value = g_modern.code;
+            ModernRow m;
+            m.kind = ModernRow::kPassword;
+            m.note = risk;
+            add(r, m);
+            return;
+        }
+        const HeldCheats& held = g_held_cheats;
+        heading("Cheats");
+        for (int i = 0; i < int(std::size(kCheatRows)); i++) {
+            Row r;
+            r.kind = Row::kToggle;
+            r.label = kCheatRows[i].label;
+            bool live = cheats::On(kCheatRows[i].toggle);
+            r.on = held.pending ? held.on[kCheatRows[i].toggle] : live;
+            r.changed = r.on != live;
+            ModernRow m;
+            m.kind = ModernRow::kCheat;
+            m.cheat = i;
+            m.note = kCheatRows[i].note;
+            add(r, m);
+        }
+        Row ammo;
+        ammo.kind = Row::kToggle;
+        ammo.label = "Unlimited Ammo";
+        ammo.on = held.pending ? held.ammo : cheats::UnlimitedAmmo();
+        ammo.changed = ammo.on != cheats::UnlimitedAmmo();
+        ModernRow m;
+        m.kind = ModernRow::kAmmo;
+        m.note = "Your rounds never go down.";
+        add(ammo, m);
+        Row heal;
+        heal.kind = Row::kToggle;
+        heal.label = "Full Health";
+        heal.on = held.pending && held.heal;
+        heal.changed = heal.on;
+        m.kind = ModernRow::kHeal;
+        m.note = "Your health back to full, once, when you pick Apply Changes.";
+        add(heal, m);
+        words(risk);
+    }
+}
+
+bool ModernStop(const ui::modern::Row& r) {
+    return r.kind != ui::modern::Row::kHeading && r.kind != ui::modern::Row::kText;
+}
+
+int ModernNext(const ui::modern::Page& page, int from, int dir) {
+    int n = int(page.rows.size());
+    for (int k = 1; k <= n; k++) {
+        int i = ((from + dir * k) % n + n) % n;
+        if (ModernStop(page.rows[size_t(i)])) return i;
+    }
+    return from;
+}
+
+// a line's job. step: -1 or 1 from the arrows, 0 from Enter or A; want: for an On and Off line, 1 On, 0 Off, -1 the
+// other one
+void ModernActivate(const ModernRow& r, const ui::modern::Row& shown, int step, int want = -1) {
+    namespace cheats = game::cheats;
+    bool flip = want < 0 || (want == 1) != shown.on;
+    switch (r.kind) {
+        case ModernRow::kSetting:
+            if (shown.kind == ui::modern::Row::kToggle) {
+                if (flip) PanelText(r.row, 1);
+            } else if (shown.kind == ui::modern::Row::kSlider) {
+                // a slider stops at its ends
+                if (step == 0 || (step < 0 && shown.fill <= 0.0f) || (step > 0 && shown.fill >= 1.0f)) break;
+                PanelText(r.row, step);
+            } else {
+                PanelText(r.row, step ? step : 1);
+            }
+            break;
+        case ModernRow::kBind:
+            if (step == 0) g_capture = {int(r.action), g_slot, false};
+            break;
+        case ModernRow::kResetKeys:
+            if (step == 0) {
+                g_capture = {};
+                input::ResetBindings();
+            }
+            break;
+        case ModernRow::kCheat:
+            if (flip) {
+                HoldCheats();
+                bool& on = g_held_cheats.on[kCheatRows[r.cheat].toggle];
+                on = !on;
+            }
+            break;
+        case ModernRow::kAmmo:
+            if (flip) {
+                HoldCheats();
+                g_held_cheats.ammo = !g_held_cheats.ammo;
+            }
+            break;
+        case ModernRow::kHeal:
+            if (flip) {
+                HoldCheats();
+                g_held_cheats.heal = !g_held_cheats.heal;
+            }
+            break;
+        default:
+            break;
+    }
+}
+
+void DrawModern() {
+    ModernState& p = g_modern;
+    ui::modern::Page page;
+    std::vector<ModernRow> rows;
+    auto build = [&] {
+        BuildModern(page, rows);
+        if (p.selected < 0 || p.selected >= int(page.rows.size()) || !ModernStop(page.rows[size_t(p.selected)]))
+            p.selected = ModernNext(page, -1, 1), p.follow = true;
+    };
+    build();
+
+    bool was_capturing = g_capture.action >= 0;
+    UpdateCapture();
+    bool capturing = g_capture.action >= 0;
+
+    // the controller: edges, and the dpad repeating while held
+    uint32_t pad = g_paper_pad.load(std::memory_order_relaxed);
+    uint32_t pressed = pad & ~p.pad_prev;
+    double now = ImGui::GetTime();
+    constexpr uint32_t kDirs = kPadUp | kPadDown | kPadLeft | kPadRight;
+    if (pressed & kDirs) p.pad_repeat = now + 0.4;
+    else if ((pad & kDirs) && now >= p.pad_repeat) {
+        pressed |= pad & kDirs;
+        p.pad_repeat = now + 0.12;
+    }
+    p.pad_prev = pad;
+    if (pressed) p.controller = true;
+
+    ImGuiIO& io = ImGui::GetIO();
+    bool typing = rows[size_t(p.selected)].kind == ModernRow::kPassword;
+    auto to_tab = [&](int tab) {
+        p.tab = ((tab % kTabs) + kTabs) % kTabs;
+        p.selected = -1;
+        p.scroll = 0;
+        build();
+    };
+    // capture takes every key until it ends; a key that ended it does nothing else this frame
+    if (!capturing && !was_capturing) {
+        auto key = [](ImGuiKey k) { return ImGui::IsKeyPressed(k, true); };
+        auto once = [](ImGuiKey k) { return ImGui::IsKeyPressed(k, false); };
+        int move = 0, step = 0, turn = 0;
+        if (key(ImGuiKey_UpArrow) || (pressed & kPadUp)) move = -1;
+        if (key(ImGuiKey_DownArrow) || (pressed & kPadDown)) move = 1;
+        if (key(ImGuiKey_LeftArrow) || (pressed & kPadLeft)) step = -1;
+        if (key(ImGuiKey_RightArrow) || (pressed & kPadRight)) step = 1;
+        // the letters are the password's while it is being typed
+        if (once(ImGuiKey_PageUp) || (!typing && once(ImGuiKey_Q)) || (pressed & kPadPrev)) turn = -1;
+        if (once(ImGuiKey_PageDown) || once(ImGuiKey_Tab) || (!typing && once(ImGuiKey_E)) || (pressed & kPadNext)) turn = 1;
+        bool enter = once(ImGuiKey_Enter) || once(ImGuiKey_KeypadEnter) || (pressed & kPadA);
+        bool back = (!typing && once(ImGuiKey_Backspace)) || (pressed & kPadB);
+        bool clear = once(ImGuiKey_Delete) || (pressed & kPadX);
+        bool defaults = (!typing && once(ImGuiKey_R)) || ((pressed & kPadX) && rows[size_t(p.selected)].kind != ModernRow::kBind);
+        bool apply = (!typing && once(ImGuiKey_F)) || (pressed & kPadY);
+        if (typing) {
+            for (int i = 0; i < io.InputQueueCharacters.Size; i++) {
+                ImWchar ch = io.InputQueueCharacters[i];
+                if (ch > 32 && ch < 127 && p.code.size() < 15) p.code += char(ch);
+            }
+            if (key(ImGuiKey_Backspace) && !p.code.empty()) p.code.pop_back();
+            if (game::cheats::TryUnlock(p.code.c_str())) {
+                p.code.clear();
+                p.selected = -1;
+                build();
+            }
+        }
+        if (back) {
+            ToggleMenu();
+            return;
+        }
+        if (turn) to_tab(p.tab + turn);
+        if (move) {
+            p.selected = ModernNext(page, p.selected, move);
+            p.follow = true;
+        }
+        if (step) {
+            if (rows[size_t(p.selected)].kind == ModernRow::kBind) g_slot = step < 0 ? 0 : 1;
+            else ModernActivate(rows[size_t(p.selected)], page.rows[size_t(p.selected)], step);
+        }
+        if (enter) ModernActivate(rows[size_t(p.selected)], page.rows[size_t(p.selected)], 0);
+        if (clear && rows[size_t(p.selected)].kind == ModernRow::kBind) input::Bind(rows[size_t(p.selected)].action, 0, g_slot);
+        if (defaults) Defaults();
+        if (apply) ApplyPanel();
+        if (!pressed && (move || step || turn || enter || io.InputQueueCharacters.Size)) p.controller = false;
+
+        // the mouse: hovering selects, a click does the line's job, the wheel scrolls
+        ImVec2 m = io.MousePos;
+        bool moved = m.x != p.mouse.x || m.y != p.mouse.y;
+        p.mouse = m;
+        bool left = ImGui::IsMouseClicked(ImGuiMouseButton_Left), right = ImGui::IsMouseClicked(ImGuiMouseButton_Right);
+        if (moved || left || right) p.controller = false;
+        const ui::modern::Hits& h = p.hits;
+        if (left) {
+            int tab = p.tab;
+            bool picked = false;
+            for (size_t i = 0; i < h.tabs.size(); i++)
+                if (h.tabs[i].Has(m)) tab = int(i), picked = true;
+            if (h.tab_prev.Has(m)) tab = p.tab - 1, picked = true;
+            if (h.tab_next.Has(m)) tab = p.tab + 1, picked = true;
+            if (picked) to_tab(tab);
+            else if (h.defaults.Has(m)) Defaults();
+            else if (h.apply.Has(m)) ApplyPanel();
+        }
+        int over = -1;
+        for (size_t i = 0; i < h.rows.size() && i < rows.size(); i++)
+            if (h.rows[i].row.Has(m)) over = int(i);
+        if (over >= 0 && (moved || left || right)) {
+            const ui::modern::Hits::Line& l = h.rows[size_t(over)];
+            const ModernRow& o = rows[size_t(over)];
+            const ui::modern::Row& shown = page.rows[size_t(over)];
+            p.selected = over;
+            bool in_left = l.left.Has(m), in_right = l.right.Has(m);
+            if (o.kind == ModernRow::kBind) {
+                if (in_left) g_slot = 0;
+                if (in_right) g_slot = 1;
+                if (left && (in_left || in_right)) ModernActivate(o, shown, 0);
+                if (right && (in_left || in_right)) input::Bind(o.action, 0, g_slot);
+            } else if (shown.kind == ui::modern::Row::kToggle) {
+                if (left && (in_left || in_right)) ModernActivate(o, shown, 0, in_left ? 1 : 0);
+            } else if (shown.kind == ui::modern::Row::kAction) {
+                if (left) ModernActivate(o, shown, 0);
+            } else if (left && (in_left || in_right)) {
+                ModernActivate(o, shown, in_left ? -1 : 1);
+            }
+        }
+        if (io.MouseWheel != 0) {
+            p.scroll = std::max(0.0f, p.scroll - io.MouseWheel * 2.0f);
+            p.follow = false;
+        }
+        build();  // the values as they are now
+    }
+
+    ui::modern::Row& sel = page.rows[size_t(p.selected)];
+    const ModernRow& row = rows[size_t(p.selected)];
+    sel.slot = g_slot;
+    sel.waiting = capturing;
+    page.title = "Options";
+    const std::string& profile = game::Opt().settings_profile;
+    if (!profile.empty() && profile != "*") page.profile = profile;
+    page.tabs.assign(std::begin(kTabNames), std::end(kTabNames));
+    page.tab = p.tab;
+    page.selected = p.selected;
+    page.follow = p.follow;
+    page.controller = p.controller;
+    page.changes = ModernChanges();
+    page.note_title = row.kind == ModernRow::kBind ? "Key Bindings" : sel.label;
+    page.note_text = row.note;
+    page.note_command = row.variable;
+    if (row.kind == ModernRow::kSetting && sel.changed)
+        page.note_change = "Now " + Sentence(LiveText(row.row)) + ", after Apply " + Sentence(PanelText(row.row, 0));
+    if (capturing) page.hint = "Press a key for it. Escape keeps the old one.";
+    ui::modern::Draw(page, p.scroll, p.hits);
     p.follow = false;
 }
 
@@ -1278,7 +1516,11 @@ void ToggleMenu() {
     g_panel_pending = false;
     g_held_cheats = {};
     g_capture = {};
-    if (open) input::ReleaseCursor();
+    if (open) {
+        g_modern = {};
+        if (g_bindings_only.load(std::memory_order_relaxed)) g_modern.tab = kControlsTab;
+        input::ReleaseCursor();
+    }
 }
 
 void OpenBindings() {
@@ -1310,6 +1552,9 @@ void PcOptionsPad(const input::Pad& pad) {
     if (pad.analog[0] > 0x40) bits |= kPadA;
     if (pad.analog[1] > 0x40) bits |= kPadB;
     if (pad.analog[2] > 0x40) bits |= kPadX;
+    if (pad.analog[3] > 0x40) bits |= kPadY;
+    if (pad.analog[5] > 0x40 || pad.analog[6] > 0x40) bits |= kPadPrev;  // white, the left trigger
+    if (pad.analog[4] > 0x40 || pad.analog[7] > 0x40) bits |= kPadNext;  // black, the right trigger
     g_paper_pad.store(pad.connected ? bits : 0, std::memory_order_relaxed);
 }
 
@@ -1334,8 +1579,7 @@ void DrawUi(double fps) {
     if (paper) {
         DrawPaper();
     } else if (PanelOpen()) {
-        UpdateCapture();
-        DrawPanel();
+        DrawModern();
     }
     console::Draw();
 }

@@ -43,4 +43,11 @@ void Stamp(const char* line, const char* under = nullptr, float under_alpha = 0.
 // the list's rows in view, for the mouse wheel
 int VisibleRows();
 
+// for the other pages drawn on the same sheet (modern_menu.cpp): the page's face and whether it is a bold one, and
+// the game's sheet picture in the font atlas (false when the game's files gave none). In that picture, 512 square,
+// the sheet is 12..499 across and 81..430 down, its printed frame 97..407 down and the rule under the title at 143
+ImFont* Face();
+bool FaceBold();
+bool Sheet(ImTextureID& texture, ImVec2& uv0, ImVec2& uv1);
+
 }  // namespace ui::paper

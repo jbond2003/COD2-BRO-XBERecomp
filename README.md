@@ -36,7 +36,7 @@ Direct3D 12, and adds a few things of its own:
 - H hides the HUD and brings it back (the key can be changed).
 - The M1 Garand can be reloaded before its clip is empty.
 - A built in, dedicated PC Options menu in the game's own style, with pages for display (with brightness, and cutscenes without black bars), graphics (with level of detail, and bodies that stay),
-  mouse, and keyboard with key bindings; F10 opens the full settings panel.
+  mouse, and keyboard with key bindings; F10 opens the settings menu, with a tab each for display, graphics, gameplay, controls and cheats.
 - More lines in the game's Gameplay menu, and in the pause menu's options: controller aim assist, tutorial hints,
   and hiding the HUD.
 - No title screen: the game starts at the profile menu, and the title's picture is the splash shown while the game
@@ -88,7 +88,7 @@ regional release has its code at other addresses and is not supported.
 <details>
 <summary>Secrets (spoilers)</summary>
 
-- **Cheats:** press F10, go to the end of the panel and enter the password `brooklyn`. The cheats stay unlocked until
+- **Cheats:** press F10, open the Cheats tab and type the password `brooklyn`. The cheats stay unlocked until
   the game is closed, and they can break missions, so use them at your own risk.
 - **Console:** the key under Escape (`~`) opens the engine's developer console. `help` explains it, `cmdlist` and
   `cvarlist` show what the game has, Tab completes a name. Cheat commands such as `god` and `noclip` need
