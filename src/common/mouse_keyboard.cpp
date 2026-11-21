@@ -92,7 +92,6 @@ constexpr Target kActions[] = {
     {{"melee", "V,MMB"}, 4},              // black
     {{"grenade", "G"}, 5},                // white
     {{"sprint", "Shift"}, 14},            // left stick click
-    {{"right_stick", "X"}, 15},           // right stick click
     {{"next_weapon", "1,Wheel Up,Wheel Down"}, 8},  // dpad up
     {{"dpad_down", "2"}, 9},
     {{"lean_left", "Q"}, 10},             // dpad left
@@ -511,7 +510,7 @@ namespace {
 // the F10 panel's names for the actions, in kActions' order
 constexpr const char* kLabels[] = {
     "MOVE FORWARD", "MOVE BACK", "STRAFE LEFT", "STRAFE RIGHT", "WALK", "FIRE", "AIM DOWN SIGHTS", "USE",
-    "CROUCH", "PRONE", "RELOAD", "JUMP / STAND", "MELEE", "THROW GRENADE", "SPRINT", "RIGHT STICK CLICK",
+    "CROUCH", "PRONE", "RELOAD", "JUMP / STAND", "MELEE", "THROW GRENADE", "SPRINT",
     "NEXT WEAPON", "D-PAD DOWN", "LEAN LEFT", "LEAN RIGHT", "OBJECTIVES", "PAUSE", "HIDE HUD", "LOOK UP",
     "LOOK DOWN",
     "LOOK LEFT", "LOOK RIGHT",
