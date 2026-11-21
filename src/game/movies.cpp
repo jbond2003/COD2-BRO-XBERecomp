@@ -12,10 +12,12 @@
 //   quad draws the picture on every frame, the frames in between draw the last one, and nothing is read back.
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstring>
 
 #include "app/app.h"
+#include "common/cheats.h"
 #include "core/log.h"
 #include "cpu/x86_ops.h"
 #include "kernel/kernel.h"
@@ -30,6 +32,7 @@ constexpr uint32_t kBackBufferTexture = 0x902D50;  // engine texture: +0x1C pitc
 constexpr uint32_t kTextureBytes = 0x78;           // up to the next engine object (0x902DC8)
 constexpr uint32_t kBlockUntilNotBusy = 0x3E8000;  // D3DResource_BlockUntilNotBusy (resource), stdcall
 int g_movie_loop = 0;                              // inside the full screen movie loop
+std::atomic<bool> g_movie_playing{false};          // the same, for the thread that draws the port's own texts
 bool g_menu_decode = false;                        // inside the decode of a movie behind a menu
 
 // a texture of our own the shape of 0x902D50: the engine texture, its D3D surface, the picture's memory
@@ -85,11 +88,15 @@ bool MakePictures() {
 }
 }  // namespace
 
+bool game::cheats::MoviePlaying() { return g_movie_playing.load(std::memory_order_relaxed); }
+
 // the full screen movie loop
 X86_FUNC(sub_00332230) {
     g_movie_loop++;
+    g_movie_playing.store(true, std::memory_order_relaxed);
     __imp__sub_00332230(ctx, base);
     g_movie_loop--;
+    g_movie_playing.store(g_movie_loop > 0, std::memory_order_relaxed);
 }
 
 // () -> the engine texture over the current back buffer, the decode's target with +0x74 set: ours in turn instead for

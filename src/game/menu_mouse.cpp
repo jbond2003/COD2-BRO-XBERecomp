@@ -523,37 +523,48 @@ constexpr uint32_t kOptionsVtable = 0x829348;
 constexpr uint32_t kWidgetBytes = 0x68;
 constexpr uint32_t kSelectedAlpha = 0xFF000000, kIdleAlpha = 0x8C000000;
 struct PcEntry {
+    const char* label;
+    bool own_colors = false;  // the screen's selected line has its own colour (the pause menu's red), not only alpha
+    uint32_t idle_color = 0;  // then: the colour of a line that is not selected
     uint32_t screen = 0;  // the Options screen it was made for
     uint32_t anchor = 0;  // the last item's widget, SOUND
     uint32_t widget = 0;  // our copy, saying PC OPTIONS
     uint32_t frame = 0;   // the last frame the Options screen was up
+    uint32_t text = 0, second = 0;  // our words, and the anchor's second string
     bool selected = false;
     bool sound = false;         // play the move sound at the next poll
     bool select_first = false;  // down from PC OPTIONS wraps to the first item
     bool select_last = false;   // back from PC Options: the game's selection on SOUND, ours on PC OPTIONS
-} g_pc;
+};
+PcEntry g_pc{"PC OPTIONS"};
+// The pause menu (screen vtable 0x8289F8: Resume, Options, Xbox Live Options, Restart, Quit) gets a line the same
+// way under Quit, Exit to Desktop; its six lines stand a little closer so that the last is above the rule
+// (PauseMenu). The main menu's Exit to Desktop is its Multiplayer line (MainMenuLines).
+constexpr uint32_t kPauseVtable = 0x8289F8;
+PcEntry g_exit{"Exit to Desktop", true};
+constexpr float kPauseSmaller = 0.9f;  // the pause menu's lines: their size and spacing, for six where five were
 
-// Menu lines that are gone: the main menu's Multiplayer (screen vtable 0x829B80: Single Player, Multiplayer,
-// Options, Bonus Materials, and a hidden DISABLED item). The item is marked
-// disabled (+0x16), which the screen's own up/down and the mouse skip, its text is not drawn, and the lines under it
-// move up into its place. The multiplayer and Live code is left as it is.
+// The main menu (screen vtable 0x829B80): Single Player, Multiplayer, Options, Bonus Materials, and a hidden
+// DISABLED item.
 constexpr uint32_t kMainMenuVtable = 0x829B80;
-std::unordered_map<uint32_t, uint32_t> g_hidden;  // a hidden line's text widget -> engine frame last seen
 std::unordered_map<uint32_t, float> g_moved_y;   // widget -> the y we gave it
 std::unordered_map<uint32_t, float> g_original_y;  // widget -> the y the game gave it
 
-bool Hidden(uint32_t widget) {
-    std::lock_guard lock(g_drawn_lock);
-    return g_hidden.count(widget) != 0;
-}
+// The main menu's fourth line is Exit to Desktop: its Multiplayer line (the multiplayer and Live code is left as it
+// is), moved under Bonus Materials with the lines between moved up one, as HideItem moved them when the line was
+// only hidden. It stays the screen's second item, so up and down step through the lines as they are seen
+// (OptionsPad, g_main_order_select), the tick beside a line is its place's (sub_00328E90), and A on it is ours.
+std::vector<int16_t> g_main_order;     // the main menu's items, top to bottom as drawn
+int16_t g_main_exit = -1;              // the item that is Exit to Desktop
+int16_t g_main_order_select = -1;      // an item to select at the next poll
+uint32_t g_main_menu = 0, g_main_frame = 0;  // the main menu and the frame it was last up
 
-int16_t g_main_gone = -1;  // the main menu's hidden line (Multiplayer)
-
-void HideItem(X86Context& ctx, uint32_t menu, const char* label) {
+void MainMenuLines(uint32_t menu) {
+    static uint32_t exit_text = 0;
+    if (!exit_text) exit_text = GameString("Exit to Desktop");
     uint32_t items = R32(menu + 4);
     int16_t count = R16s(menu + 0x26);
-    int16_t gone = -1;
-    // each line's own place, as the game last laid it out (not the one we moved it to)
+    if (!exit_text || !items) return;
     auto original = [](uint32_t widget) {
         float y = RF(widget + 0x30);
         auto it = g_moved_y.find(widget);
@@ -561,38 +572,44 @@ void HideItem(X86Context& ctx, uint32_t menu, const char* label) {
         g_original_y[widget] = y;
         return y;
     };
-    float above_y = NAN;  // the place of the line above, in the game's order
-    for (int16_t i = 0; items && i < count; i++) {
+    std::vector<int16_t> lines;
+    std::vector<float> places;
+    int16_t exit = -1;
+    for (int16_t i = 0; i < count && i < 16; i++) {
         uint32_t item = R32(items + uint32_t(i) * 4), widget = item ? R32(item + 0x10) : 0;
-        if (!widget || R32(widget) != kTextWidgetVtable) continue;
-        uint32_t text = R32(widget + 0x1C);
-        float own = original(widget);
-        if (gone < 0 && text && SameText(text, label)) {
-            gone = i;
-            {
-                std::lock_guard lock(g_drawn_lock);
-                if (g_hidden.size() > 64) g_hidden.clear();
-                g_hidden[widget] = Frame();
-            }
-            kernel::G<uint8_t>(item + 0x16) = 1;
-            above_y = own;
-            continue;
+        uint32_t text = widget && R32(widget) == kTextWidgetVtable ? R32(widget + 0x1C) : 0;
+        if (!text) continue;
+        bool ours = text == exit_text || SameText(text, "Multiplayer");
+        if (ours && exit < 0) {
+            exit = i;
+            if (text != exit_text) W32(widget + 0x1C, exit_text);
+            kernel::G<uint8_t>(item + 0x16) = 0;
+        } else if (R8(item + 0x16)) {
+            continue;  // (the screen's DISABLED item)
         }
-        // a line under the hidden one takes the place of the line above it, so the lines keep the game's spacing
-        float want = above_y;
-        above_y = own;
-        if (gone < 0 || R8(item + 0x16) || !std::isfinite(want) || !(own - want > 0 && own - want < 100)) continue;
-        if (RF(widget + 0x30) != want) {
-            if (g_moved_y.size() > 256) g_moved_y.clear(), g_original_y.clear();
-            kernel::G<float>(widget + 0x30) = want;
-        }
-        g_moved_y[widget] = want;
+        lines.push_back(i);
+        places.push_back(original(widget));
     }
-    if (R32(menu) == kMainMenuVtable) g_main_gone = gone;
-    // never left on it (a screen made with it selected)
-    if (gone >= 0 && R16s(menu + 0x22) == gone && !R8(menu + 0x30))
-        Select(ctx, menu, int16_t(gone > 0 ? gone - 1 : gone + 1));
+    kernel::G<uint16_t>(exit_text + 4) = 0x4000;  // never freed by the game
+    if (exit < 0 || lines.size() < 2) return;
+    std::vector<int16_t> order;
+    for (int16_t i : lines)
+        if (i != exit) order.push_back(i);
+    order.push_back(exit);
+    if (g_moved_y.size() > 256) g_moved_y.clear(), g_original_y.clear();
+    for (size_t k = 0; k < order.size(); k++) {
+        uint32_t widget = R32(R32(items + uint32_t(order[k]) * 4) + 0x10);
+        if (RF(widget + 0x30) != places[k]) kernel::G<float>(widget + 0x30) = places[k];
+        g_moved_y[widget] = places[k];
+    }
+    if (order != g_main_order) LOGI("main menu: %zu lines, Exit to Desktop is item %d", order.size(), exit);
+    g_main_order = std::move(order);
+    g_main_exit = exit;
+    g_main_menu = menu;
+    g_main_frame = Frame();
 }
+
+bool MainMenuUp() { return g_main_menu && Frame() - g_main_frame <= 2 && !g_main_order.empty(); }
 
 // The main menu's lines, centred each on its own, start at one place beside their boxes: the left end of the line
 // that starts furthest left, as the game first laid them out (kept for the screen; the selected line is drawn larger)
@@ -644,11 +661,11 @@ bool XboxLiveText(uint32_t text) {
     return false;
 }
 
-bool PcEntryUp() { return g_pc.screen && g_pc.widget && Frame() - g_pc.frame <= 2; }
+bool PcEntryUp(const PcEntry& e = g_pc) { return e.screen && e.widget && Frame() - e.frame <= 2; }
 
-// a text widget that is a line of the Options menu PC OPTIONS is under
-bool PcEntryLine(uint32_t widget) {
-    uint32_t menu = g_pc.screen, items = menu ? R32(menu + 4) : 0;
+// a text widget that is a line of the menu an extra line is under
+bool PcEntryLine(uint32_t widget, const PcEntry& e = g_pc) {
+    uint32_t menu = e.screen, items = menu ? R32(menu + 4) : 0;
     int16_t count = menu ? R16s(menu + 0x26) : 0;
     for (int16_t i = 0; items && i < count; i++) {
         uint32_t item = R32(items + uint32_t(i) * 4);
@@ -661,43 +678,132 @@ bool RequestPcScreen();  // below
 bool PcScreenPending();   // asked for, not up yet
 
 void OpenPcOptions() {
-    // the front end's Options menu: the game's own Gameplay screen, made PC Options (PcScreenPoll). PC OPTIONS stays
-    // selected until that is up, so no other line lights up on the way
-    if (RequestPcScreen()) return;
-    LOGR("PC Options opened from the game's menus");
+    // PC OPTIONS on the front end's Options menu and PC Options on the pause menu open the settings menu (the one on
+    // F10, src/common/modern_menu.h), which has every setting the PC Options pages had. The line stays selected under
+    // it. (RequestPcScreen made the game's Gameplay screen into those pages; it still gives that screen its second
+    // page.)
+    LOGR("PC Options: the settings menu opened from the game's menus");
 #ifdef _WIN32
-    app::OpenPcOptions();
+    app::OpenSettings();
 #endif
 }
 
-// each poll of a manager whose active screen is the Options menu: the copy follows SOUND's place and look
-void UpdatePcEntry(uint32_t menu) {
+// The game closes, as by the window's close button. (Headless there is no window: only the line in the log.)
+// Exit to Desktop asks first, in the game's own yes or no box (UI_ShowDialog 0x3319E0: eax the text or its key, then
+// manager, OK button, Yes and No buttons, more text, pause). Yes sets bit 8 of the dialog manager's +0x20, No clears it.
+constexpr uint32_t kShowDialog = 0x3319E0, kEmptyText = 0x82DFEB;
+enum class ExitAsk { kNone, kWanted, kOpening, kUp };
+ExitAsk g_exit_ask = ExitAsk::kNone;
+uint32_t g_exit_ask_frame = 0;
+bool g_exit_ask_back = false;  // B, Escape, Backspace or the right mouse button while the box is up: No
+
+bool ExitAsking() { return g_exit_ask != ExitAsk::kNone; }
+
+void ExitToDesktop() {
+    if (g_exit_ask == ExitAsk::kNone) g_exit_ask = ExitAsk::kWanted;
+}
+
+bool DialogUp() {
+    uint32_t mgr = R32(kDialogs);
+    return mgr && int32_t(R32(mgr + 0xC)) >= 0;
+}
+
+// each frame: the box goes up, and once it is gone its answer is read
+void ExitAskPoll(X86Context& ctx) {
+    if (g_exit_ask == ExitAsk::kNone) return;
+    uint32_t mgr = R32(kDialogs), frame = Frame();
+    if (!mgr) {  // no box to ask in: as before
+        g_exit_ask = ExitAsk::kNone;
+        LOGR("Exit to Desktop picked");
+        app::ExitToDesktop();
+        return;
+    }
+    switch (g_exit_ask) {
+    case ExitAsk::kWanted: {
+        if (DialogUp()) {  // another box is up: this pick is dropped
+            g_exit_ask = ExitAsk::kNone;
+            return;
+        }
+        static uint32_t text = 0;
+        if (!text) {
+            const char* ask = "Are you sure you want to exit to desktop?";
+            text = mem::AllocSystem(uint32_t(std::strlen(ask)) + 1);
+            if (text) std::memcpy(&kernel::G<char>(text), ask, std::strlen(ask) + 1);
+        }
+        if (!text) {
+            g_exit_ask = ExitAsk::kNone;
+            return;
+        }
+        kernel::G<uint8_t>(mgr + 0x20) &= uint8_t(~8);
+        uint32_t eax = ctx.eax;
+        ctx.eax = text;
+        kernel::CallGuest(ctx, kShowDialog, {mgr, 0, 1, kEmptyText, 1});
+        ctx.eax = eax;
+        g_exit_ask = ExitAsk::kOpening;
+        g_exit_ask_frame = frame;
+        LOGI("Exit to Desktop: asking");
+        break;
+    }
+    case ExitAsk::kOpening:
+        if (DialogUp()) g_exit_ask = ExitAsk::kUp;
+        else if (frame - g_exit_ask_frame > 120) g_exit_ask = ExitAsk::kNone;  // it never came up
+        break;
+    case ExitAsk::kUp:
+        if (DialogUp()) {
+            // backing out answers No: the box's own No line (its second), picked
+            uint32_t box = R32(R32(mgr + 4) + uint32_t(R32(mgr + 0xC)) * 4);
+            if (g_exit_ask_back && box && R16s(box + 0x26) >= 2 && !R8(box + 0x30)) {
+                if (R16s(box + 0x22) != 1) Select(ctx, box, 1);
+                TapA();
+                g_exit_ask_back = false;
+            }
+            break;
+        }
+        g_exit_ask_back = false;
+        g_exit_ask = ExitAsk::kNone;
+        if (R8(mgr + 0x20) & 8) {
+            LOGR("Exit to Desktop picked");
+            app::ExitToDesktop();
+        } else {
+            LOGR("Exit to Desktop: answered no");
+        }
+        break;
+    default: break;
+    }
+}
+
+// each poll of a manager whose active screen has an extra line: the copy follows the last line's place and look
+void UpdatePcEntry(uint32_t menu, PcEntry& e = g_pc) {
     int16_t count = R16s(menu + 0x26);
     uint32_t items = R32(menu + 4);
     if (count < 2 || !items) return;
     uint32_t last = R32(items + uint32_t(count - 1) * 4), above = R32(items + uint32_t(count - 2) * 4);
     uint32_t anchor = last ? R32(last + 0x10) : 0, prev = above ? R32(above + 0x10) : 0;
     if (!anchor || !prev || R32(anchor) != kTextWidgetVtable) return;
-    static uint32_t text = 0, second = 0;
-    if (!text) text = GameString("PC OPTIONS");
-    if (!g_pc.widget) g_pc.widget = mem::AllocSystem(kWidgetBytes);
-    if (!text || !g_pc.widget) return;
-    if (menu != g_pc.screen || anchor != g_pc.anchor) {
-        g_pc.screen = menu;
-        g_pc.anchor = anchor;
-        g_pc.selected = g_pc.select_last;
+    if (!e.text) e.text = GameString(e.label);
+    if (!e.widget) e.widget = mem::AllocSystem(kWidgetBytes);
+    if (!e.text || !e.widget) return;
+    if (menu != e.screen || anchor != e.anchor) {
+        e.screen = menu;
+        e.anchor = anchor;
+        e.selected = e.select_last;
         // the second string the widget holds is shared: one more reference keeps it for our copy
-        second = R32(anchor + 0x54);
-        if (second) kernel::G<uint16_t>(second + 4) = uint16_t(kernel::G<uint16_t>(second + 4) + 1);
+        e.second = R32(anchor + 0x54);
+        if (e.second) kernel::G<uint16_t>(e.second + 4) = uint16_t(kernel::G<uint16_t>(e.second + 4) + 1);
     }
-    for (uint32_t k = 0; k < kWidgetBytes; k += 4) W32(g_pc.widget + k, R32(anchor + k));
-    W32(g_pc.widget + 0x14, 0);
-    W32(g_pc.widget + 0x1C, text);
-    W32(g_pc.widget + 0x54, second);
-    kernel::G<float>(g_pc.widget + 0x30) = 2 * RF(anchor + 0x30) - RF(prev + 0x30);
+    for (uint32_t k = 0; k < kWidgetBytes; k += 4) W32(e.widget + k, R32(anchor + k));
+    W32(e.widget + 0x14, 0);
+    W32(e.widget + 0x1C, e.text);
+    W32(e.widget + 0x54, e.second);
+    kernel::G<float>(e.widget + 0x30) = 2 * RF(anchor + 0x30) - RF(prev + 0x30);
     uint32_t color = R32(anchor + 0x50) & 0xFFFFFF;
-    W32(g_pc.widget + 0x50, color | (g_pc.selected ? kSelectedAlpha : kIdleAlpha));
-    g_pc.frame = Frame();
+    W32(e.widget + 0x50, color | (e.selected ? kSelectedAlpha : kIdleAlpha));
+    if (e.own_colors) {
+        // ours selected: the game's selection is on the last line, whose colour is the selected one
+        e.idle_color = R32((R16s(menu + 0x22) == count - 1 ? prev : anchor) + 0x50);
+        W32(e.widget + 0x50, e.selected ? R32(anchor + 0x50) : e.idle_color);
+    }
+    e.frame = Frame();
 }
 
 // The pause menu: its Xbox Live Options line becomes PC Options (opening the PC settings page instead), and Options
@@ -710,12 +816,36 @@ struct PauseEntry {
 } g_pause;
 
 void PauseMenu(uint32_t menu) {
-    static uint32_t pc = 0, game = 0;
+    static uint32_t pc = 0, game = 0, quit = 0;
     if (!pc) pc = GameString("PC Options");
     if (!game) game = GameString("Game & Controller Options");
+    if (!quit) quit = GameString("Quit to Main Menu");
     uint32_t items = R32(menu + 4);
     int16_t count = R16s(menu + 0x26);
-    if (!pc || !game || !items) return;
+    if (!pc || !game || !quit || !items) return;
+    // the pause menu itself: its lines, a sixth to come under them, are a little smaller and closer (the size is a
+    // text widget's four floats at +0x38, +0x3C, +0x44 and +0x48)
+    if (R32(menu) == kPauseVtable && count >= 2) {
+        static uint32_t laid_out = 0;
+        static float top = 0, step = 0;
+        static std::unordered_map<uint32_t, float> size;  // widget -> the size the game gave it
+        uint32_t first = R32(items), second = R32(items + 4);
+        uint32_t w0 = first ? R32(first + 0x10) : 0, w1 = second ? R32(second + 0x10) : 0;
+        if (menu != laid_out && w0 && w1 && RF(w1 + 0x30) - RF(w0 + 0x30) > 4) {
+            top = RF(w0 + 0x30) - 2.0f;
+            step = (RF(w1 + 0x30) - RF(w0 + 0x30)) * kPauseSmaller;
+            laid_out = menu;
+            size.clear();
+            LOGI("pause menu: lines from %.1f, %.1f apart", top, step);
+        }
+        for (int16_t i = 0; menu == laid_out && i < count; i++) {
+            uint32_t item = R32(items + uint32_t(i) * 4), widget = item ? R32(item + 0x10) : 0;
+            if (!widget || R32(widget) != kTextWidgetVtable) continue;
+            kernel::G<float>(widget + 0x30) = top + step * float(i);
+            float own = size.try_emplace(widget, RF(widget + 0x38)).first->second;
+            for (uint32_t at : {0x38u, 0x3Cu, 0x44u, 0x48u}) kernel::G<float>(widget + at) = own * kPauseSmaller;
+        }
+    }
     for (int16_t i = 0; i < count; i++) {
         uint32_t item = R32(items + uint32_t(i) * 4), widget = item ? R32(item + 0x10) : 0;
         uint32_t text = widget && R32(widget) == kTextWidgetVtable ? R32(widget + 0x1C) : 0;
@@ -726,8 +856,11 @@ void PauseMenu(uint32_t menu) {
             g_pause = {menu, i, Frame()};
         } else if (text != game && SameText(text, "Options")) {
             W32(widget + 0x1C, game);
+        } else if (text != quit && R32(menu) == kPauseVtable && SameText(text, "Quit")) {
+            W32(widget + 0x1C, quit);  // (beside Exit to Desktop)
         }
     }
+    kernel::G<uint16_t>(quit + 4) = 0x4000;
     kernel::G<uint16_t>(pc + 4) = 0x4000;
     kernel::G<uint16_t>(game + 4) = 0x4000;
 }
@@ -1246,6 +1379,31 @@ void TakePcScreen(uint32_t menu, const Layout& l) {
 
 bool PcScreenPending() { return g_pcs.want_layout != nullptr; }
 
+void PcScreenPoll(X86Context& ctx, uint32_t manager, uint32_t menu);
+
+// A widget is about to be drawn. The screen PC Options was asked on came up after this frame's poll: it is taken now,
+// before any of it is drawn, where the game's own lines showed for a frame.
+void PcScreenTakeBeforeDraw(X86Context& ctx) {
+    const Layout* want = g_pcs.want_layout;
+    if (!want || !g_pcs.tapped) return;
+    uint32_t screen = ActiveScreen(want->manager);
+    if (!screen || R32(screen) != want->vtable) return;
+    PcScreenPoll(ctx, R32(want->manager), screen);
+}
+
+// On the pause menu the asking moves the game's selection from PC Options to the line that opens the screen: the two
+// lines are drawn in each other's colour meanwhile, so the highlight stays on PC Options. The other line's widget, or 0.
+uint32_t PausePendingSwap(uint32_t widget) {
+    const Layout* want = g_pcs.want_layout;
+    if (!want || want->manager != kInGame || !g_pause.screen || g_pause.index < 0) return 0;
+    uint32_t menu = ActiveScreen(kInGame);
+    if (menu != g_pause.screen || R32(menu) != want->pick_vtable || R16s(menu + 0x22) != want->pick_item) return 0;
+    uint32_t a = LineItem(menu, want->pick_item), b = LineItem(menu, g_pause.index);
+    uint32_t wa = a ? R32(a + 0x10) : 0, wb = b ? R32(b + 0x10) : 0;
+    if (!wa || !wb || wa == wb) return 0;
+    return widget == wa ? wb : widget == wb ? wa : 0;
+}
+
 // each poll of a manager: PC Options asked for, taken, kept up to date, and left
 void PcScreenPoll(X86Context& ctx, uint32_t manager, uint32_t menu) {
     static uint32_t polls = 0;
@@ -1371,6 +1529,7 @@ void PcScreenPoll(X86Context& ctx, uint32_t manager, uint32_t menu) {
             for (char& c : words) c = char(std::toupper(uint8_t(c)));
         W32(label + 0x1C, ours ? PcString(words) : own);
     }
+    std::vector<uint32_t> recolor;
     {
         std::lock_guard lock(g_drawn_lock);
         g_pcs.want.clear();
@@ -1382,7 +1541,13 @@ void PcScreenPoll(X86Context& ctx, uint32_t manager, uint32_t menu) {
             std::string lt = pl ? pl->label : "";
             std::string v = pl ? pl->value : "";
             if (label) W32(label + 0x1C, g_pcs.want[label] = PcString(lt));
-            if (item) kernel::G<uint8_t>(item + 0x16) = pl && !pl->note ? g_pcs.own_disabled[i] : 1;
+            // (as the game's own setter 0x30F090 does: the flag, then the item gives its line the colour. The flag alone
+            // left a greyed line white until the game next coloured its lines, a moment after the page came up.)
+            uint8_t off = pl && !pl->note ? g_pcs.own_disabled[i] : 1;
+            if (item && R8(item + 0x16) != off) {
+                kernel::G<uint8_t>(item + 0x16) = off;
+                recolor.push_back(item);
+            }
             if (value) W32(value + 0x1C, g_pcs.want[value] = PcString(v));
             g_pcs.row_binding[i] = pl && pl->binding;
             g_pcs.row_link[i] = !pl || pl->link || pl->note;  // nor has a line past the page's last
@@ -1390,6 +1555,12 @@ void PcScreenPoll(X86Context& ctx, uint32_t manager, uint32_t menu) {
             g_pcs.row_slot[i] = pl && pl->binding ? pl->slot : -1;
             for (int k = 0; k < 2; k++) g_pcs.row_keys[i][k] = pl && pl->binding ? PcString(pl->keys[k]) : 0;
         }
+    }
+    for (uint32_t item : recolor) {
+        uint32_t ecx = ctx.ecx;
+        ctx.ecx = item;
+        kernel::CallGuest(ctx, R32(R32(item) + 0x94), {});
+        ctx.ecx = ecx;
     }
     // more pages before or after: marks under the list. The Gameplay screen's second page has the screen's own
     // lines before it (not on the page that asks, whose first line is words)
@@ -1848,6 +2019,13 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
     int32_t active = int32_t(R32(manager + 0xC));
     uint32_t menu = screens && active >= 0 ? R32(screens + uint32_t(active) * 4) : 0;
     uint32_t frame = Frame();
+    {
+        static uint32_t asked = ~0u;
+        if (asked != frame) {
+            asked = frame;
+            ExitAskPoll(ctx);
+        }
+    }
     if (manager == R32(kFrontEnd) && menu) g_front_end_ms.store(NowMs(), std::memory_order_relaxed);
     // one of a level's screens is up (a mission's map as it loads): the front end's fit goes at once, where it
     // stayed a quarter of a second into the map and the map then changed size
@@ -1861,7 +2039,7 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
     if (menu && manager == R32(kFrontEnd) && R32(menu) == kTitleVtable) TitleScreen();
     if (manager == R32(kFrontEnd) || manager == R32(kInGame)) Typewriter(ctx, menu);
     if (menu && manager == R32(kFrontEnd) && R32(menu) == kMainMenuVtable) {
-        HideItem(ctx, menu, "Multiplayer");
+        MainMenuLines(menu);
         AlignMainMenu(ctx, menu);
     }
     if (menu && manager == R32(kInGame)) PauseMenu(menu);
@@ -1879,6 +2057,17 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
             g_pc.select_last = false;
         }
         g_pc.sound = g_pc.select_first = false;
+    }
+    bool pause = menu && R32(menu) == kPauseVtable && manager == R32(kInGame);
+    if (pause) {
+        UpdatePcEntry(menu, g_exit);
+        if (g_exit.sound && menu == g_exit.screen) PlayMoveSound(ctx, menu);
+        if (g_exit.select_first && menu == g_exit.screen) Select(ctx, menu, 0);
+        g_exit.sound = g_exit.select_first = false;
+    }
+    if (menu && manager == R32(kFrontEnd) && R32(menu) == kMainMenuVtable && g_main_order_select >= 0) {
+        if (!R8(menu + 0x30)) Select(ctx, menu, g_main_order_select);
+        g_main_order_select = -1;
     }
     std::vector<ItemBox> items = menu ? ShownItems(ctx, menu) : std::vector<ItemBox>{};
     if (manager == R32(kDialogs)) {
@@ -1957,6 +2146,24 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
         }
         if (hit && pointer.moved) g_pc.selected = false;
     }
+    // Exit to Desktop under the pause menu's items, the same way
+    if (pause && menu == g_exit.screen && PcEntryUp(g_exit)) {
+        game::menu::Rect box, above;
+        bool on_exit = WidgetBox(ctx, g_exit.widget, box) && box.Contains(x, y);
+        if (!on_exit && WidgetBox(ctx, g_exit.widget, box) && WidgetBox(ctx, g_exit.anchor, above) && x >= box.left &&
+            x < box.right && y < box.top && y >= (above.top + above.bottom + box.top + box.bottom) / 4)
+            on_exit = true;
+        if (on_exit) {
+            if ((pointer.moved || pointer.left_clicks) && !g_exit.selected && !R8(menu + 0x30)) {
+                g_exit.selected = true;
+                PlayMoveSound(ctx, menu);
+            }
+            if (pointer.left_clicks && g_exit.selected) ExitToDesktop();
+            else if (pointer.right_clicks) TapB();
+            return;
+        }
+        if (hit && pointer.moved) g_exit.selected = false;
+    }
     bool on_item = hit != nullptr;
     if (pointer.left_clicks || pointer.right_clicks)
         LOGI("menu click at %.0f,%.0f: screen %08x, %d items, picker %d: item %d of %zu shown, value %.0f, selected %d, locked %d", x, y, menu ? R32(menu) : 0, menu ? R16s(menu + 0x26) : 0, menu ? int(Horizontal(menu)) : 0,
@@ -1981,8 +2188,10 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
         return false;
     };
     // a picker's choices never follow the pointer alone: a click picks
-    bool picker_hover = on_item && Horizontal(menu);
-    if (on_item && Horizontal(menu) && (stacked() || overlapped())) {
+    // (a box's Yes and No are side by side as a picker's choices are, but both shown: they are lines like any other)
+    bool dialog = manager == R32(kDialogs);
+    bool picker_hover = on_item && Horizontal(menu) && !dialog;
+    if (on_item && Horizontal(menu) && !dialog && (stacked() || overlapped())) {
         hit = nullptr;
         on_item = false;
         if (pointer.left_clicks) {
@@ -2041,7 +2250,7 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
         return;
     }
     bool no_items = !menu || R16s(menu + 0x26) <= 0;
-    bool picker = menu && Horizontal(menu);
+    bool picker = menu && Horizontal(menu) && !dialog;
     constexpr float kPickerMiddle = 64.0f;
     // a picker's arrows are pictures, beside its middle (difficulty, chapter select): left or right of it steps
     if (pointer.left_clicks && picker && !on_item && std::abs(x - 320.0f) > kPickerMiddle)
@@ -2166,9 +2375,57 @@ void OptionsPad(input::Pad& pad) {
     } else {
         g_pc.selected = false;
     }
+    // the pause menu's Exit to Desktop, under Quit as PC OPTIONS is under SOUND
+    bool asking = ExitAsking();  // the yes or no box has the pad
+    if (asking) {
+        if (b_edge && g_exit_ask == ExitAsk::kUp) g_exit_ask_back = true;
+        if (b) hidden |= 8;
+    } else if (PcEntryUp(g_exit)) {
+        uint32_t menu = g_exit.screen;
+        bool last = R16s(menu + 0x22) == R16s(menu + 0x26) - 1, locked = R8(menu + 0x30);
+        if (!g_exit.selected) {
+            if (down_edge && last && !locked) {
+                g_exit.selected = g_exit.sound = true;
+                hidden |= 2;
+            }
+        } else if (up_edge) {
+            g_exit.selected = false;
+            g_exit.sound = true;
+            hidden |= 1;
+        } else if (down_edge) {
+            g_exit.selected = false;
+            g_exit.select_first = true;
+            hidden |= 2;
+        } else if (a_edge) {
+            hidden |= 4;
+            ExitToDesktop();
+        } else if (b_edge) {
+            g_exit.selected = false;
+        }
+        if (g_exit.selected) hidden |= (up ? 1 : 0) | (down ? 2 : 0) | (a ? 4 : 0);
+    } else {
+        g_exit.selected = false;
+    }
+    // the main menu: up and down through its lines as they are drawn, and A on Exit to Desktop
+    if (!asking && MainMenuUp() && !R8(g_main_menu + 0x30)) {
+        int16_t selected = R16s(g_main_menu + 0x22);
+        auto at = std::find(g_main_order.begin(), g_main_order.end(), selected);
+        if (at != g_main_order.end() && (up_edge || down_edge)) {
+            size_t n = g_main_order.size(), k = size_t(at - g_main_order.begin());
+            g_main_order_select = g_main_order[(k + (down_edge ? 1 : n - 1)) % n];
+        }
+        if (up) hidden |= 1;
+        if (down) hidden |= 2;
+        if (selected == g_main_exit) {
+            if (a_edge) ExitToDesktop();
+            if (a) hidden |= 4;
+        }
+    }
     if (!up) hidden &= uint8_t(~1);
     if (!down) hidden &= uint8_t(~2);
     if (!a) hidden &= uint8_t(~4);
+    if (!b) hidden &= uint8_t(~8);
+    if (hidden & 8) pad.analog[1] = 0;
     if (hidden & 1) {
         pad.buttons &= uint16_t(~kUp);
         if (pad.ly > 0) pad.ly = 0;
@@ -2210,6 +2467,7 @@ bool HudHidden() {
 // a picture widget drawn (0x316DD0, vtable slot +0x44, ecx the widget): the sliders of the lines PC Options puts aside
 // are not
 X86_FUNC(sub_00316DD0) {
+    PcScreenTakeBeforeDraw(ctx);
     PcScreenDrawMarks(ctx, ctx.ecx);
     if (PcScreenHidesPicture(ctx.ecx) || HudHidden() || TitleHidden()) {
         ctx.esp += 4;  // its ret, skipped with it
@@ -2233,10 +2491,13 @@ X86_EXTERN_FUNC(__imp__sub_003145C0);
 X86_EXTERN_FUNC(__imp__sub_00328E90);
 
 // the main menu's tick (edi screen, the selected line on the stack): shows "check0<n+1>", the box printed beside line
-// n. The lines below the hidden Multiplayer moved up one, so their tick goes one box up with them
+// n. The lines are not drawn in the items' order (MainMenuLines), so a line's tick is its place's
 X86_FUNC(sub_00328E90) {
     int32_t line = int32_t(R32(ctx.esp + 4));
-    if (R32(ctx.edi) == kMainMenuVtable && g_main_gone >= 0 && line > g_main_gone) W32(ctx.esp + 4, uint32_t(line - 1));
+    if (R32(ctx.edi) == kMainMenuVtable) {
+        auto at = std::find(g_main_order.begin(), g_main_order.end(), int16_t(line));
+        if (at != g_main_order.end()) W32(ctx.esp + 4, uint32_t(at - g_main_order.begin()));
+    }
     __imp__sub_00328E90(ctx, base);
 }
 
@@ -2270,6 +2531,19 @@ X86_FUNC(sub_0030F900) {
         g_prompts[prompt] = Frame();
     }
     // (a mission's "Press A to start the game" is put in the string table: src/game/pc_texts.cpp)
+    // the pause menu's "Start or B Continue": on the keys both are Escape, so the first of them and its "or" are
+    // blanked in the piece's own copy of the line while the keyboard is in use, and put back for a controller
+    if (R32(prompt) == 0x82A450 && R32(prompt + 0x78) == 1) {
+        uint32_t line = R32(R32(prompt + 0x80) + 0x14);
+        static constexpr char kBoth[] = "- or % Continue", kOne[] = "     % Continue";
+        if (line && kernel::G<uint16_t>(line + 2) == 15) {
+            char* text = static_cast<char*>(kernel::HostPtr(line + 6));
+            uint32_t mode = game::Opt().button_prompts;
+            bool keyboard = mode == 1 || (mode != 2 && input::KeyboardActive());
+            if (keyboard && !std::memcmp(text, kBoth, 15)) std::memcpy(text, kOne, 15);
+            else if (!keyboard && !std::memcmp(text, kOne, 15)) std::memcpy(text, kBoth, 15);
+        }
+    }
     Foot foot = R32(prompt) == 0x82A450 ? FootBegin(ctx, prompt, 0x30F900) : Foot{};
     __imp__sub_0030F900(ctx, base);
     FootEnd(prompt, foot);
@@ -2278,6 +2552,7 @@ X86_FUNC(sub_0030F900) {
 // a text widget's draw (ecx widget)
 X86_FUNC(sub_00321160) {
     uint32_t widget = ctx.ecx;
+    if (!g_foot_draw) PcScreenTakeBeforeDraw(ctx);
     game::ModernPadLabel modern_place(widget);  // the Controller screen's labels follow the Modern picture
     if (g_foot_draw) {  // (a copy for the black edge, or part of a moved one)
         __imp__sub_00321160(ctx, base);
@@ -2295,7 +2570,7 @@ X86_FUNC(sub_00321160) {
     bool live_corner = button && SameText(button, "ybutton") && RF(widget + 0x30) < 80;
     // (nor "Press START" on the title screen's picture)
     bool press_start = drawn_text && R32(kFrontEnd) && SameText(drawn_text, "Press START");
-    if (live_corner || press_start || TitleHidden() || Hidden(widget) || (drawn_text && XboxLiveText(drawn_text)) || HudHidden()) {
+    if (live_corner || press_start || TitleHidden() || (drawn_text && XboxLiveText(drawn_text)) || HudHidden()) {
         ctx.esp += 4;  // the draw's own ret, skipped with it
         return;
     }
@@ -2310,17 +2585,20 @@ X86_FUNC(sub_00321160) {
     uint32_t shown = text && StartPrompt() && SameText(text, "Press START") ? ClickToStart() : 0;
     if (shown) W32(widget + 0x1C, shown);
     // the Options menu's lines look unselected while PC OPTIONS is, and PC OPTIONS is drawn right after SOUND
-    bool anchor = widget == g_pc.anchor && PcEntryUp();
-    bool dimmed = PcEntryUp() && g_pc.selected && (anchor || PcEntryLine(widget));
+    const PcEntry& extra = PcEntryUp(g_exit) && (widget == g_exit.anchor || PcEntryLine(widget, g_exit)) ? g_exit : g_pc;
+    bool anchor = widget == extra.anchor && PcEntryUp(extra);
+    bool dimmed = PcEntryUp(extra) && extra.selected && (anchor || PcEntryLine(widget, extra));
     uint32_t color = R32(widget + 0x50);
-    if (dimmed) W32(widget + 0x50, (color & 0xFFFFFF) | kIdleAlpha);
+    uint32_t swap = PausePendingSwap(widget);
+    if (swap) W32(widget + 0x50, R32(swap + 0x50));
+    if (dimmed) W32(widget + 0x50, extra.own_colors ? extra.idle_color : (color & 0xFFFFFF) | kIdleAlpha);
     Foot foot = FootBegin(ctx, widget, 0x321160);
     __imp__sub_00321160(ctx, base);
     FootEnd(widget, foot);
-    if (dimmed) W32(widget + 0x50, color);
+    if (dimmed || swap) W32(widget + 0x50, color);
     if (shown) W32(widget + 0x1C, text);
     if (anchor) {
-        ctx.ecx = g_pc.widget;
+        ctx.ecx = extra.widget;
         kernel::CallGuest(ctx, 0x321160, {});
         ctx.ecx = widget;
     }

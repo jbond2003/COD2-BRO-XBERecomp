@@ -16,6 +16,7 @@
 
 #include "app/app.h"
 #include "common/cheats.h"
+#include "common/console.h"
 #include "common/menu.h"
 #include "common/menu_state.h"
 #include "common/mouse_keyboard.h"
@@ -33,14 +34,42 @@ void ModernPad(input::Pad& pad);  // src/game/pad_layout.cpp: B to crouch, held 
 
 namespace {
 
+#ifdef _WIN32
+bool BacktickBound() {
+    size_t count;
+    input::Actions(&count);
+    for (size_t i = 0; i < count; i++)
+        for (int slot = 0; slot < 2; slot++)
+            if (input::Binding(i, slot) == "Backtick") return true;
+    return false;
+}
+#endif
+
 // window thread, each message after ImGui's
 bool Message(void*, uint32_t msg, uintptr_t wp, intptr_t lp, intptr_t* result) {
 #ifdef _WIN32
     constexpr intptr_t kKeyWasDown = 1 << 30;
     // F10 arrives as a system key: it would open the window menu
     if ((msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && !(lp & kKeyWasDown)) {
+        // the console (console.h) on the key under Escape, by its place on the keyboard whatever it types there;
+        // not when the player has bound that key to something, nor while a key box waits or a name is typed, nor before
+        // a profile is signed in
+        constexpr intptr_t kUnderEscape = 0x29;
+        if (((lp >> 16) & 0x1FF) == kUnderEscape && !app::Capturing() && !input::TextEntry() &&
+            (app::console::Open() || (app::console::Allowed() && !BacktickBound()))) {
+            app::console::Toggle();
+            if (app::console::Open()) input::ReleaseCursor();
+            *result = 0;
+            return true;
+        }
+        if (wp == VK_ESCAPE && app::console::Open()) {
+            app::console::Toggle();
+            *result = 0;
+            return true;
+        }
         if (wp == VK_F10 || (wp == VK_ESCAPE && app::MenuOpen() && !app::Capturing())) {
-            app::ToggleMenu();
+            if (app::PanelOpen()) app::CloseSettings();
+            else app::ToggleMenu();
             *result = 0;
             return true;
         }
@@ -143,7 +172,7 @@ void Ui(double fps) {
     game::UpdateFrameBand();
 #ifdef _WIN32
     app::DrawUi(fps);
-    if (!app::MenuOpen() || app::PcOptionsOpen()) cursor::Draw();
+    if (!app::MenuOpen() || app::PanelOpen()) cursor::Draw();
 #else
     (void)fps;
 #endif
@@ -162,6 +191,7 @@ void Load(const void* table) {
     o.mouse_vertical_sensitivity = ReadFloat(t, "mouse_vertical_sensitivity", o.mouse_vertical_sensitivity);
     o.look_sensitivity_x = int32_t(t["look_sensitivity_x"].value_or(int64_t(-1)));
     o.look_sensitivity_y = int32_t(t["look_sensitivity_y"].value_or(int64_t(-1)));
+    o.settings_profile = t["profile"].value_or(std::string());
     o.keys.clear();
     if (const toml::table* keys = t["keys"].as_table())
         for (auto&& [id, value] : *keys)
@@ -176,6 +206,7 @@ void Save(void* table) {
     t.insert_or_assign("mouse_vertical_sensitivity", double(o.mouse_vertical_sensitivity));
     if (o.look_sensitivity_x >= 0) t.insert_or_assign("look_sensitivity_x", int64_t(o.look_sensitivity_x));
     if (o.look_sensitivity_y >= 0) t.insert_or_assign("look_sensitivity_y", int64_t(o.look_sensitivity_y));
+    t.insert_or_assign("profile", o.settings_profile);
     size_t count;
     const input::Action* actions = input::Actions(&count);
     toml::table keys;
@@ -190,12 +221,11 @@ void Save(void* table) {
 void Init() {
     input::LoadBindings();
     InitPrompts();
-    // the frame rate is one of the menu's (30, 60, 120, 144, 240 or 0 for no limit), whatever an older settings file
-    // says. (The game takes each frame's time from the clock, Com_Frame 0x2A70C0, as the engine it comes from does:
-    // nothing of it counts frames. Movies keep their own 30: src/game/movies.cpp.)
+    // the frame rate is one of the menu's (30, 60, 120, 144, 240 or 0 for no limit) or any other the console's
+    // com_maxfps set, 5 to 999. (The game takes each frame's time from the clock, Com_Frame 0x2A70C0, as the engine
+    // it comes from does: nothing of it counts frames. Movies keep their own 30: src/game/movies.cpp.)
     app::Settings& s = app::Get();
-    constexpr uint32_t kCaps[] = {0, 30, 60, 120, 144, 240};
-    if (std::find(std::begin(kCaps), std::end(kCaps), s.fps_cap) == std::end(kCaps)) s.fps_cap = 60;
+    if ((s.fps_cap && s.fps_cap < 5) || s.fps_cap > 999) s.fps_cap = 60;
 }
 
 }  // namespace
@@ -226,9 +256,16 @@ const app::GameInfo app::kGame = {
                 {"modern_layout", &game::Opt().modern_layout, nullptr},
                 {"brightness", nullptr, &game::Opt().brightness},
                 {"view_distance", nullptr, &game::Opt().view_distance},
+                {"keep_bodies", &game::Opt().keep_bodies, nullptr},
+                {"cutscene_bars", &game::Opt().cutscene_bars, nullptr},
                 {"aim_assist", &game::Opt().aim_assist, nullptr},
                 {"hints", &game::Opt().hints, nullptr},
                 {"hide_hud", &game::Opt().hide_hud, nullptr},
+                {"lean_toggle", &game::Opt().lean_toggle, nullptr},
+                {"music_volume", nullptr, &game::Opt().music_volume},
+                {"menu_music_volume", nullptr, &game::Opt().menu_music_volume},
+                {"effects_volume", nullptr, &game::Opt().effects_volume},
+                {"voice_volume", nullptr, &game::Opt().voice_volume},
                 {"walk_speed", nullptr, &game::Opt().walk_speed}},  // game settings kept in the settings file
     .load = game::Load,  // reads more from the settings file's toml::table: mouse sensitivities, [keys]
     .save = game::Save,  // writes more into it

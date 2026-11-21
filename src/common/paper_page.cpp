@@ -7,9 +7,11 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -146,6 +148,26 @@ void LoadFonts() {
         if (g_serif) return;
     }
 #endif
+#ifdef PAPER_PREVIEW
+    if (const char* raw = std::getenv("PAPER_RGBA")) {
+        std::ifstream f(raw, std::ios::binary);
+        g_paper_pixels.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+        if (g_paper_pixels.size() == 512 * 512 * 4) {
+            g_paper_w = g_paper_h = 512;
+            g_paper_rect = io.Fonts->AddCustomRectRegular(512, 512);
+        }
+    }
+    if (const char* face = std::getenv("PAPER_FACE")) {
+        ImFontConfig cfg;
+        cfg.OversampleH = 2;
+        cfg.OversampleV = 2;
+        g_serif = io.Fonts->AddFontFromFileTTF(face, 72.0f, &cfg);
+        if (g_serif) {
+            g_bold = true;
+            return;
+        }
+    }
+#endif
     std::vector<std::string> candidates;
 #ifdef _WIN32
     std::string fonts = std::string(windir ? windir : "C:\\Windows") + "\\Fonts\\";
@@ -183,6 +205,16 @@ void Upload() {
 }
 
 int VisibleRows() { return g_rows; }
+
+ImFont* Face() { return Serif(); }
+bool FaceBold() { return g_bold; }
+bool Sheet(ImTextureID& texture, ImVec2& uv0, ImVec2& uv1) {
+    if (g_paper_rect < 0) return false;
+    ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+    atlas->CalcCustomRectUV(atlas->GetCustomRectByIndex(g_paper_rect), &uv0, &uv1);
+    texture = atlas->TexID;
+    return true;
+}
 
 void Draw(const char* title, const std::vector<Line>& lines, int selected, float& scroll, bool follow,
           const char* note, std::vector<Hit>& hits) {
