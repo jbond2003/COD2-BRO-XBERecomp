@@ -1169,6 +1169,9 @@ void DrawModern() {
     if (pressed) p.controller = true;
 
     ImGuiIO& io = ImGui::GetIO();
+    // the console over the menu has the keys, the mouse and the controller until it is put away
+    bool console_up = console::Open();
+    if (console_up) pressed = 0;
     // leaving: at once with nothing waiting, else the slip asks (Apply, Discard, Stay)
     bool close = g_close_request.exchange(false, std::memory_order_relaxed);
     auto leave = [&] {
@@ -1183,7 +1186,9 @@ void DrawModern() {
         return true;
     };
     constexpr const char* kConfirmChoices[] = {"Apply", "Discard", "Stay"};
-    if (p.confirm) {
+    if (p.confirm && console_up) {
+        if (close) p.confirm = false;
+    } else if (p.confirm) {
         auto once = [](ImGuiKey k) { return ImGui::IsKeyPressed(k, false); };
         int n = int(std::size(kConfirmChoices));
         if (once(ImGuiKey_LeftArrow) || once(ImGuiKey_UpArrow) || (pressed & (kPadLeft | kPadUp)))
@@ -1222,7 +1227,7 @@ void DrawModern() {
         build();
     };
     // capture takes every key until it ends; a key that ended it does nothing else this frame
-    if (!capturing && !was_capturing && !p.confirm) {
+    if (!capturing && !was_capturing && !p.confirm && !console_up) {
         auto key = [](ImGuiKey k) { return ImGui::IsKeyPressed(k, true); };
         auto once = [](ImGuiKey k) { return ImGui::IsKeyPressed(k, false); };
         int move = 0, step = 0, turn = 0;
