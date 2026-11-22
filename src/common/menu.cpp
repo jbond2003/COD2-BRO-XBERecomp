@@ -113,7 +113,7 @@ const std::vector<Mode>& Modes() {
 enum RowId { kSection, kDisplayMode, kResolution, kRenderResolution, kFov, kMaxFps, kVsync, kFpsCounter, kAniso,
              kTextureReplacement, kTextureDumping, kDumpFormat, kMouseX, kMouseY, kInvertY, kInvertX, kQwerty, kPrompts,
              kBrightness, kAimAssist, kHints, kHideHud, kViewDistance, kKeepBodies, kCutsceneBars, kLeanToggle,
-             kMusicVolume, kMenuMusicVolume, kEffectsVolume, kVoiceVolume, kMsaa, kSmaa, kAmbientOcclusion, kAdsDof, kGunBlur, kAimToggle,
+             kMusicVolume, kMenuMusicVolume, kEffectsVolume, kVoiceVolume, kMsaa, kSmaa, kAmbientOcclusion, kAdsDof, kGunBlur, kAimToggle, kPreset,
              // the game's own options (options.h's GameOption, src/game/game_options.cpp)
              kGSubtitles, kGCrosshair, kGTags, kGTank, kGAdsToggle, kGInvert, kGVibration, kGVolume, kGLayout,
              kGSensX, kGSensY };
@@ -300,6 +300,24 @@ std::string RowText(RowId id, int step, Settings& s) {
         case kLeanToggle:
             if (step) O().lean_toggle = !O().lean_toggle;
             return O().lean_toggle ? "TOGGLE" : "HOLD (ORIGINAL)";
+        case kPreset: {
+            // Original: the game as it shipped. Remastered: the port's own additions on. A step goes to the other
+            // one; the settings themselves say which it is, so changing any of them by hand shows Custom.
+            game::Options& o = O();
+            bool original = !o.ads_dof && !o.gun_blur && !o.ambient_occlusion && !o.keep_bodies &&
+                            DetailLevel(o.view_distance) == 0 && s.aniso == 0;
+            bool remastered = o.ads_dof && o.gun_blur && o.ambient_occlusion && o.keep_bodies &&
+                              DetailLevel(o.view_distance) == 2 && s.aniso == 16;
+            if (step) {
+                bool to = original ? true : remastered ? false : step > 0;  // to Remastered
+                o.ads_dof = o.gun_blur = o.keep_bodies = to;
+                if (!to || !o.ambient_occlusion) o.ambient_occlusion = to ? 1 : 0;  // (GTAO, if chosen, is kept)
+                o.view_distance = to ? 8 : 1;
+                s.aniso = to ? 16 : 0;
+                return to ? "REMASTERED" : "ORIGINAL";
+            }
+            return original ? "ORIGINAL" : remastered ? "REMASTERED" : "CUSTOM";
+        }
         case kAmbientOcclusion: {
             static const char* const kNames[] = {"OFF", "SSAO", "GTAO"};
             uint32_t& v = O().ambient_occlusion;
@@ -900,6 +918,8 @@ constexpr TabRow kTabRows[] = {
     {kDisplayTab, kBrightness, "Brightness", "Lightens or darkens the whole picture.", "r_gamma"},
     {kDisplayTab, kCutsceneBars, "Cutscene Black Bars", "The black bars the game puts over its cutscenes.", "cg_cutsceneBars"},
     {kDisplayTab, kFpsCounter, "FPS Counter", "The frame rate, at the top right of the screen.", "cg_drawFPS"},
+    {kGraphicsTab, kSection, "Preset", "", ""},
+    {kGraphicsTab, kPreset, "Graphics Preset", "Original is the game as it shipped. Remastered turns on Depth of Field When Aiming, Blur Gun Sight, Ambient Occlusion and Bodies Stay, with Level of Detail at High and Anisotropic Filtering at 16x.", ""},
     {kGraphicsTab, kSection, "Quality", "", ""},
     {kGraphicsTab, kRenderResolution, "Render Resolution", "The size the game is drawn at, as a share of the window. Over 100 is sharper and costs frame rate, under it is the other way.", "r_renderScale"},
     {kGraphicsTab, kAniso, "Anisotropic Filtering", "Keeps the ground and walls sharp at a shallow angle.", "r_anisotropy"},
@@ -1109,7 +1129,7 @@ int ModernChanges() {
     int n = 0;
     if (g_panel_pending)
         for (const TabRow& r : kTabRows)
-            if (r.id != kSection && PanelText(r.id, 0) != LiveText(r.id)) n++;
+            if (r.id != kSection && r.id != kPreset && PanelText(r.id, 0) != LiveText(r.id)) n++;  // (the preset is the settings it stands for)
     const HeldCheats& h = g_held_cheats;
     if (h.pending) {
         for (int t = 0; t < game::cheats::kToggles; t++)
@@ -1439,12 +1459,12 @@ void DrawModern() {
                 build();
             }
         }
-        // a setting is picked with A or Enter before left and right change it, and let go with A, Enter or back
+        // a slider or a switch is picked with A or Enter before left and right change it, and let go with A, Enter
+        // or back. An arrow choice needs no pick: its arrows say what left and right do (his ask, 2026-11-22)
         {
             ui::modern::Row::Kind shown = page.rows[size_t(p.selected)].kind;
             bool editable = rows[size_t(p.selected)].kind != ModernRow::kBind &&
-                            (shown == ui::modern::Row::kChoice || shown == ui::modern::Row::kSlider ||
-                             shown == ui::modern::Row::kToggle);
+                            (shown == ui::modern::Row::kSlider || shown == ui::modern::Row::kToggle);
             if (p.editing >= 0) {
                 if (enter || back) p.editing = -1;
                 enter = back = clear = defaults = false;
@@ -1558,7 +1578,7 @@ void DrawModern() {
     sel.slot = g_slot;
     sel.waiting = capturing;
     sel.editing = p.editing == p.selected;
-    sel.locked = !sel.editing && !p.pointer;
+    sel.locked = !sel.editing && !p.pointer && (sel.kind == ui::modern::Row::kSlider || sel.kind == ui::modern::Row::kToggle);
     page.title = "Options";
     const std::string& profile = game::Opt().settings_profile;
     if (!profile.empty() && profile != "*") page.profile = profile;
