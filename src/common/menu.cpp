@@ -307,12 +307,12 @@ std::string RowText(RowId id, int step, Settings& s) {
             game::Options& o = O();
             bool original = !o.ads_dof && !o.gun_blur && !o.ambient_occlusion && !o.keep_bodies &&
                             DetailLevel(o.view_distance) == 0 && s.aniso == 0 && s.msaa == 0 && !s.smaa;
-            bool remastered = o.ads_dof && o.gun_blur && o.ambient_occlusion == 1 && o.keep_bodies &&
+            bool remastered = o.ads_dof && o.gun_blur && o.ambient_occlusion == 2 && o.keep_bodies &&
                               DetailLevel(o.view_distance) == 2 && s.aniso == 16 && s.msaa == 0 && s.smaa;
             if (step) {
                 bool to = original ? true : remastered ? false : step > 0;  // to Remastered
                 o.ads_dof = o.gun_blur = o.keep_bodies = s.smaa = to;
-                o.ambient_occlusion = to ? 1 : 0;
+                o.ambient_occlusion = to ? 2 : 0;
                 o.view_distance = to ? 8 : 1;
                 s.aniso = to ? 16 : 0;
                 s.msaa = 0;
@@ -921,7 +921,7 @@ constexpr TabRow kTabRows[] = {
     {kDisplayTab, kCutsceneBars, "Cutscene Black Bars", "The black bars the game puts over its cutscenes.", "cg_cutsceneBars"},
     {kDisplayTab, kFpsCounter, "FPS Counter", "The frame rate, at the top right of the screen.", "cg_drawFPS"},
     {kGraphicsTab, kSection, "Preset", "", ""},
-    {kGraphicsTab, kPreset, "Graphics Preset", "Original is the game as it shipped. Remastered turns on SMAA, Ambient Occlusion, Depth of Field When Aiming, Blur Gun Sight and Bodies Stay, with Level of Detail at High and Anisotropic Filtering at 16x. Change any of these yourself and it reads Custom.", ""},
+    {kGraphicsTab, kPreset, "Graphics Preset", "Original is the game as it shipped. Remastered turns on SMAA, Ambient Occlusion (GTAO), Depth of Field When Aiming, Blur Gun Sight and Bodies Stay, with Level of Detail at High and Anisotropic Filtering at 16x. Change any of these yourself and it reads Custom.", ""},
     {kGraphicsTab, kSection, "Quality", "", ""},
     {kGraphicsTab, kRenderResolution, "Render Resolution", "The size the game is drawn at, as a share of the window. Over 100 is sharper and costs frame rate, under it is the other way.", "r_renderScale"},
     {kGraphicsTab, kAniso, "Anisotropic Filtering", "Keeps the ground and walls sharp at a shallow angle.", "r_anisotropy"},
