@@ -178,6 +178,12 @@ void Ui(double fps) {
 #endif
 }
 
+// the game's own options (options.h's GameOption), as the settings file names them
+constexpr const char* kGameOptionKeys[kGameOptions] = {
+    "game_subtitles", "game_crosshair", "game_friendly_tags", "game_alternate_tank_control", "game_ads_toggle",
+    "game_invert_aim", "game_vibration", "game_volume", "game_controller_configuration",
+};
+
 float ReadFloat(const toml::table& t, const char* key, float fallback) {
     return float(t[key].value_or(double(fallback)));
 }
@@ -191,6 +197,7 @@ void Load(const void* table) {
     o.mouse_vertical_sensitivity = ReadFloat(t, "mouse_vertical_sensitivity", o.mouse_vertical_sensitivity);
     o.look_sensitivity_x = int32_t(t["look_sensitivity_x"].value_or(int64_t(-1)));
     o.look_sensitivity_y = int32_t(t["look_sensitivity_y"].value_or(int64_t(-1)));
+    for (int i = 0; i < kGameOptions; i++) o.game_options[size_t(i)] = int32_t(t[kGameOptionKeys[i]].value_or(int64_t(-1)));
     o.settings_profile = t["profile"].value_or(std::string());
     o.keys.clear();
     if (const toml::table* keys = t["keys"].as_table())
@@ -206,6 +213,8 @@ void Save(void* table) {
     t.insert_or_assign("mouse_vertical_sensitivity", double(o.mouse_vertical_sensitivity));
     if (o.look_sensitivity_x >= 0) t.insert_or_assign("look_sensitivity_x", int64_t(o.look_sensitivity_x));
     if (o.look_sensitivity_y >= 0) t.insert_or_assign("look_sensitivity_y", int64_t(o.look_sensitivity_y));
+    for (int i = 0; i < kGameOptions; i++)
+        if (o.game_options[size_t(i)] >= 0) t.insert_or_assign(kGameOptionKeys[i], int64_t(o.game_options[size_t(i)]));
     t.insert_or_assign("profile", o.settings_profile);
     size_t count;
     const input::Action* actions = input::Actions(&count);

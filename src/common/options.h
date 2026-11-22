@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -8,7 +9,20 @@
 // settings kept in the settings file beside the exe, beyond the SDK's own (after MOHRS-XBERecomp's)
 namespace game {
 
+// The game's own options (its pause menu's Options and its Controller screen), which live in its profile: kept here
+// too, as the game saves its profile only now and then, and set from the settings menu (src/game/game_options.cpp).
+// -1: none kept yet, the profile's own.
+enum GameOption {
+    kGoSubtitles, kGoCrosshair, kGoTags, kGoTank, kGoAdsToggle, kGoInvert, kGoVibration, kGoVolume, kGoLayout,
+    kGameOptions
+};
+// what a line shows before a profile has given its value
+constexpr int32_t kGameOptionDefaults[kGameOptions] = {0, 1, 1, 0, 0, 0, 1, 50, 0};
+constexpr int32_t kGameVolumeMax = 50, kLookSensitivityMax = 50, kLookSensitivityDefault = 25;
+
 struct Options {
+    std::array<int32_t, kGameOptions> game_options = {-1, -1, -1, -1, -1, -1, -1, -1, -1};
+    int32_t GameOption(int i) const { return game_options[size_t(i)] < 0 ? kGameOptionDefaults[i] : game_options[size_t(i)]; }
     bool fps_counter = false;     // frames a second in the picture's top right corner
     uint32_t fov = kDefaultFov;   // cg_fov, horizontal degrees on a 4:3 picture
     // keyboard and mouse (src/common/mouse_keyboard.cpp)
@@ -46,5 +60,7 @@ struct Options {
 };
 
 Options& Opt();
+// any thread: the game's own options, as Opt() has them now, go into the profile and are applied at the next frame
+void ApplyGameOptions();
 
 }  // namespace game

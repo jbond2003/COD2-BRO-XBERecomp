@@ -51,6 +51,7 @@ void UpdatePrompts();  // src/game/prompts.cpp
 void UpdateHints(X86Context& ctx);  // src/game/hints.cpp
 void RunCommands(X86Context& ctx);  // src/game/pad_layout.cpp
 void UpdatePcSettings(X86Context& ctx);  // src/game/pc_settings.cpp
+void UpdateGameOptions(X86Context& ctx);  // src/game/game_options.cpp
 }
 
 // the client frame, once a frame from the main loop, in menus and in play
@@ -67,6 +68,7 @@ X86_FUNC(sub_002F1E60) {
     game::UpdatePrompts();
     game::UpdateHints(ctx);
     game::UpdatePcSettings(ctx);
+    game::UpdateGameOptions(ctx);
     game::RunCommands(ctx);
 }
 

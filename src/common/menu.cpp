@@ -113,7 +113,15 @@ const std::vector<Mode>& Modes() {
 enum RowId { kSection, kDisplayMode, kResolution, kRenderResolution, kFov, kMaxFps, kVsync, kFpsCounter, kAniso,
              kTextureReplacement, kTextureDumping, kDumpFormat, kMouseX, kMouseY, kInvertY, kInvertX, kQwerty, kPrompts,
              kBrightness, kAimAssist, kHints, kHideHud, kViewDistance, kKeepBodies, kCutsceneBars, kLeanToggle,
-             kMusicVolume, kMenuMusicVolume, kEffectsVolume, kVoiceVolume, kMsaa, kSmaa, kAdsDof, kGunBlur, kAimToggle };
+             kMusicVolume, kMenuMusicVolume, kEffectsVolume, kVoiceVolume, kMsaa, kSmaa, kAdsDof, kGunBlur, kAimToggle,
+             // the game's own options (options.h's GameOption, src/game/game_options.cpp)
+             kGSubtitles, kGCrosshair, kGTags, kGTank, kGAdsToggle, kGInvert, kGVibration, kGVolume, kGLayout,
+             kGSensX, kGSensY };
+// a row of the game's own options: its place in Options::game_options, or -1
+int GameOptionOf(RowId id) {
+    return id >= kGSubtitles && id <= kGLayout ? int(id) - int(kGSubtitles) : -1;
+}
+const char* const kLayoutNames[] = {"A", "B", "C", "D", "MODERN"};
 
 struct Row {
     RowId id;
@@ -240,6 +248,42 @@ std::string RowText(RowId id, int step, Settings& s) {
         case kHideHud:
             if (step) O().hide_hud = !O().hide_hud;
             return OnOff(O().hide_hud);
+        case kGSubtitles:
+        case kGCrosshair:
+        case kGTags:
+        case kGTank:
+        case kGInvert:
+        case kGVibration:
+        case kGAdsToggle: {
+            int i = GameOptionOf(id);
+            bool on = O().GameOption(i) != 0;
+            if (step) on = !on, O().game_options[size_t(i)] = on;
+            if (id == kGAdsToggle) return on ? "TOGGLE" : "HOLD";
+            return OnOff(on);
+        }
+        case kGVolume: {
+            int v = O().GameOption(game::kGoVolume);
+            if (step) v = StepRange(v, 0, game::kGameVolumeMax, 1, step), O().game_options[game::kGoVolume] = v;
+            std::snprintf(text, sizeof(text), "%d", v * 100 / game::kGameVolumeMax);
+            break;
+        }
+        case kGSensX:
+        case kGSensY: {
+            int32_t& kept = id == kGSensX ? O().look_sensitivity_x : O().look_sensitivity_y;
+            int v = kept < 0 ? game::kLookSensitivityDefault : kept;
+            if (step) v = StepRange(v, 0, game::kLookSensitivityMax, 1, step), kept = v;
+            std::snprintf(text, sizeof(text), "%d", v);
+            break;
+        }
+        case kGLayout: {
+            int at = O().modern_layout ? 4 : std::clamp(O().GameOption(game::kGoLayout), 0, 3);
+            if (step) {
+                at = (at + (step > 0 ? 1 : 4)) % 5;
+                O().modern_layout = at == 4;
+                if (at < 4) O().game_options[game::kGoLayout] = at;
+            }
+            return kLayoutNames[at];
+        }
         case kAimToggle:
             if (step) O().aim_toggle = !O().aim_toggle;
             return O().aim_toggle ? "TOGGLE" : "HOLD";
@@ -359,6 +403,7 @@ void SetDefaults(Settings& s, game::Options& o, int parts) {
         o.hints = true;
         o.hide_hud = false;
         o.lean_toggle = false;
+        for (int i : {game::kGoSubtitles, game::kGoCrosshair, game::kGoTags, game::kGoTank}) o.game_options[size_t(i)] = game::kGameOptionDefaults[i];
         o.aim_toggle = false;
     }
     if (parts & kAudioPart) {
@@ -380,6 +425,10 @@ void SetDefaults(Settings& s, game::Options& o, int parts) {
         s.texture_dump_format = d.texture_dump_format;
     }
     if (parts & kMousePart) {
+        // the controller's lines are on the same tab
+        for (int i : {game::kGoInvert, game::kGoVibration, game::kGoAdsToggle}) o.game_options[size_t(i)] = game::kGameOptionDefaults[i];
+        o.look_sensitivity_x = o.look_sensitivity_y = game::kLookSensitivityDefault;
+        o.modern_layout = true;
         o.mouse_sensitivity = 1.0f;
         o.mouse_vertical_sensitivity = 1.0f;
         o.invert_mouse = false;
@@ -418,6 +467,10 @@ void CopyRows(Settings& s, game::Options& o, const Settings& from, const game::O
     o.hints = from_o.hints;
     o.hide_hud = from_o.hide_hud;
     o.lean_toggle = from_o.lean_toggle;
+    o.game_options = from_o.game_options;
+    o.look_sensitivity_x = from_o.look_sensitivity_x;
+    o.look_sensitivity_y = from_o.look_sensitivity_y;
+    o.modern_layout = from_o.modern_layout;
     o.aim_toggle = from_o.aim_toggle;
     o.view_distance = from_o.view_distance;
     o.keep_bodies = from_o.keep_bodies;
@@ -441,7 +494,8 @@ bool RowsDiffer(const Settings& a, const game::Options& c, const Settings& b, co
            c.invert_mouse != d.invert_mouse || c.invert_mouse_x != d.invert_mouse_x ||
            c.qwerty_typewriter != d.qwerty_typewriter || c.button_prompts != d.button_prompts ||
            c.brightness != d.brightness || c.aim_assist != d.aim_assist || c.hints != d.hints ||
-           c.hide_hud != d.hide_hud || c.lean_toggle != d.lean_toggle || c.aim_toggle != d.aim_toggle || c.view_distance != d.view_distance || c.keep_bodies != d.keep_bodies || c.ads_dof != d.ads_dof || c.gun_blur != d.gun_blur ||
+           c.hide_hud != d.hide_hud || c.lean_toggle != d.lean_toggle || c.game_options != d.game_options || c.look_sensitivity_x != d.look_sensitivity_x ||
+           c.look_sensitivity_y != d.look_sensitivity_y || c.modern_layout != d.modern_layout || c.aim_toggle != d.aim_toggle || c.view_distance != d.view_distance || c.keep_bodies != d.keep_bodies || c.ads_dof != d.ads_dof || c.gun_blur != d.gun_blur ||
            c.cutscene_bars != d.cutscene_bars || c.music_volume != d.music_volume ||
            c.menu_music_volume != d.menu_music_volume || c.effects_volume != d.effects_volume ||
            c.voice_volume != d.voice_volume;
@@ -512,6 +566,7 @@ void ApplyPanel() {
     CopyRows(s, game::Opt(), g_panel_settings, g_panel_options);
     if (display) ApplyDisplay();
     Save();
+    game::ApplyGameOptions();  // the game's own, into its profile at the next frame
 }
 
 // the F10 panel's Defaults: held like any other change, until Apply
@@ -838,12 +893,17 @@ constexpr TabRow kTabRows[] = {
     {kGameplayTab, kAimAssist, "Controller Aim Assist", "The game's pull towards an enemy under the sight, on a controller.", "cg_aimAssist"},
     {kGameplayTab, kHints, "Tutorial Hints", "The lines that tell you how to crouch, lean, throw and the like.", "cg_hints"},
     {kGameplayTab, kHideHud, "Hide the HUD", "Takes the compass, the health and the ammunition off the screen.", "cg_drawHud"},
+    {kGameplayTab, kGCrosshair, "Crosshair", "The crosshair in the middle of the screen when you fire from the hip.", ""},
+    {kGameplayTab, kGTags, "Friendly Tags", "The names over the men of your own side.", ""},
+    {kGameplayTab, kGSubtitles, "Subtitles", "What is said, written at the foot of the screen.", ""},
+    {kGameplayTab, kGTank, "Alternate Tank Control", "The tank's other way of steering, with the turret on the right stick alone.", ""},
     {kGameplayTab, kAimToggle, "Aim Down Sights", "Hold: you aim while the key is down. Toggle: a press brings the gun up and the next one lowers it. For the keyboard and mouse.", "cg_aimToggle"},
     {kGameplayTab, kLeanToggle, "Leaning", "Hold: you lean while the key is down. Toggle: a press leans and the next one straightens you.", "cg_leanToggle"},
     {kGameplayTab, kSection, "Menus", "", ""},
     {kGameplayTab, kQwerty, "Profile Name Keys", "The order of the letters on the screen where a profile is named.", "cg_qwertyNames"},
     {kGameplayTab, kPrompts, "Button Prompts", "Whether the game shows keys or a controller's buttons. Automatic follows what you last used.", "cg_buttonPrompts"},
     {kAudioTab, kSection, "Volume", "", ""},
+    {kAudioTab, kGVolume, "Master Volume", "How loud the whole game is. The game's own Volume.", ""},
     {kAudioTab, kMusicVolume, "Music", "How loud the music is in a mission.", "snd_musicVolume"},
     {kAudioTab, kMenuMusicVolume, "Main Menu Music", "How loud the music is in the menus.", "snd_menuMusicVolume"},
     {kAudioTab, kEffectsVolume, "Sound Effects", "Gunfire, explosions, vehicles and the menus' own sounds.", "snd_effectsVolume"},
@@ -853,6 +913,13 @@ constexpr TabRow kTabRows[] = {
     {kControlsTab, kMouseY, "Vertical Sensitivity", "How far a move of the mouse looks up and down.", "m_sensitivityY"},
     {kControlsTab, kInvertY, "Invert Vertical Look", "Pushing the mouse away looks down.", "m_invertMouse"},
     {kControlsTab, kInvertX, "Invert Horizontal Look", "Moving the mouse left looks right.", "m_invertMouseX"},
+    {kControlsTab, kSection, "Controller", "", ""},
+    {kControlsTab, kGInvert, "Invert Aim", "Pushing the right stick away looks down.", ""},
+    {kControlsTab, kGVibration, "Vibration", "The controller shakes with gunfire and explosions.", ""},
+    {kControlsTab, kGSensX, "Horizontal Sensitivity", "How fast the right stick turns you left and right.", ""},
+    {kControlsTab, kGSensY, "Vertical Sensitivity", "How fast the right stick looks up and down.", ""},
+    {kControlsTab, kGAdsToggle, "Aim Down Sights", "Hold: you aim while the trigger is down. Toggle: a pull brings the gun up and the next one lowers it.", ""},
+    {kControlsTab, kGLayout, "Controller Configuration", "Which button does what. Modern is this port's own, laid out as shooters are today; A to D are the game's.", ""},
 };
 
 constexpr struct {
@@ -912,6 +979,9 @@ bool Slider(RowId id, SliderRange& r) {
         case kMenuMusicVolume:
         case kEffectsVolume:
         case kVoiceVolume: r = {0, 100, 5}; return true;
+        case kGVolume: r = {0, float(game::kGameVolumeMax), 1}; return true;
+        case kGSensX:
+        case kGSensY: r = {0, float(game::kLookSensitivityMax), 1}; return true;
         default: return false;
     }
 }
@@ -926,6 +996,9 @@ float SliderValue(RowId id, const Settings& s, const game::Options& o) {
         case kMenuMusicVolume: return float(o.menu_music_volume);
         case kEffectsVolume: return float(o.effects_volume);
         case kVoiceVolume: return float(o.voice_volume);
+        case kGVolume: return float(o.GameOption(game::kGoVolume));
+        case kGSensX: return float(o.look_sensitivity_x < 0 ? game::kLookSensitivityDefault : o.look_sensitivity_x);
+        case kGSensY: return float(o.look_sensitivity_y < 0 ? game::kLookSensitivityDefault : o.look_sensitivity_y);
         default: return 0;
     }
 }
@@ -954,6 +1027,9 @@ void DragSlider(RowId id, float place) {
         case kMenuMusicVolume: o.menu_music_volume = whole; break;
         case kEffectsVolume: o.effects_volume = whole; break;
         case kVoiceVolume: o.voice_volume = whole; break;
+        case kGVolume: o.game_options[game::kGoVolume] = int32_t(whole); break;
+        case kGSensX: o.look_sensitivity_x = int32_t(whole); break;
+        case kGSensY: o.look_sensitivity_y = int32_t(whole); break;
         default: break;
     }
 }

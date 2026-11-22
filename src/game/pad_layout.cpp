@@ -178,14 +178,11 @@ void ControllerChoiceDefault(X86Context& ctx, uint8_t*) { W32(ctx.edi + 0xC0, kM
 // settings file, and put in the profile whenever the game applies a profile (0x332E20, edi the profile).
 constexpr uint32_t kLookX = 0x8DCE74, kLookY = 0x8DCE78;
 
-void KeepLookSensitivity() {
-    int32_t x = int32_t(R32(kLookX)), y = int32_t(R32(kLookY));
-    game::Options& o = game::Opt();
-    if (x == o.look_sensitivity_x && y == o.look_sensitivity_y) return;
-    o.look_sensitivity_x = x, o.look_sensitivity_y = y;
-    app::Save();
-    LOGR("look sensitivity kept: %d, %d", x, y);
+namespace game {
+void KeepGameOptions();               // src/game/game_options.cpp: these and the game's other options
+void PutGameOptions(uint32_t profile);
 }
+void KeepLookSensitivity() { game::KeepGameOptions(); }
 
 namespace game {
 void ProfileSettings(const std::string& profile);  // src/game/profile_settings.cpp
@@ -215,11 +212,7 @@ X86_FUNC(sub_00332E20) {
         const char* name = static_cast<const char*>(kernel::HostPtr(ctx.edi));
         game::ProfileSettings(std::string(name, strnlen(name, 32)));
     }
-    const game::Options& o = game::Opt();
-    if (ctx.edi && o.look_sensitivity_x >= 0 && o.look_sensitivity_y >= 0) {
-        W32(ctx.edi + 0x44, uint32_t(o.look_sensitivity_x));
-        W32(ctx.edi + 0x48, uint32_t(o.look_sensitivity_y));
-    }
+    game::PutGameOptions(ctx.edi);
     __imp__sub_00332E20(ctx, base);
 }
 
