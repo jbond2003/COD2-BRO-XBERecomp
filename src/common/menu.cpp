@@ -314,16 +314,9 @@ std::string RowText(RowId id, int step, Settings& s) {
             std::snprintf(text, sizeof(text), "%s", kMsaaNames[StepTable(kMsaaValues, s.msaa, step)]);
             break;
         case kSmaa:
-        {
-            // off, SMAA over the finished frame, or SMAA S2x on two samples a pixel
-            int at = !s.smaa ? 0 : s.smaa_supersample ? 2 : 1;
-            if (step) {
-                at = (at + (step > 0 ? 1 : 2)) % 3;
-                s.smaa = at != 0;
-                s.smaa_supersample = at == 2;
-            }
-            return at == 0 ? "OFF" : at == 1 ? "ON" : "SUPERSAMPLED";
-        }
+            // (always SMAA S2x, on two samples a pixel: the renderer's smaa_supersample is left on)
+            if (step) s.smaa = !s.smaa;
+            return OnOff(s.smaa);
         case kViewDistance:
         {
             int level = DetailLevel(O().view_distance);
@@ -430,7 +423,6 @@ void SetDefaults(Settings& s, game::Options& o, int parts) {
         s.aniso = d.aniso;
         s.msaa = 0;
         s.smaa = false;
-        s.smaa_supersample = false;
         o.view_distance = 1;
         o.keep_bodies = false;
         o.ads_dof = false;
@@ -466,7 +458,6 @@ void CopyRows(Settings& s, game::Options& o, const Settings& from, const game::O
     s.aniso = from.aniso;
     s.msaa = from.msaa;
     s.smaa = from.smaa;
-    s.smaa_supersample = from.smaa_supersample;
     s.custom_textures = from.custom_textures;
     s.dump_textures = from.dump_textures;
     s.texture_dump_format = from.texture_dump_format;
@@ -504,7 +495,7 @@ void CopyRows(Settings& s, game::Options& o, const Settings& from, const game::O
 bool RowsDiffer(const Settings& a, const game::Options& c, const Settings& b, const game::Options& d) {
     return a.display_mode != b.display_mode || a.width != b.width || a.height != b.height ||
            a.render_percent != b.render_percent || a.fps_cap != b.fps_cap || a.vsync != b.vsync || a.aniso != b.aniso ||
-           a.msaa != b.msaa || a.smaa != b.smaa || a.smaa_supersample != b.smaa_supersample ||
+           a.msaa != b.msaa || a.smaa != b.smaa ||
            a.custom_textures != b.custom_textures || a.dump_textures != b.dump_textures ||
            a.texture_dump_format != b.texture_dump_format || c.fps_counter != d.fps_counter || c.fov != d.fov ||
            c.mouse_sensitivity != d.mouse_sensitivity || c.mouse_vertical_sensitivity != d.mouse_vertical_sensitivity ||
@@ -1149,7 +1140,7 @@ void BuildModern(ui::modern::Page& page, std::vector<ModernRow>& rows) {
             r.kind = Row::kSlider;
             r.fill = fill;
             r.value = text.substr(0, text.find(" ("));
-        } else if (t.id != kMsaa && t.id != kSmaa && (text == "ON" || text == "OFF")) {  // (Off is one of several)
+        } else if (t.id != kMsaa && (text == "ON" || text == "OFF")) {  // MSAA has Off among its sample counts
             r.kind = Row::kToggle;
             r.on = text == "ON";
         } else {
