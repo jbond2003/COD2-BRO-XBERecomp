@@ -887,7 +887,7 @@ constexpr TabRow kTabRows[] = {
     {kGraphicsTab, kRenderResolution, "Render Resolution", "The size the game is drawn at, as a share of the window. Over 100 is sharper and costs frame rate, under it is the other way.", "r_renderScale"},
     {kGraphicsTab, kAniso, "Anisotropic Filtering", "Keeps the ground and walls sharp at a shallow angle.", "r_anisotropy"},
     {kGraphicsTab, kMsaa, "MSAA", "Smooths the jagged edges of soldiers, buildings and the ground. Higher is smoother and costs frame rate.", "r_msaa"},
-    {kGraphicsTab, kSmaa, "SMAA", "A light filter that smooths every edge on screen, fences and leaves too. Works on its own or with MSAA.", "r_smaa"},
+    {kGraphicsTab, kSmaa, "SMAA", "Smooths jagged edges across the whole picture without making it blurry. Can be used with MSAA.", "r_smaa"},
     {kGraphicsTab, kAdsDof, "Depth of Field When Aiming", "While you aim down the sights, what is in the sight picture stays sharp and everything around it goes out of focus.", "r_dof"},
     {kGraphicsTab, kGunBlur, "Blur Gun Sight", "While you aim down the sights, the part of the gun nearest your eye goes softly out of focus.", "r_blurGunSight"},
     {kGraphicsTab, kViewDistance, "Level of Detail", "How far away soldiers and objects keep their detailed models.", "cg_viewDistance"},
