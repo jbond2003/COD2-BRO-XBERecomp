@@ -13,6 +13,7 @@ namespace app {
 extern float g_zoom;  // the gameplay camera's zoom as a tangent ratio: 1 unzoomed, under 1 aiming down sights
 bool MenuOpen();   // the panel, the PC Options page or the console is up: the game gets no input
 bool PanelOpen();  // the panel or the PC Options page
+bool PanelOnController();  // it is up and the controller was used last: no pointer is shown
 void ToggleMenu();
 void OpenSettings();
 void CloseSettings();  // the settings menu leaves, asking first about changes not applied  // any thread: the settings menu opens at the next frame, if nothing of ours is up

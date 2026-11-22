@@ -1702,6 +1702,8 @@ void Leave(bool applied) {
 // the panel, the PC Options page or the console (console.h): any of them has the keys, the mouse and the controller
 bool MenuOpen() { return g_open.load(std::memory_order_relaxed) || console::Open(); }
 bool PanelOpen() { return g_open.load(std::memory_order_relaxed); }
+// the settings menu is up and the controller was the last thing used on it (the frame's thread)
+bool PanelOnController() { return PanelOpen() && g_modern.controller && !console::Open(); }
 
 bool Capturing() { return g_capture.action >= 0; }
 
