@@ -1157,7 +1157,7 @@ void BuildModern(ui::modern::Page& page, std::vector<ModernRow>& rows) {
             r.kind = Row::kSlider;
             r.fill = fill;
             r.value = text.substr(0, text.find(" ("));
-        } else if (t.id != kMsaa && (text == "ON" || text == "OFF")) {  // MSAA has Off among its sample counts
+        } else if (t.id != kMsaa && t.id != kAmbientOcclusion && (text == "ON" || text == "OFF")) {  // MSAA and Ambient Occlusion have Off among their choices
             r.kind = Row::kToggle;
             r.on = text == "ON";
         } else {
