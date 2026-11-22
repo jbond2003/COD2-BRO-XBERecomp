@@ -23,6 +23,7 @@ struct Row {
     bool waiting = false;  // kBinding: that box waits for a key
     bool editing = false;  // the selected line is picked: left and right change its value
     bool locked = false;   // the selected line's value waits for that pick
+    bool fixed = false;    // kChoice: nothing to pick, the value is shown without its arrows
 };
 
 // the Controller tab's picture: what each button does, by where its line ends

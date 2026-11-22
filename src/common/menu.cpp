@@ -190,6 +190,11 @@ std::string RowText(RowId id, int step, Settings& s) {
         case kResolution: {
             const std::vector<Mode>& modes = Modes();
             Mode desktop = Desktop();
+            // a borderless window is the desktop's size: nothing to pick (the size kept is for the other modes)
+            if (s.display_mode == DisplayMode::Borderless) {
+                std::snprintf(text, sizeof(text), "%u x %u", desktop.width, desktop.height);
+                break;
+            }
             Mode m = s.width && s.height ? Mode{s.width, s.height} : desktop;
             int i = 0;
             for (size_t k = 0; k < modes.size(); k++)
@@ -201,7 +206,7 @@ std::string RowText(RowId id, int step, Settings& s) {
                 s.width = native ? 0 : m.width;
                 s.height = native ? 0 : m.height;
             }
-            std::snprintf(text, sizeof(text), "%ux%u", m.width, m.height);
+            std::snprintf(text, sizeof(text), "%u x %u", m.width, m.height);
             break;
         }
         case kRenderResolution: {
@@ -663,11 +668,14 @@ std::string Sentence(const std::string& text) {
         if (j < text.size()) out += text[j];
         i = j + 1;
     }
-    for (char& c : out)
+    // (a number first: a size, "1920 x 1080", keeps its small x)
+    for (char& c : out) {
+        if (std::isdigit(static_cast<unsigned char>(c))) break;
         if (std::isalpha(static_cast<unsigned char>(c))) {
             c = char(std::toupper(static_cast<unsigned char>(c)));
             break;
         }
+    }
     return out;
 }
 
@@ -1145,6 +1153,8 @@ void BuildModern(ui::modern::Page& page, std::vector<ModernRow>& rows) {
         } else {
             r.kind = Row::kChoice;
             r.value = Sentence(text);
+            r.fixed = t.id == kResolution &&
+                      (g_panel_pending ? g_panel_settings : Get()).display_mode == DisplayMode::Borderless;
         }
         ModernRow m;
         m.kind = ModernRow::kSetting;
@@ -1550,6 +1560,7 @@ void DrawModern() {
     page.changes = ModernChanges();
     page.note_title = row.kind == ModernRow::kBind ? "Key Bindings" : sel.label;
     page.note_text = row.note;
+    if (sel.fixed) page.note_text = "A borderless window is always the size of the desktop.";
     page.note_command = row.variable;
     if (row.kind == ModernRow::kSetting && sel.changed)
         page.note_change = "Now " + Sentence(LiveText(row.row)) + ", after Apply " + Sentence(PanelText(row.row, 0));

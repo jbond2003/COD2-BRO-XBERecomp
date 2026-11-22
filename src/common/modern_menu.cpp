@@ -287,12 +287,17 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
         }
         c.Text(11.5f, list_left + 4, cy, Ink(on ? 1.0f : 0.82f), r.label, 0.0f, value_x0 - list_left - 10);
         // the value is lit while left and right change it: a line that waits to be picked has it as the others
-        bool live = on && !r.locked;
+        bool live = on && !r.locked && !r.fixed;
         ImU32 edge = live ? Red(0.95f) : Ink(0.5f);
-        if (on && r.editing && (r.kind == Row::kChoice || r.kind == Row::kSlider || r.kind == Row::kToggle))
+        if (on && r.editing && !r.fixed && (r.kind == Row::kChoice || r.kind == Row::kSlider || r.kind == Row::kToggle))
             c.Box(value_x0 - 2.5f, by0 - 2.0f, value_x1 + 2.5f, by1 + 2.0f, Red(0.95f), 1.2f);
         switch (r.kind) {
             case Row::kChoice: {
+                if (r.fixed) {  // a value that follows another setting: plain, fainter, no arrows
+                    c.Box(value_x0, by0, value_x1, by1, Ink(0.25f));
+                    c.Text(10.0f, (value_x0 + value_x1) / 2, cy, Ink(0.55f), r.value, 0.5f, value_w - 26);
+                    break;
+                }
                 c.Fill(value_x0, by0, value_x1, by1, Col(kCream, live ? 0.45f : 0.2f));
                 c.Box(value_x0, by0, value_x1, by1, edge);
                 c.Arrow(value_x0 + 6, cy, 3.2f, -1, live ? Red() : Ink(0.6f));
