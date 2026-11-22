@@ -90,6 +90,12 @@ std::once_flag g_loaded;
 std::vector<IconTexture> g_textures;  // written once, under g_loaded
 // the Controller screen's picture (xboxlineA.dds in sp/frontend.cod): the Modern one in its place (pad_picture.cpp)
 std::vector<uint8_t> g_pad_picture;  // its level 0, written once under g_loaded
+// the crosshair's three pictures (center_dot 8 x 8, side_skinny 8 x 8, side_small_arc 16 x 16, the same in every
+// mission's weapons.cod): a few texels each, drawn again smooth at the output's size. Level 0 of each, written once
+// under g_loaded
+constexpr const char* kReticleNames[] = {"center_dot.dds", "side_skinny.dds", "side_small_arc.dds"};
+constexpr uint32_t kReticleSizes[] = {8, 8, 16};
+std::vector<uint8_t> g_reticle[3];
 std::vector<uint8_t> g_ttf;
 stbtt_fontinfo g_font;
 bool g_have_font = false;
@@ -271,6 +277,21 @@ void Load() {
         kernel::ReadGameFile("D:\\sp\\frontend.cod", it->second.offset, it->second.size, dds) &&
         dds.size() >= 128 + 512 * 512 && U32(dds, 16) == 512 && U32(dds, 12) == 512)
         g_pad_picture.assign(dds.begin() + 128, dds.begin() + 128 + 512 * 512);
+    const char* weapons = "D:\\sp\\prologue\\weapons.cod";
+    std::map<std::string, Entry> pack = ReadDirectory(weapons);
+    int reticles = 0;
+    for (int i = 0; i < 3; i++) {
+        auto it = pack.find(kReticleNames[i]);
+        if (it == pack.end() || !kernel::ReadGameFile(weapons, it->second.offset, it->second.size, dds)) continue;
+        if (dds.size() <= 128 || std::memcmp(dds.data(), "DDS ", 4) != 0 || U32(dds, 16) != kReticleSizes[i] ||
+            U32(dds, 12) != kReticleSizes[i])
+            continue;
+        uint32_t size = Level0Size(dds, kReticleSizes[i], kReticleSizes[i]);
+        if (!size || 128 + size > dds.size()) continue;
+        g_reticle[i].assign(dds.begin() + 128, dds.begin() + 128 + size);
+        reticles++;
+    }
+    LOGR("crosshair: %d of its 3 pictures found to draw smooth", reticles);
 }
 
 // --- Drawing: straight alpha RGBA floats; shapes are signed distance fields in output pixels, anti-aliased over one.
@@ -573,6 +594,35 @@ std::shared_ptr<const Picture> Draw(const IconTexture& t, const Labels& labels, 
     return canvas.Finish();
 }
 
+// The crosshair's pictures drawn again, scale times their size, where the game's texels are: the dot a disc of 3
+// texels about (4, 4); the thin mark a bar from (3, 3) to (4, 8); the side mark an arc of a circle of 9.7 texels about
+// (8, 12), 42 degrees each way from straight up, 1.5 thick and as faint as the game's (0.42)
+std::shared_ptr<const Picture> DrawReticle(int which, int scale) {
+    float s = float(scale);
+    Canvas canvas(kReticleSizes[which] * uint32_t(scale), kReticleSizes[which] * uint32_t(scale));
+    const Color white{1.0f, 0.985f, 1.0f, 1.0f};
+    float size = float(kReticleSizes[which]) * s;
+    if (which == 0) {
+        canvas.Fill(0, 0, size, size, white, [&](float px, float py) { return std::hypot(px - 4.0f * s, py - 4.0f * s) - 3.0f * s; });
+    } else if (which == 1) {
+        canvas.Fill(0, 0, size, size, white, [&](float px, float py) {
+            return std::max(std::abs(px - 3.5f * s) - 0.5f * s, std::abs(py - 5.5f * s) - 2.5f * s);
+        });
+    } else {
+        const float cx = 8.0f * s, cy = 12.0f * s, radius = 9.7f * s, half = 0.75f * s, reach = 0.733f;  // 42 degrees
+        Color faint = white;
+        faint.a = 0.42f;
+        canvas.Fill(0, 0, size, size, faint, [&](float px, float py) {
+            float angle = std::atan2(px - cx, cy - py);  // 0 straight up
+            if (std::abs(angle) <= reach) return std::abs(std::hypot(px - cx, py - cy) - radius) - half;
+            float side = angle < 0 ? -1.0f : 1.0f;
+            float ex = cx + side * std::sin(reach) * radius, ey = cy - std::cos(reach) * radius;
+            return std::hypot(px - ex, py - ey) - half;  // a round end
+        });
+    }
+    return canvas.Finish();
+}
+
 // render thread: keycaps for the icon textures while labels are set
 std::shared_ptr<const Picture> Provide(const gpu::TextureDesc& d, const uint8_t* guest, float render_scale) {
     std::call_once(g_loaded, Load);
@@ -584,6 +634,20 @@ std::shared_ptr<const Picture> Provide(const gpu::TextureDesc& d, const uint8_t*
     if (!found && !g_pad_picture.empty() && d.width == 512 && d.height == 512 &&
         gpu::LevelSize(d, 0) == g_pad_picture.size() && std::memcmp(guest, g_pad_picture.data(), g_pad_picture.size()) == 0)
         if (auto modern = game::ModernPadPicture()) return modern;
+    if (!found && d.width == d.height && (d.width == 8 || d.width == 16)) {
+        for (int i = 0; i < 3; i++) {
+            if (g_reticle[i].empty() || d.width != kReticleSizes[i] || gpu::LevelSize(d, 0) != g_reticle[i].size() ||
+                std::memcmp(guest, g_reticle[i].data(), g_reticle[i].size()) != 0)
+                continue;
+            // (a texel of these is about a pixel of the game's 480 lines)
+            int scale = std::clamp(int(std::ceil(render_scale - 0.01f)), 2, 8);
+            static std::map<std::pair<int, int>, std::shared_ptr<const Picture>> drawn;
+            std::lock_guard lock(g_lock);
+            auto& cached = drawn[{i, scale}];
+            if (!cached) cached = DrawReticle(i, scale);
+            return cached;
+        }
+    }
     if (!found) return game::SharpText(d, guest, render_scale);
     std::lock_guard lock(g_lock);
     if (!g_labels) return nullptr;
