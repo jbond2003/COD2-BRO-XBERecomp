@@ -271,6 +271,7 @@ const app::GameInfo app::kGame = {
                 {"ambient_occlusion", nullptr, &game::Opt().ambient_occlusion},
                 {"ads_depth_of_field", &game::Opt().ads_dof, nullptr},
                 {"blur_gun_sight", &game::Opt().gun_blur, nullptr},
+                {"player_body", &game::Opt().player_body, nullptr},
                 {"cutscene_bars", &game::Opt().cutscene_bars, nullptr},
                 {"aim_assist", &game::Opt().aim_assist, nullptr},
                 {"hints", &game::Opt().hints, nullptr},

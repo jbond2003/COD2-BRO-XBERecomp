@@ -179,6 +179,7 @@ const PortVariable kPortVariables[] = {
      PORT_NUMBER(Opt().ambient_occlusion, uint32_t)},
     {"r_dof", "Depth of Field When Aiming", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().ads_dof)},
     {"r_blurGunSight", "Blur Gun Sight", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().gun_blur)},
+    {"cg_playerBody", "Player Body", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().player_body)},
     {"cg_bodiesStay", "Bodies Stay", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().keep_bodies)},
     {"cg_cutsceneBars", "Cutscene Black Bars", "0 or 1", 0, 1, 1, 1, PORT_BOOL(Opt().cutscene_bars)},
     {"cg_aimAssist", "Controller Aim Assist", "0 or 1", 0, 1, 1, 1, PORT_BOOL(Opt().aim_assist)},
