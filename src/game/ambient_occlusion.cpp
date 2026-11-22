@@ -22,6 +22,7 @@ namespace {
 constexpr uint32_t kScene = 0x90259C;
 constexpr uint32_t kWorldNodes = 25;  // fewer solid nodes is not the world's scene
 constexpr float kRadius = 28.0f;      // how far a surface is shaded from: the game's units are about an inch
+constexpr float kStrength = 2.0f;     // twice the shade the shaders work out
 
 }  // namespace
 
@@ -44,5 +45,5 @@ void AmbientOcclusion(X86Context&, uint8_t*) {
             for (int i = 0; i < 3; i++) colour[i] = G<float>(scene + 0x3A0 + uint32_t(i) * 4);
         }
     }
-    d3d::Occlusion(&G<float>(scene + 0x10), mode == 2, kRadius, fog, colour);
+    d3d::Occlusion(&G<float>(scene + 0x10), mode == 2, kRadius, kStrength, fog, colour);
 }
