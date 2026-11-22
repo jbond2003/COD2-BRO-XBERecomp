@@ -23,6 +23,13 @@ constexpr int32_t kGameVolumeMax = 50, kLookSensitivityMax = 50, kLookSensitivit
 struct Options {
     std::array<int32_t, kGameOptions> game_options = {-1, -1, -1, -1, -1, -1, -1, -1, -1};
     int32_t GameOption(int i) const { return game_options[size_t(i)] < 0 ? kGameOptionDefaults[i] : game_options[size_t(i)]; }
+    // the game's volume as the settings menu has it, a percent in fives (the game's own is 0 to 50, a half of it
+    // rounded up); -1, or no longer the game's value: the game's value doubled
+    int32_t master_volume = -1;
+    int32_t MasterPercent() const {
+        int32_t v = GameOption(kGoVolume);
+        return master_volume >= 0 && (master_volume + 1) / 2 == v ? master_volume : v * 2;
+    }
     bool fps_counter = false;     // frames a second in the picture's top right corner
     uint32_t fov = kDefaultFov;   // cg_fov, horizontal degrees on a 4:3 picture
     // keyboard and mouse (src/common/mouse_keyboard.cpp)

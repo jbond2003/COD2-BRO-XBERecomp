@@ -198,6 +198,7 @@ void Load(const void* table) {
     o.look_sensitivity_x = int32_t(t["look_sensitivity_x"].value_or(int64_t(-1)));
     o.look_sensitivity_y = int32_t(t["look_sensitivity_y"].value_or(int64_t(-1)));
     for (int i = 0; i < kGameOptions; i++) o.game_options[size_t(i)] = int32_t(t[kGameOptionKeys[i]].value_or(int64_t(-1)));
+    o.master_volume = int32_t(t["game_volume_percent"].value_or(int64_t(-1)));
     o.settings_profile = t["profile"].value_or(std::string());
     o.keys.clear();
     if (const toml::table* keys = t["keys"].as_table())
@@ -211,6 +212,7 @@ void Save(void* table) {
     const Options& o = Opt();
     t.insert_or_assign("mouse_sensitivity", double(o.mouse_sensitivity));
     t.insert_or_assign("mouse_vertical_sensitivity", double(o.mouse_vertical_sensitivity));
+    if (o.master_volume >= 0) t.insert_or_assign("game_volume_percent", int64_t(o.master_volume));
     if (o.look_sensitivity_x >= 0) t.insert_or_assign("look_sensitivity_x", int64_t(o.look_sensitivity_x));
     if (o.look_sensitivity_y >= 0) t.insert_or_assign("look_sensitivity_y", int64_t(o.look_sensitivity_y));
     for (int i = 0; i < kGameOptions; i++)

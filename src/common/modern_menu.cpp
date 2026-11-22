@@ -306,7 +306,7 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
             case Row::kSlider: {
                 float bar1 = value_x1 - 24, fill = std::clamp(r.fill, 0.0f, 1.0f);
                 float at = value_x0 + (bar1 - value_x0) * fill;
-                // the game's own bar: a rounded frame of two lines, dark as far as the value, a tick at the middle
+                // the game's own bar: a rounded frame of two lines, dark as far as the value
                 const float half = 5.6f, inset = 1.5f;
                 float round = 2.2f * c.sy;
                 ImVec2 f0 = c.P(value_x0, cy - half), f1 = c.P(bar1, cy + half);
@@ -321,8 +321,6 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
                 }
                 dl->AddRect(f0, f1, Ink(on ? 0.95f : 0.75f), round, 0, c.Line(0.6f));
                 dl->AddRect(i0, i1, Ink(0.6f), round * 0.6f, 0, c.Line(0.4f));
-                float mid = std::floor((i0.x + i1.x) / 2);
-                dl->AddRectFilled(ImVec2(mid, f0.y), ImVec2(mid + c.Line(0.5f), f1.y), Ink(0.55f));
                 if (r.editing) dl->AddRectFilled(ImVec2(end - c.Line(0.7f), i0.y), ImVec2(end + c.Line(0.7f), i1.y), Red());
                 c.Text(10.0f, value_x1, cy, Ink(on ? 1.0f : 0.85f), r.value, 1.0f, 22);
                 hit.bar = {c.P(value_x0, y), c.P(bar1, y + h)};

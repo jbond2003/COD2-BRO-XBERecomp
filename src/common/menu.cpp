@@ -223,7 +223,7 @@ std::string RowText(RowId id, int step, Settings& s) {
         case kFov:
         {
             uint32_t& fov = O().fov;
-            if (step) fov = uint32_t(StepRange(int(fov), int(game::kMinFov), int(game::kMaxFov), 1, step));
+            if (step) fov = uint32_t(StepRange(int(fov), int(game::kMinFov), int(game::kMaxFov), 5, step));
             std::snprintf(text, sizeof(text), fov == game::kDefaultFov ? "%u (DEFAULT)" : "%u", fov);
         }
             break;
@@ -235,7 +235,7 @@ std::string RowText(RowId id, int step, Settings& s) {
             return OnOff(O().fps_counter);
         case kBrightness: {
             uint32_t& b = O().brightness;
-            if (step) b = uint32_t(StepRange(int(b), 50, 200, 10, step));
+            if (step) b = uint32_t(StepRange(int(b), 50, 200, 5, step));
             std::snprintf(text, sizeof(text), b == 100 ? "%u (DEFAULT)" : "%u", b);
             break;
         }
@@ -262,16 +262,21 @@ std::string RowText(RowId id, int step, Settings& s) {
             return OnOff(on);
         }
         case kGVolume: {
-            int v = O().GameOption(game::kGoVolume);
-            if (step) v = StepRange(v, 0, game::kGameVolumeMax, 1, step), O().game_options[game::kGoVolume] = v;
-            std::snprintf(text, sizeof(text), "%d", v * 100 / game::kGameVolumeMax);
+            // a percent in fives; the game's own is a half of it
+            int v = O().MasterPercent();
+            if (step) {
+                v = StepRange(v, 0, 100, 5, step);
+                O().master_volume = v;
+                O().game_options[game::kGoVolume] = (v + 1) / 2;
+            }
+            std::snprintf(text, sizeof(text), "%d", v);
             break;
         }
         case kGSensX:
         case kGSensY: {
             int32_t& kept = id == kGSensX ? O().look_sensitivity_x : O().look_sensitivity_y;
             int v = kept < 0 ? game::kLookSensitivityDefault : kept;
-            if (step) v = StepRange(v, 0, game::kLookSensitivityMax, 1, step), kept = v;
+            if (step) v = StepRange(v, 0, game::kLookSensitivityMax, 5, step), kept = v;
             std::snprintf(text, sizeof(text), "%d", v);
             break;
         }
@@ -334,8 +339,9 @@ std::string RowText(RowId id, int step, Settings& s) {
         case kMouseX:
         case kMouseY: {
             float& v = id == kMouseX ? O().mouse_sensitivity : O().mouse_vertical_sensitivity;
-            if (step) v = float(StepRange(int(v * 10.0f + 0.5f), 1, 50, 1, step)) / 10.0f;
-            std::snprintf(text, sizeof(text), v == 1.0f ? "%.1f (DEFAULT)" : "%.1f", v);
+            // shown as a percent of the game's own, in fives (m_sensitivity 1.0 is 100)
+            if (step) v = float(StepRange(int(v * 100.0f + 0.5f), 10, 500, 5, step)) / 100.0f;
+            std::snprintf(text, sizeof(text), v == 1.0f ? "%d (DEFAULT)" : "%d", int(v * 100.0f + 0.5f));
             break;
         }
         case kInvertY:
@@ -468,6 +474,7 @@ void CopyRows(Settings& s, game::Options& o, const Settings& from, const game::O
     o.hide_hud = from_o.hide_hud;
     o.lean_toggle = from_o.lean_toggle;
     o.game_options = from_o.game_options;
+    o.master_volume = from_o.master_volume;
     o.look_sensitivity_x = from_o.look_sensitivity_x;
     o.look_sensitivity_y = from_o.look_sensitivity_y;
     o.modern_layout = from_o.modern_layout;
@@ -963,25 +970,25 @@ struct ModernState {
     ui::modern::Hits hits;
 } g_modern;
 
-// A slider row's range and step, and its value in a set of settings; false for a row that is not one. Sensitivities
-// are in tenths.
+// A slider row's range and step, and its value in a set of settings; false for a row that is not one. Every one
+// steps by five. The mouse's sensitivities are in hundredths.
 struct SliderRange {
     float lo, hi, step;
 };
 bool Slider(RowId id, SliderRange& r) {
     switch (id) {
-        case kFov: r = {float(game::kMinFov), float(game::kMaxFov), 1}; return true;
-        case kBrightness: r = {50, 200, 10}; return true;
+        case kFov: r = {float(game::kMinFov), float(game::kMaxFov), 5}; return true;
+        case kBrightness: r = {50, 200, 5}; return true;
         case kRenderResolution: r = {20, 200, 5}; return true;
         case kMouseX:
-        case kMouseY: r = {1, 50, 1}; return true;
+        case kMouseY: r = {10, 500, 5}; return true;
         case kMusicVolume:
         case kMenuMusicVolume:
         case kEffectsVolume:
         case kVoiceVolume: r = {0, 100, 5}; return true;
-        case kGVolume: r = {0, float(game::kGameVolumeMax), 1}; return true;
+        case kGVolume: r = {0, 100, 5}; return true;
         case kGSensX:
-        case kGSensY: r = {0, float(game::kLookSensitivityMax), 1}; return true;
+        case kGSensY: r = {0, float(game::kLookSensitivityMax), 5}; return true;
         default: return false;
     }
 }
@@ -990,13 +997,13 @@ float SliderValue(RowId id, const Settings& s, const game::Options& o) {
         case kFov: return float(o.fov);
         case kBrightness: return float(o.brightness);
         case kRenderResolution: return float(s.render_percent);
-        case kMouseX: return o.mouse_sensitivity * 10.0f;
-        case kMouseY: return o.mouse_vertical_sensitivity * 10.0f;
+        case kMouseX: return o.mouse_sensitivity * 100.0f;
+        case kMouseY: return o.mouse_vertical_sensitivity * 100.0f;
         case kMusicVolume: return float(o.music_volume);
         case kMenuMusicVolume: return float(o.menu_music_volume);
         case kEffectsVolume: return float(o.effects_volume);
         case kVoiceVolume: return float(o.voice_volume);
-        case kGVolume: return float(o.GameOption(game::kGoVolume));
+        case kGVolume: return float(o.MasterPercent());
         case kGSensX: return float(o.look_sensitivity_x < 0 ? game::kLookSensitivityDefault : o.look_sensitivity_x);
         case kGSensY: return float(o.look_sensitivity_y < 0 ? game::kLookSensitivityDefault : o.look_sensitivity_y);
         default: return 0;
@@ -1021,13 +1028,16 @@ void DragSlider(RowId id, float place) {
         case kFov: o.fov = whole; break;
         case kBrightness: o.brightness = whole; break;
         case kRenderResolution: s.render_percent = whole; break;
-        case kMouseX: o.mouse_sensitivity = float(whole) / 10.0f; break;
-        case kMouseY: o.mouse_vertical_sensitivity = float(whole) / 10.0f; break;
+        case kMouseX: o.mouse_sensitivity = float(whole) / 100.0f; break;
+        case kMouseY: o.mouse_vertical_sensitivity = float(whole) / 100.0f; break;
         case kMusicVolume: o.music_volume = whole; break;
         case kMenuMusicVolume: o.menu_music_volume = whole; break;
         case kEffectsVolume: o.effects_volume = whole; break;
         case kVoiceVolume: o.voice_volume = whole; break;
-        case kGVolume: o.game_options[game::kGoVolume] = int32_t(whole); break;
+        case kGVolume:
+            o.master_volume = int32_t(whole);
+            o.game_options[game::kGoVolume] = (int32_t(whole) + 1) / 2;
+            break;
         case kGSensX: o.look_sensitivity_x = int32_t(whole); break;
         case kGSensY: o.look_sensitivity_y = int32_t(whole); break;
         default: break;
