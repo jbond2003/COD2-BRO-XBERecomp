@@ -44,6 +44,7 @@ constexpr uint32_t kShadowCamera = 0x988730;
 constexpr uint32_t kViewOrigin = 0x95E240;
 constexpr uint32_t kCellLighting = 0x23E510;
 constexpr uint32_t kShadowLift = 0x8DB1A0;   // the camera's height over the eye, 100
+constexpr float kShadowReach = 700.0f;  // parts this near the camera cast a shadow though out of the view
 constexpr float kLeastDrop = 0.6f;  // the sun is taken no lower than this (37 degrees up): longer shadows leave the picture
 
 struct {
@@ -129,4 +130,52 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
     // light from there (nglAddShadowProjector 0x704F0), which reaches 200 units below the eye at the lowest sun.
     float back = G<float>(kShadowLift) / -lz;
     cam[12] -= lx * back, cam[13] -= ly * back;
+}
+
+// Shadows in the shape of what casts them.
+//
+// The game makes the shadow's copy of a model from its coarsest level of detail (DObj_GetCoarsestLod 0x29520 for a
+// skinned part, called at 0x2447E2; DObj_SetForcedLod 0x14610 with 4 for a rigid one, at 0x24551E): a few dozen
+// triangles, which pass for a soldier as a blot under his feet and not as a shadow lying beside him. And it makes
+// the copy only of a part it has just put in the view (nglListAddMesh 0x68850 at 0x244663 and 0x245399 returning
+// above 0), so a tank half out of the picture casts half a shadow and a soldier just off screen none.
+// With Sun Shadows on the copy is of the level of detail being drawn, and a part out of the view but near the
+// camera counts as added, so the function goes on to its shadow.
+
+X86_EXTERN_FUNC(__imp__sub_00029520);
+X86_EXTERN_FUNC(__imp__sub_00014610);
+X86_EXTERN_FUNC(__imp__sub_00068850);
+
+X86_FUNC(sub_00029520) {
+    uint32_t dobj = ctx.edx;
+    if (game::Opt().sun_shadows && R32(ctx.esp) == 0x2447E7 && dobj) {
+        int32_t forced = int32_t(R32(dobj + 0x94)), least = int32_t(R32(dobj + 0x98)), lod = int32_t(R32(dobj + 0x90));
+        int32_t drawn = forced >= 0 ? forced : least >= 0 ? least : lod;
+        if (drawn >= 0 && drawn < 5) {
+            ctx.eax = uint32_t(drawn);
+            ctx.esp += 4;  // the return
+            return;
+        }
+    }
+    __imp__sub_00029520(ctx, base);
+}
+
+X86_FUNC(sub_00014610) {
+    if (game::Opt().sun_shadows && R32(ctx.esp) == 0x245523 && ctx.eax == 4) {
+        ctx.esp += 4;  // not forced: the copy is of the level being drawn
+        return;
+    }
+    __imp__sub_00014610(ctx, base);
+}
+
+X86_FUNC(sub_00068850) {
+    uint32_t back = R32(ctx.esp), mesh = R32(ctx.esp + 4), matrix = R32(ctx.esp + 8);
+    __imp__sub_00068850(ctx, base);
+    if ((back != 0x244668 && back != 0x24539E) || int32_t(ctx.eax) > 0 || !mesh || !matrix) return;
+    if (!game::Opt().sun_shadows) return;
+    X86HostFp host_fp;
+    const float* at = &G<float>(matrix + 0x30);
+    const float* eye = &G<float>(kViewOrigin);
+    float x = at[0] - eye[0], y = at[1] - eye[1], z = at[2] - eye[2];
+    if (x * x + y * y + z * z < kShadowReach * kShadowReach) ctx.eax = 1;
 }
