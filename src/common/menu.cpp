@@ -1560,7 +1560,6 @@ void DrawModern() {
     page.changes = ModernChanges();
     page.note_title = row.kind == ModernRow::kBind ? "Key Bindings" : sel.label;
     page.note_text = row.note;
-    if (sel.fixed) page.note_text = "A borderless window is always the size of the desktop.";
     page.note_command = row.variable;
     if (row.kind == ModernRow::kSetting && sel.changed)
         page.note_change = "Now " + Sentence(LiveText(row.row)) + ", after Apply " + Sentence(PanelText(row.row, 0));
