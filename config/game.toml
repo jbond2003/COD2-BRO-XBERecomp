@@ -429,3 +429,9 @@ call = "MirrorBeginText"
 [[hook]]
 at = 0x0007A380
 call = "MirrorEndText"
+
+# src/game/ambient_occlusion.cpp: nglRenderSceneTree, a scene's opaque list just drawn and its translucent list
+# (smoke, glass, the glow) not yet
+[[hook]]
+at = 0x000743FB
+call = "AmbientOcclusion"

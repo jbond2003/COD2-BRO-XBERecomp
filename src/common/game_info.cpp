@@ -268,6 +268,7 @@ const app::GameInfo app::kGame = {
                 {"brightness", nullptr, &game::Opt().brightness},
                 {"view_distance", nullptr, &game::Opt().view_distance},
                 {"keep_bodies", &game::Opt().keep_bodies, nullptr},
+                {"ambient_occlusion", nullptr, &game::Opt().ambient_occlusion},
                 {"ads_depth_of_field", &game::Opt().ads_dof, nullptr},
                 {"blur_gun_sight", &game::Opt().gun_blur, nullptr},
                 {"cutscene_bars", &game::Opt().cutscene_bars, nullptr},
