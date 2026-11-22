@@ -58,9 +58,12 @@ X86_FUNC(sub_002F1E60) {
     __imp__sub_002F1E60(ctx, base);
     X86HostFp host_fp;
     ApplyFov(ctx);
-    // the renderer puts the gun out of focus by how far the player aims down the sights (gpu::g_dof)
-    float aim = game::Opt().ads_dof ? std::clamp(F(kZoom), 0.0f, 1.0f) : 0.0f;
-    gpu::g_dof.store(std::isfinite(aim) ? aim : 0.0f, std::memory_order_relaxed);
+    // the renderer puts what is around the sight picture out of focus by how far the player aims down the sights
+    // (gpu::g_dof), and the gun nearest the eye by the same (gpu::g_gun_blur)
+    float aim = std::clamp(F(kZoom), 0.0f, 1.0f);
+    if (!std::isfinite(aim)) aim = 0.0f;
+    gpu::g_dof.store(game::Opt().ads_dof ? aim : 0.0f, std::memory_order_relaxed);
+    gpu::g_gun_blur.store(game::Opt().gun_blur ? aim : 0.0f, std::memory_order_relaxed);
     game::UpdatePrompts();
     game::UpdateHints(ctx);
     game::UpdatePcSettings(ctx);

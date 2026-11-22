@@ -20,7 +20,8 @@ struct Options {
     uint32_t button_prompts = 0;  // 0 follow the last device used, 1 always keys and mouse, 2 always the controller  // the profile name typewriter's letters in QWERTY order, not ABC
     uint32_t brightness = 100;  // percent: the picture's gamma, 100 the game's own (src/game/pc_settings.cpp)
     uint32_t view_distance = 1;  // times the game's own distances for models' detail (src/game/detail.cpp)
-    bool ads_dof = false;        // the gun goes out of focus while aiming down the sights (src/game/fov.cpp)
+    bool ads_dof = false;        // all but the sight picture goes out of focus while aiming (src/game/fov.cpp)
+    bool gun_blur = false;       // the gun nearest the eye goes out of focus while aiming (src/game/fov.cpp)
     bool keep_bodies = false;    // dead soldiers stay where they fell (src/game/bodies.cpp)
     bool cutscene_bars = true;   // the black bars the level scripts put over their cutscenes (src/game/bodies.cpp)
     bool aim_assist = true;     // the game's sticky aim on a controller (never on the keyboard and mouse)

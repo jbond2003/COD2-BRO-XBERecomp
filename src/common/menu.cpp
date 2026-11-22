@@ -113,7 +113,7 @@ const std::vector<Mode>& Modes() {
 enum RowId { kSection, kDisplayMode, kResolution, kRenderResolution, kFov, kMaxFps, kVsync, kFpsCounter, kAniso,
              kTextureReplacement, kTextureDumping, kDumpFormat, kMouseX, kMouseY, kInvertY, kInvertX, kQwerty, kPrompts,
              kBrightness, kAimAssist, kHints, kHideHud, kViewDistance, kKeepBodies, kCutsceneBars, kLeanToggle,
-             kMusicVolume, kMenuMusicVolume, kEffectsVolume, kVoiceVolume, kMsaa, kSmaa, kAdsDof };
+             kMusicVolume, kMenuMusicVolume, kEffectsVolume, kVoiceVolume, kMsaa, kSmaa, kAdsDof, kGunBlur };
 
 struct Row {
     RowId id;
@@ -243,6 +243,9 @@ std::string RowText(RowId id, int step, Settings& s) {
         case kLeanToggle:
             if (step) O().lean_toggle = !O().lean_toggle;
             return O().lean_toggle ? "TOGGLE" : "HOLD (ORIGINAL)";
+        case kGunBlur:
+            if (step) O().gun_blur = !O().gun_blur;
+            return OnOff(O().gun_blur);
         case kAdsDof:
             if (step) O().ads_dof = !O().ads_dof;
             return OnOff(O().ads_dof);
@@ -367,6 +370,7 @@ void SetDefaults(Settings& s, game::Options& o, int parts) {
         o.view_distance = 1;
         o.keep_bodies = false;
         o.ads_dof = false;
+        o.gun_blur = false;
         s.custom_textures = d.custom_textures;
         s.dump_textures = d.dump_textures;
         s.texture_dump_format = d.texture_dump_format;
@@ -413,6 +417,7 @@ void CopyRows(Settings& s, game::Options& o, const Settings& from, const game::O
     o.view_distance = from_o.view_distance;
     o.keep_bodies = from_o.keep_bodies;
     o.ads_dof = from_o.ads_dof;
+    o.gun_blur = from_o.gun_blur;
     o.cutscene_bars = from_o.cutscene_bars;
     o.music_volume = from_o.music_volume;
     o.menu_music_volume = from_o.menu_music_volume;
@@ -431,7 +436,7 @@ bool RowsDiffer(const Settings& a, const game::Options& c, const Settings& b, co
            c.invert_mouse != d.invert_mouse || c.invert_mouse_x != d.invert_mouse_x ||
            c.qwerty_typewriter != d.qwerty_typewriter || c.button_prompts != d.button_prompts ||
            c.brightness != d.brightness || c.aim_assist != d.aim_assist || c.hints != d.hints ||
-           c.hide_hud != d.hide_hud || c.lean_toggle != d.lean_toggle || c.view_distance != d.view_distance || c.keep_bodies != d.keep_bodies || c.ads_dof != d.ads_dof ||
+           c.hide_hud != d.hide_hud || c.lean_toggle != d.lean_toggle || c.view_distance != d.view_distance || c.keep_bodies != d.keep_bodies || c.ads_dof != d.ads_dof || c.gun_blur != d.gun_blur ||
            c.cutscene_bars != d.cutscene_bars || c.music_volume != d.music_volume ||
            c.menu_music_volume != d.menu_music_volume || c.effects_volume != d.effects_volume ||
            c.voice_volume != d.voice_volume;
@@ -816,7 +821,8 @@ constexpr TabRow kTabRows[] = {
     {kGraphicsTab, kAniso, "Anisotropic Filtering", "Keeps the ground and walls sharp at a shallow angle.", "r_anisotropy"},
     {kGraphicsTab, kMsaa, "MSAA", "Smooths the jagged edges of soldiers, buildings and the ground. Higher is smoother and costs frame rate.", "r_msaa"},
     {kGraphicsTab, kSmaa, "SMAA", "A light filter that smooths every edge on screen, fences and leaves too. Works on its own or with MSAA.", "r_smaa"},
-    {kGraphicsTab, kAdsDof, "Depth of Field When Aiming", "The gun goes softly out of focus while you aim down the sights, and what you aim at stays sharp.", "r_dof"},
+    {kGraphicsTab, kAdsDof, "Depth of Field When Aiming", "While you aim down the sights, what is in the sight picture stays sharp and everything around it goes out of focus.", "r_dof"},
+    {kGraphicsTab, kGunBlur, "Blur Gun Sight", "While you aim down the sights, the part of the gun nearest your eye goes softly out of focus.", "r_blurGunSight"},
     {kGraphicsTab, kViewDistance, "Level of Detail", "How far away soldiers and objects keep their detailed models. Low is the game's own.", "cg_viewDistance"},
     {kGraphicsTab, kKeepBodies, "Bodies Stay", "The fallen stay where they fell and are not cleared away.", "cg_bodiesStay"},
     {kGraphicsTab, kSection, "Textures", "", ""},

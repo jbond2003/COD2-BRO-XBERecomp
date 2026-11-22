@@ -176,6 +176,7 @@ const PortVariable kPortVariables[] = {
      [] { return Opt().view_distance <= 1 ? 0.0 : Opt().view_distance <= 5 ? 1.0 : 2.0; },
      [](double v) { Opt().view_distance = v < 0.5 ? 1 : v < 1.5 ? 4 : 8; }},
     {"r_dof", "Depth of Field When Aiming", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().ads_dof)},
+    {"r_blurGunSight", "Blur Gun Sight", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().gun_blur)},
     {"cg_bodiesStay", "Bodies Stay", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().keep_bodies)},
     {"cg_cutsceneBars", "Cutscene Black Bars", "0 or 1", 0, 1, 1, 1, PORT_BOOL(Opt().cutscene_bars)},
     {"cg_aimAssist", "Controller Aim Assist", "0 or 1", 0, 1, 1, 1, PORT_BOOL(Opt().aim_assist)},
