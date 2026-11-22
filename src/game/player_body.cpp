@@ -120,12 +120,19 @@ bool Spawn(X86Context& ctx, uint32_t soldier, uint32_t player) {
         uint32_t ent = R32(kEntities + i * 8);
         if (ent && !std::strcmp(ClassName(ent), "script_model")) slot = ent + 0x25C;
     }
-    if (!slot || !R32(kActorAnims)) return false;
+    static int failed = 0;
+    if (!slot || !R32(kActorAnims)) {
+        if (failed++ < 5) LOGR("player body: not made yet (%s)", slot ? "no soldier animations" : "no script model in the level");
+        return false;
+    }
     Kept kept(ctx);
     uint32_t handle = CallGuest(ctx, kSpawn, {slot, player + 0x140, 0});
     uint32_t i = handle & 0xFFF;
     uint32_t ent = handle && i < kEntityCount ? R32(kEntities + i * 8) : 0;
-    if (!ent) return false;
+    if (!ent) {
+        if (failed++ < 5) LOGR("player body: not made yet (the game gave no entity)");
+        return false;
+    }
     W32(ent + 0x258, R32(soldier + 0x258));
     ctx.eax = R32(kActorAnims), ctx.edi = ent;
     CallGuest(ctx, kSetAnimTree, {});
