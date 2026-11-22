@@ -873,6 +873,8 @@ struct ModernState {
     bool held = false;        // the left button, as Windows had it last frame
     bool confirm = false;     // leaving with changes waiting: the slip that asks about them is up
     int confirm_choice = 0;
+    int editing = -1;         // the line picked with A or Enter: left and right change it until it is let go
+    bool pointer = false;     // the mouse was the last thing used: its lines change at a click, without the pick
     ui::modern::Hits hits;
 } g_modern;
 
@@ -1187,20 +1189,26 @@ void DrawModern() {
     // the console over the menu has the keys, the mouse and the controller until it is put away
     bool console_up = console::Open();
     if (console_up) pressed = 0;
-    // leaving: at once with nothing waiting, else the slip asks (Apply, Discard, Stay)
+    // leaving: at once with nothing waiting, else the slip asks (Apply, Discard, Cancel)
     bool close = g_close_request.exchange(false, std::memory_order_relaxed);
+    if (p.editing != p.selected) p.editing = -1;
+    if (close && p.editing >= 0 && !console_up) {  // Escape lets go of the line first
+        p.editing = -1;
+        close = false;
+    }
     auto leave = [&] {
         if (ModernChanges() > 0) {
             g_capture = {};
             p.confirm = true;
             p.confirm_choice = 0;
             p.drag = -1;
+            p.editing = -1;
             return false;
         }
         ToggleMenu();
         return true;
     };
-    constexpr const char* kConfirmChoices[] = {"Apply", "Discard", "Stay"};
+    constexpr const char* kConfirmChoices[] = {"Apply", "Discard", "Cancel"};
     if (p.confirm && console_up) {
         if (close) p.confirm = false;
     } else if (p.confirm) {
@@ -1239,6 +1247,7 @@ void DrawModern() {
         p.selected = -1;
         p.scroll = 0;
         p.drag = -1;
+        p.editing = -1;
         build();
     };
     // capture takes every key until it ends; a key that ended it does nothing else this frame
@@ -1270,6 +1279,23 @@ void DrawModern() {
                 build();
             }
         }
+        // a setting is picked with A or Enter before left and right change it, and let go with A, Enter or back
+        {
+            ui::modern::Row::Kind shown = page.rows[size_t(p.selected)].kind;
+            bool editable = rows[size_t(p.selected)].kind != ModernRow::kBind &&
+                            (shown == ui::modern::Row::kChoice || shown == ui::modern::Row::kSlider ||
+                             shown == ui::modern::Row::kToggle);
+            if (p.editing >= 0) {
+                if (enter || back) p.editing = -1;
+                enter = back = clear = defaults = false;
+                move = turn = 0;
+            } else if (editable) {
+                if (enter) p.editing = p.selected;
+                if (enter || step) p.pointer = false;
+                enter = false;
+                step = 0;
+            }
+        }
         if (back) {
             if (leave()) return;
             turn = move = step = 0;
@@ -1282,6 +1308,8 @@ void DrawModern() {
         }
         if (step) {
             if (rows[size_t(p.selected)].kind == ModernRow::kBind) g_slot = step < 0 ? 0 : 1;
+            else if (page.rows[size_t(p.selected)].kind == ui::modern::Row::kToggle)  // On is the left box
+                ModernActivate(rows[size_t(p.selected)], page.rows[size_t(p.selected)], 0, step < 0 ? 1 : 0);
             else ModernActivate(rows[size_t(p.selected)], page.rows[size_t(p.selected)], step);
         }
         if (enter) ModernActivate(rows[size_t(p.selected)], page.rows[size_t(p.selected)], 0);
@@ -1289,6 +1317,7 @@ void DrawModern() {
         if (defaults) Defaults();
         if (apply) ApplyPanel();
         if (!pressed && (move || step || turn || enter || io.InputQueueCharacters.Size)) p.controller = false;
+        if (move || step || turn || enter) p.pointer = false;
 
         // the mouse: hovering selects, a click does the line's job, the wheel scrolls
         // the pointer and its left button are read from Windows each frame, as the game's own pointer is drawn: a
@@ -1311,7 +1340,7 @@ void DrawModern() {
         bool left = (held && !p.held) || ImGui::IsMouseClicked(ImGuiMouseButton_Left);
         if (left && p.held) left = false;  // one press, once
         bool right = ImGui::IsMouseClicked(ImGuiMouseButton_Right);
-        if (moved || left || right) p.controller = false;
+        if (moved || left || right) p.controller = false, p.pointer = true, p.editing = -1;
         const ui::modern::Hits& h = p.hits;
         if (left) {
             int tab = p.tab;
@@ -1368,6 +1397,8 @@ void DrawModern() {
     const ModernRow& row = rows[size_t(p.selected)];
     sel.slot = g_slot;
     sel.waiting = capturing;
+    sel.editing = p.editing == p.selected;
+    sel.locked = !sel.editing && !p.pointer;
     page.title = "Options";
     const std::string& profile = game::Opt().settings_profile;
     if (!profile.empty() && profile != "*") page.profile = profile;
@@ -1383,6 +1414,8 @@ void DrawModern() {
     if (row.kind == ModernRow::kSetting && sel.changed)
         page.note_change = "Now " + Sentence(LiveText(row.row)) + ", after Apply " + Sentence(PanelText(row.row, 0));
     if (capturing) page.hint = "Press a key for it. Escape keeps the old one.";
+    else if (sel.editing)
+        page.hint = p.controller ? "Left and right change it. Press A when done." : "Left and right change it. Press Enter when done.";
     page.confirm = p.confirm;
     page.confirm_choices.assign(std::begin(kConfirmChoices), std::end(kConfirmChoices));
     page.confirm_selected = p.confirm_choice;

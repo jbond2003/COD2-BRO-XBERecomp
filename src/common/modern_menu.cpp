@@ -225,13 +225,17 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
             continue;
         }
         c.Text(11.5f, list_left + 4, cy, Ink(on ? 1.0f : 0.82f), r.label, 0.0f, value_x0 - list_left - 10);
-        ImU32 edge = on ? Red(0.95f) : Ink(0.5f);
+        // the value is lit while left and right change it: a line that waits to be picked has it as the others
+        bool live = on && !r.locked;
+        ImU32 edge = live ? Red(0.95f) : Ink(0.5f);
+        if (on && r.editing && (r.kind == Row::kChoice || r.kind == Row::kSlider || r.kind == Row::kToggle))
+            c.Box(value_x0 - 2.5f, by0 - 2.0f, value_x1 + 2.5f, by1 + 2.0f, Red(0.95f), 1.2f);
         switch (r.kind) {
             case Row::kChoice: {
-                c.Fill(value_x0, by0, value_x1, by1, Col(kCream, on ? 0.45f : 0.2f));
+                c.Fill(value_x0, by0, value_x1, by1, Col(kCream, live ? 0.45f : 0.2f));
                 c.Box(value_x0, by0, value_x1, by1, edge);
-                c.Arrow(value_x0 + 6, cy, 3.2f, -1, on ? Red() : Ink(0.6f));
-                c.Arrow(value_x1 - 6, cy, 3.2f, 1, on ? Red() : Ink(0.6f));
+                c.Arrow(value_x0 + 6, cy, 3.2f, -1, live ? Red() : Ink(0.6f));
+                c.Arrow(value_x1 - 6, cy, 3.2f, 1, live ? Red() : Ink(0.6f));
                 c.Text(10.0f, (value_x0 + value_x1) / 2, cy, Ink(on ? 1.0f : 0.85f), r.value, 0.5f, value_w - 26);
                 float mid = (value_x0 + value_x1) / 2;
                 hit.left = {c.P(value_x0, y), c.P(mid, y + h)};
@@ -244,7 +248,7 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
                 c.Fill(value_x0, cy - 1.8f, bar1, cy + 1.8f, Col(kCream, 0.3f));
                 c.Fill(value_x0, cy - 1.8f, at, cy + 1.8f, Ink(0.95f));
                 c.Box(value_x0, cy - 1.8f, bar1, cy + 1.8f, Ink(0.7f), 0.5f);
-                c.Fill(at - 1.7f, cy - 5.0f, at + 1.7f, cy + 5.0f, Red());
+                c.Fill(at - 1.7f, cy - 5.0f, at + 1.7f, cy + 5.0f, on && r.locked ? Ink(0.75f) : Red());
                 c.Box(at - 1.7f, cy - 5.0f, at + 1.7f, cy + 5.0f, Ink(0.9f), 0.4f);
                 c.Text(10.0f, value_x1, cy, Ink(on ? 1.0f : 0.85f), r.value, 1.0f, 22);
                 hit.bar = {c.P(value_x0, y), c.P(bar1, y + h)};

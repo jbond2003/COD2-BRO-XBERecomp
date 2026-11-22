@@ -21,6 +21,8 @@ struct Row {
     bool changed = false;  // differs from what is in use: marked until Apply
     int slot = 0;          // kBinding: the key box the selection is on
     bool waiting = false;  // kBinding: that box waits for a key
+    bool editing = false;  // the selected line is picked: left and right change its value
+    bool locked = false;   // the selected line's value waits for that pick
 };
 
 struct Page {
