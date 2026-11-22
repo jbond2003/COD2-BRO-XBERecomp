@@ -408,13 +408,11 @@ void Text(Canvas& canvas, float cx, float cy, float max_w, float max_h, const st
     }
 }
 
-// The look of the settings menu's keys (common/modern_menu.cpp): a cream cap with rounded corners, the key's name on
-// it in dark ink in a bold Garamond, a thin dark edge and a soft shadow so it also reads on the menus' paper.
+// The settings menu's own key (Cap in common/modern_menu.cpp), the same one: a flat cream cap, its corners rounded by
+// 0.14 of its height, the key's name on it in dark ink in the bold Garamond at 0.62 of its height. No edge, no shadow.
 constexpr Color kInk{0.14f, 0.11f, 0.08f, 1.0f};
-constexpr Color kShadow{0.0f, 0.0f, 0.0f, 0.45f};
-constexpr Color kCapTop{0.95f, 0.91f, 0.82f, 1.0f};
-constexpr Color kCapBottom{0.89f, 0.84f, 0.73f, 1.0f};
-constexpr Color kEdge{0.10f, 0.08f, 0.06f, 0.85f};
+constexpr Color kShadow{0.0f, 0.0f, 0.0f, 0.45f};  // the controller's shoulder buttons
+constexpr Color kCream{0.92f, 0.88f, 0.78f, 1.0f};
 constexpr Color kLit{0.66f, 0.13f, 0.10f, 1.0f};
 
 Color Mix(Color a, Color b, float t) {
@@ -458,17 +456,11 @@ void Keycap(Canvas& canvas, float left, float top, float w, float h, const std::
     bool name = label.size() > 1 && label[0] != '@';  // a name's cap is as wide as its place, a letter's square
     float cx = left + w / 2, cy = top + h / 2 - size * 0.02f;
     float hh = size * 0.42f, hw = name ? std::max(hh, w * 0.5f - std::max(0.5f, size * 0.02f)) : hh;
-    float radius = hh * 0.28f, edge = std::max(0.6f, size * 0.03f), drop = size * 0.045f;
-    auto cap = [&](float grow, float down) {
-        return [&, grow, down](float px, float py) {
-            return RoundedRect(px, py, cx, cy + down, hw + grow, hh + grow, radius + grow);
-        };
-    };
-    // the shadow, the dark edge, the cream face a little lighter at the top
-    canvas.Fill(cx - hw, cy - hh + drop, cx + hw, cy + hh + drop, kShadow, cap(0, drop));
-    canvas.Fill(cx - hw, cy - hh, cx + hw, cy + hh, kEdge, cap(0, 0));
-    Shade(canvas, cy - hh + edge, cy + hh - edge, cx - hw + edge, cx + hw - edge, kCapTop, kCapBottom, cap(-edge, 0));
-    float face = hh - edge;
+    float radius = hh * 0.28f;  // 0.14 of the cap's height
+    canvas.Fill(cx - hw, cy - hh, cx + hw, cy + hh, kCream,
+                [&](float px, float py) { return RoundedRect(px, py, cx, cy, hw, hh, radius); });
+    const float edge = 0.0f;
+    float face = hh;
     float inner = face * 2 * 0.80f;  // the text's width inside the face
     float a = face * 0.8f;           // arrow size
     if (label == "@lmb" || label == "@rmb" || label == "@mmb") {
@@ -489,8 +481,8 @@ void Keycap(Canvas& canvas, float left, float top, float w, float h, const std::
         Arrow(canvas, cx - o, cy, s, -1, 0, kInk);
         Arrow(canvas, cx + o, cy, s, 1, 0, kInk);
     } else {
-        // a letter at the menu's size, a capital as on a keyboard; a name as wide as fits its cap
-        Text(canvas, cx, cy, name ? (hw - edge) * 2 * 0.86f : inner, name ? face * 0.8f : face * 0.9f, label, kInk);
+        // at the menu's size (a capital 0.4 of the cap high); a name shrinks to fit its cap
+        Text(canvas, cx, cy, name ? (hw - edge) * 2 * 0.86f : inner, face * 0.8f, label, kInk);
     }
 }
 
