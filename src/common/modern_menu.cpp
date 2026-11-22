@@ -248,8 +248,10 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
                 c.Fill(value_x0, cy - 1.8f, bar1, cy + 1.8f, Col(kCream, 0.3f));
                 c.Fill(value_x0, cy - 1.8f, at, cy + 1.8f, Ink(0.95f));
                 c.Box(value_x0, cy - 1.8f, bar1, cy + 1.8f, Ink(0.7f), 0.5f);
-                c.Fill(at - 1.7f, cy - 5.0f, at + 1.7f, cy + 5.0f, on && r.locked ? Ink(0.75f) : Red());
-                c.Box(at - 1.7f, cy - 5.0f, at + 1.7f, cy + 5.0f, Ink(0.9f), 0.4f);
+                // the handle: a red disc with a dark rim
+                ImVec2 knob(c.o.x + at * c.sx, c.o.y + cy * c.sy);
+                dl->AddCircleFilled(knob, 4.2f * c.sy, Red(), 32);
+                dl->AddCircle(knob, 4.2f * c.sy, Ink(0.9f), 32, c.Line(0.5f));
                 c.Text(10.0f, value_x1, cy, Ink(on ? 1.0f : 0.85f), r.value, 1.0f, 22);
                 hit.bar = {c.P(value_x0, y), c.P(bar1, y + h)};
                 hit.left = {c.P(value_x0 - 4, y), c.P(at, y + h)};
