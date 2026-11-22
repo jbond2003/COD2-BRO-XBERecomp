@@ -2464,9 +2464,31 @@ bool HudHidden() {
            !(g_dialog_shown && Frame() - g_dialog_frame <= 2);
 }
 
+// The black bar under a level's menus (the pause menu, its yes or no boxes) is a picture across the screen that ends at
+// 477 of the 480 lines: on a television the last lines were never seen, on a monitor the level shows under it. Its
+// lower corners go to the bottom edge. (pictures: list +0x20, count +0x28, corners x, y at +0x40, 0x14 apart)
+void BarToTheBottom(uint32_t widget) {
+    if (R32(kFrontEnd) || !R32(kInGame)) return;
+    uint32_t pictures = R32(widget + 0x20), count = R32(widget + 0x28);
+    if (!pictures || count > 8) return;
+    for (uint32_t p = 0; p < count; p++) {
+        uint32_t corners = R32(pictures + p * 4) + 0x40;
+        if (corners == 0x40) continue;
+        float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
+        for (uint32_t c = 0; c < 4; c++) {
+            x0 = std::min(x0, RF(corners + c * 0x14)), x1 = std::max(x1, RF(corners + c * 0x14));
+            y0 = std::min(y0, RF(corners + c * 0x14 + 4)), y1 = std::max(y1, RF(corners + c * 0x14 + 4));
+        }
+        if (x0 > 2.0f || x1 < 638.0f || y0 < 380.0f || y1 < 470.0f || y1 >= 480.0f) continue;
+        for (uint32_t c = 0; c < 4; c++)
+            if (RF(corners + c * 0x14 + 4) > y1 - 1.0f) kernel::G<float>(corners + c * 0x14 + 4) = 480.5f;
+    }
+}
+
 // a picture widget drawn (0x316DD0, vtable slot +0x44, ecx the widget): the sliders of the lines PC Options puts aside
 // are not
 X86_FUNC(sub_00316DD0) {
+    BarToTheBottom(ctx.ecx);
     PcScreenTakeBeforeDraw(ctx);
     PcScreenDrawMarks(ctx, ctx.ecx);
     if (PcScreenHidesPicture(ctx.ecx) || HudHidden() || TitleHidden()) {
