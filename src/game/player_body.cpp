@@ -41,6 +41,10 @@ constexpr uint32_t kSetAnimKnobAll = 0x3019B0;  // GScr_SetAnimKnobAll (handle, 
 // the soldiers' tree (generic_human), by its nodes' numbers
 constexpr uint32_t kStand = 165, kRun = 242, kCrouch = 135, kCrouchRun = 234;
 constexpr float kBehind = 11.0f;  // units behind the eye: looking down shows the chest, the legs and the boots
+// The hidden parts are drawn tiny at one point inside the chest, which closes the collar with the jacket's own
+// cloth. The point is below the camera's near plane (6 units): any higher and the plane cuts the cloth open, and
+// the hollow of the body shows as a black hole at a wide field of view.
+constexpr float kShrunk = 0.05f, kSunk = 6.0f;
 constexpr float kMoving = 40.0f;  // units a second over the ground
 
 struct {
@@ -172,8 +176,13 @@ X86_FUNC(sub_00245A20) {
     if (now < g.last_time) g.handle = 0, g.next_try = 0;  // the map restarted
     g.last_time = now;
     uint32_t body = Body(), player = Player(), scene = R32(kScene);
-    if (!body && player && now >= g.next_try && G<uint8_t>(owner) == 11 && R32(owner + 0x258) && Has(ClassName(owner), "1stInf")) {
-        if (!Spawn(ctx, owner, player)) g.next_try = now + 2000;
+    if (!body && player && now >= g.next_try) {  // any of the level's 1st Infantry men will do, in sight or not
+        uint32_t soldier = 0;
+        for (uint32_t i = 0; i < kEntityCount && !soldier; i++) {
+            uint32_t ent = R32(kEntities + i * 8);
+            if (ent && G<uint8_t>(ent) == 11 && R32(ent + 0x258) && Has(ClassName(ent), "1stInf")) soldier = ent;
+        }
+        if (!soldier || !Spawn(ctx, soldier, player)) g.next_try = now + 500;
         return __imp__sub_00245A20(ctx, base);
     }
     if (!body || owner != body || !player || !scene) return __imp__sub_00245A20(ctx, base);
@@ -216,8 +225,8 @@ X86_FUNC(sub_00245A20) {
         for (uint32_t i = 0; i < g.bones; i++)
             if (g.hide[i]) {
                 float* m = &G<float>(matrices + 0x30 + i * 0x40);
-                std::memset(m, 0, 12 * sizeof(float));
-                m[12] = point[0], m[13] = point[1], m[14] = point[2];
+                for (int k = 0; k < 12; k++) m[k] *= kShrunk;
+                m[12] = point[0], m[13] = point[1], m[14] = point[2] - kSunk;
             }
     }
     __imp__sub_00245A20(ctx, base);
