@@ -22,7 +22,7 @@ namespace {
 constexpr uint32_t kScene = 0x90259C;
 constexpr uint32_t kWorldNodes = 25;  // fewer solid nodes is not the world's scene
 constexpr float kRadius = 28.0f;      // how far a surface is shaded from: the game's units are about an inch
-constexpr float kStrength = 2.0f;     // twice the shade the shaders work out
+constexpr float kStrength = 1.4f;     // 30% lighter than 2.0 (his ask): 1.4x the shade the shaders work out
 
 }  // namespace
 
