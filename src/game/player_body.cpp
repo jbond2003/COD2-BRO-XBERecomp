@@ -17,6 +17,7 @@
 // A checkpoint restarts the map (SV_MapRestart), so the body is never in a save: the level's clock running back
 // drops it and it is spawned again.
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -41,10 +42,13 @@ constexpr uint32_t kSetAnimKnobAll = 0x3019B0;  // GScr_SetAnimKnobAll (handle, 
 // the soldiers' tree (generic_human), by its nodes' numbers
 constexpr uint32_t kStand = 165, kRun = 242, kCrouch = 135, kCrouchRun = 234;
 constexpr float kBehind = 11.0f;  // units behind the eye: looking down shows the chest, the legs and the boots
-// The hidden parts are drawn tiny at one point inside the chest, which closes the collar with the jacket's own
-// cloth. The point is below the camera's near plane (6 units): any higher and the plane cuts the cloth open, and
-// the hollow of the body shows as a black hole at a wide field of view.
-constexpr float kShrunk = 0.05f, kSunk = 6.0f;
+// The hidden parts are drawn into one point inside the chest, below the camera's near plane (6 units): any higher
+// and the plane cuts the cloth open. The cloth stretched to that point is not a pretty collar, so the body stands
+// far enough behind the eye that the view's bottom edge stops short of it (kReach, kLean).
+constexpr float kSunk = 6.0f;
+constexpr float kReach = 20.0f;  // times the tangent of half the view's height: 18 units at a field of view of 110
+constexpr float kLean = 4.0f;    // further back at a run, which leans the chest forward
+constexpr float kFarBehind = 24.0f, kStanding = 60.0f, kCrouching = 40.0f;  // the eye above the feet
 constexpr float kMoving = 40.0f;  // units a second over the ground
 
 struct {
@@ -53,7 +57,8 @@ struct {
     int neck = -1;
     bool hide[128] = {};
     float x = 0, y = 0, speed = 0;
-    std::chrono::steady_clock::time_point at;
+    float behind = 0, height = 0;  // eased: where the body stands behind the eye, how far below it the feet are
+    std::chrono::steady_clock::time_point at, drawn;
 } g;
 
 uint32_t Player() {
@@ -195,6 +200,8 @@ X86_FUNC(sub_00245A20) {
     bool shown = cx * cx + cy * cy < 40.0f * 40.0f && eye > 25.0f && eye < 80.0f && len > 0.01f &&
                  int32_t(R32(player + 0x350)) > 0;
     auto t = std::chrono::steady_clock::now();
+    float frame = std::clamp(std::chrono::duration<float>(t - g.drawn).count(), 0.0f, 0.1f);
+    g.drawn = t;
     float dt = std::chrono::duration<float>(t - g.at).count();
     if (dt > 0.05f) {
         g.speed = dt < 1.0f ? std::sqrt((px - g.x) * (px - g.x) + (py - g.y) * (py - g.y)) / dt : 0.0f;
@@ -213,9 +220,19 @@ X86_FUNC(sub_00245A20) {
     fx /= len, fy /= len;
     const float axis[9] = {fx, fy, 0, -fy, fx, 0, 0, 0, 1};
     std::memcpy(&G<float>(ref + 0x94), axis, sizeof(axis));
-    G<float>(ref + 0xBC) = px - fx * kBehind;
-    G<float>(ref + 0xC0) = py - fy * kBehind;
-    G<float>(ref + 0xC4) = pz;
+    // It hangs from the camera, not from the entity: the entity moves at the server's rate, the camera every
+    // frame, and a body tied to the entity jumps about under a moving camera. It stands far enough behind the eye
+    // that the bottom edge of the view stops short of the collar, which is wider the wider the field of view.
+    float half = std::atan(1.0f / std::max(G<float>(scene + 0x24), 0.05f));  // half the view's height, radians
+    float want = std::clamp(kReach * std::tan(std::max(half - 0.09f, 0.0f)), kBehind, kFarBehind);
+    want += kLean * std::min(g.speed / 150.0f, 1.0f);  // the run leans the chest forward
+    float height = eye > 50.0f ? kStanding : kCrouching;
+    if (g.behind == 0) g.behind = want, g.height = height;
+    float ease = std::min(frame * 8.0f, 1.0f);
+    g.behind += (want - g.behind) * ease, g.height += (height - g.height) * ease;
+    G<float>(ref + 0xBC) = px + cx - fx * g.behind;
+    G<float>(ref + 0xC0) = py + cy - fy * g.behind;
+    G<float>(ref + 0xC4) = pz + eye - g.height;
     uint32_t dobj = R32(ref + 0xD4);
     uint32_t model = dobj ? R32(dobj + 0x38) : 0, matrices = dobj ? R32(dobj + 0x20) : 0;
     if (model && model != g.model) FindBones(model);
@@ -225,7 +242,7 @@ X86_FUNC(sub_00245A20) {
         for (uint32_t i = 0; i < g.bones; i++)
             if (g.hide[i]) {
                 float* m = &G<float>(matrices + 0x30 + i * 0x40);
-                for (int k = 0; k < 12; k++) m[k] *= kShrunk;
+                std::memset(m, 0, 12 * sizeof(float));
                 m[12] = point[0], m[13] = point[1], m[14] = point[2] - kSunk;
             }
     }
