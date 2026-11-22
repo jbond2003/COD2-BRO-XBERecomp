@@ -435,3 +435,9 @@ call = "MirrorEndText"
 [[hook]]
 at = 0x000743FB
 call = "AmbientOcclusion"
+
+# src/game/shadows.cpp: R_AddDObjSurfaces, a rigid part's copy for the shadow picture about to be added, its matrix
+# just pushed
+[[hook]]
+at = 0x0024558E
+call = "RigidShadowMatrix"
