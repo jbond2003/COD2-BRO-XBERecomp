@@ -441,3 +441,9 @@ call = "AmbientOcclusion"
 [[hook]]
 at = 0x0024558E
 call = "RigidShadowMatrix"
+
+# game/shadows.cpp: R_RenderTestShadow, the shadow picture's camera just worked out (looking straight down), before
+# the picture's scene and its projector take it
+[[hook]]
+at = 0x00241636
+call = "SunShadowCamera"
