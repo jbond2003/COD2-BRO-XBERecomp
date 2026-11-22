@@ -106,20 +106,20 @@ constexpr float kPadApart = 7.0f;
 constexpr PadAnchor kXboxPad[kPadLabels] = {
     {412, 163, 0, 3, 0},   {412, 287, 0, 3, 0},   {412, 185, 0, 3, 0},   {412, 205.5f, 0, 3, 0}, {412, 229.5f, 0, 3, 0},
     {412, 252.5f, 0, 3, 0}, {87, 162, 1, -3, 0},   {412, 305, 0, 3, 0},   {87, 228, 1, -3, 0},    {87, 190, 1, -3, 0},
-    {205, 155, 0.5f, 0, -9}, {87, 304, 1, -3, 0},  {87, 317.5f, 1, -3, 0}, {220, 341, 1, 8, 9},   {87, 260, 1, -3, 0},
-    {87, 279.5f, 1, -3, 0}, {290, 343, 0.5f, 0, 24}, {315, 335, 0, 9, 10},
+    {205, 155, 0.5f, 0, -9}, {87, 304, 1, -3, 0},  {87, 317.5f, 1, -3, 0}, {220, 341, 1, 24, 20},   {87, 260, 1, -3, 0},
+    {87, 279.5f, 1, -3, 0}, {290, 343, 0.5f, 0, 37}, {315, 335, 0, -7, 28},
 };
 // the Modern configuration's (modern_controller.png)
 constexpr PadAnchor kModernPad[kPadLabels] = {
     {395, 161, 0, 3, -kPadApart}, {412, 174, 0, 3, 2},  {435, 189, 0, 3, 0},   {435, 207, 0, 3, 0},  {435, 229.5f, 0, 3, 0},
-    {435, 250.5f, 0, 3, 0}, {121, 160, 1, -3, -kPadApart}, {121, 173, 1, -3, 2}, {100, 219.5f, 1, -3, 0}, {102, 245.5f, 1, -3, 0},
-    {101, 265.5f, 1, -3, 0}, {98, 290.5f, 1, -3, 0}, {98, 307.5f, 1, -3, 0}, {228, 345, 1, 8, 9},  {231, 154, 1, 4, -9},
-    {276, 154, 0, -4, -9},  {292, 345, 0.5f, 0, 24}, {310, 340, 0, 4, 9},
+    {435, 250.5f, 0, 3, 0}, {121, 160, 1, -3, -kPadApart}, {87, 173.5f, 1, -3, 0}, {100, 219.5f, 1, -3, 0}, {102, 245.5f, 1, -3, 0},
+    {101, 265.5f, 1, -3, 0}, {98, 290.5f, 1, -3, 0}, {98, 307.5f, 1, -3, 0}, {228, 345, 1, 18, 17}, {231, 154, 1, 4, -9},
+    {276, 154, 0, -4, -9},  {292, 345, 0.5f, 0, 35}, {310, 340, 0, 4, 23},
 };
 
 // the controller and its labels: the picture's texels kPadTop..kPadBottom down fill y0..y1 (screen pixels), its middle
 // on cx
-constexpr float kPadTop = 134.0f, kPadBottom = 380.0f, kPadLetter = 17.0f;
+constexpr float kPadTop = 134.0f, kPadBottom = 392.0f, kPadLetter = 17.0f;
 void DrawPad(ImDrawList* dl, const Page& page, float cx, float y0, float y1) {
     float s = (y1 - y0) / (kPadBottom - kPadTop);  // screen pixels a texel
     ImVec2 o(std::floor(cx - 256.0f * s), std::floor(y0 - kPadTop * s));
