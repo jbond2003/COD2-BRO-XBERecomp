@@ -88,11 +88,10 @@ void FullHealth() {
 bool UnlimitedAmmo() { return g_ammo.load(std::memory_order_relaxed); }
 void SetUnlimitedAmmo(bool on) { g_ammo.store(on, std::memory_order_relaxed); }
 
-// A profile named "thereisacow1337" (any case) has every mission, and gets a message on the screen the once, when it is
-// made and unlocked. The profile in use is the block at 0x8DCE30, its name first, the chapters done at
+// A profile named "thereisacow1337" (any case) has every mission. The profile in use is the block at 0x8DCE30, its name first, the chapters done at
 // +0x14 ([0x8DCE44], -1 none, 14 all) and the everything-unlocked byte at +0x24 ([0x8DCE54]); the game's own unlock
 // at 0x30CC44 sets the same two. They are kept set while that profile is the one in use, so it is saved with it
-// too. The panel's thread draws the message (menu.cpp).
+// too.
 // The same word typed in the console does it for the profile signed in then (UnlockMissions): that profile's name is
 // kept here, and it is treated as the named one is until the game closes (by when the game has saved it unlocked).
 constexpr uint32_t kProfile = 0x8DCE30;
@@ -119,11 +118,6 @@ void NamedUnlock() {
     if (int32_t(kernel::R32(kChapters)) == 14 && kernel::G<uint8_t>(kEverything) == 1) return;
     kernel::W32(kChapters, 14);
     kernel::G<uint8_t>(kEverything) = 1;
-    // once: the profile is saved unlocked. (The game puts the two back a few times while the profile is being
-    // made, so the message is also only ever shown once in a run.)
-    static bool said = false;
-    if (!said) Say("Moo.");
-    said = true;
     LOGR("profile thereisacow1337: every mission unlocked");
 }
 
