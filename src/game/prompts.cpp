@@ -45,6 +45,7 @@ bool PadSameBinding(size_t a, size_t b);
 void HintKeys(const char* (&actions)[2]);  // src/game/hints.cpp
 std::vector<uint8_t> BoldGaramond();       // src/game/sharp_text.cpp: the menus' bold Garamond, empty for none
 // src/game/sharp_text.cpp: a game font sheet drawn again sharp, null for any other texture
+std::shared_ptr<const gpu::texture_override::Picture> SmoothSky(const gpu::TextureDesc& d, const uint8_t* guest);
 std::shared_ptr<const gpu::texture_override::Picture> SharpText(const gpu::TextureDesc& d, const uint8_t* guest,
                                                                 float render_scale);
 }
@@ -648,6 +649,8 @@ std::shared_ptr<const Picture> Provide(const gpu::TextureDesc& d, const uint8_t*
             return cached;
         }
     }
+    if (!found)
+        if (auto sky = game::SmoothSky(d, guest)) return sky;
     if (!found) return game::SharpText(d, guest, render_scale);
     std::lock_guard lock(g_lock);
     if (!g_labels) return nullptr;
@@ -786,6 +789,17 @@ bool ReadPackFile(const char* pack, const std::string& name, std::vector<uint8_t
     std::map<std::string, Entry> files = ReadDirectory(pack);
     auto it = files.find(name);
     return it != files.end() && ReadAny(pack, it->second.offset, it->second.size, out);
+}
+
+// every file of a pack whose name starts as given
+std::vector<std::pair<std::string, std::vector<uint8_t>>> ReadPackFiles(const char* pack, const std::string& start) {
+    std::vector<std::pair<std::string, std::vector<uint8_t>>> out;
+    for (const auto& [name, entry] : ReadDirectory(pack)) {
+        std::vector<uint8_t> data;
+        if (name.compare(0, start.size(), start) == 0 && ReadAny(pack, entry.offset, entry.size, data))
+            out.emplace_back(name, std::move(data));
+    }
+    return out;
 }
 
 // a game file, also before boot
