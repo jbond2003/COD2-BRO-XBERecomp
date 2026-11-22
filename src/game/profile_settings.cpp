@@ -1,6 +1,6 @@
 // Settings of their own for each of the game's profiles.
 //
-// The port keeps its settings (the display, the graphics, the mouse, the key bindings, the gameplay switches) in
+// The port keeps its settings (the graphics, the mouse, the key bindings, the gameplay switches) in
 // one file beside the exe, which every profile shared. Now the file belongs to the profile that is signed in (its
 // name is the file's "profile" key), and each other profile's settings wait in profile_settings\<name>.toml:
 //  - signing in to another profile puts the file away under its owner's name and brings that profile's own back;
@@ -81,11 +81,14 @@ void ProfileSettings(const std::string& profile) {
     }
     app::Settings& s = app::Get();
     if ((s.fps_cap && s.fps_cap < 5) || s.fps_cap > 999) s.fps_cap = 60;
+    // the window is the computer's, not the profile's: the game opens before anyone has signed in, and one profile's
+    // display mode and resolution must not be what the next one starts with. They stay as they are
+    s.display_mode = before.display_mode;
+    s.width = before.width;
+    s.height = before.height;
     o.settings_profile = profile;
     input::LoadBindings();
     app::Save();
-    if (s.display_mode != before.display_mode || s.width != before.width || s.height != before.height)
-        app::ApplyDisplay();
     if (o.modern_layout != modern) gpu::texture_override::Changed();  // the Controller screen's picture
     LOGR("profile settings: profile %s signed in after %s, %s", profile.c_str(), owner.c_str(),
          kept ? "its own settings are back" : "a new profile: every setting at its default");
