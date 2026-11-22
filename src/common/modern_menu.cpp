@@ -245,13 +245,24 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
             case Row::kSlider: {
                 float bar1 = value_x1 - 24, fill = std::clamp(r.fill, 0.0f, 1.0f);
                 float at = value_x0 + (bar1 - value_x0) * fill;
-                c.Fill(value_x0, cy - 1.8f, bar1, cy + 1.8f, Col(kCream, 0.3f));
-                c.Fill(value_x0, cy - 1.8f, at, cy + 1.8f, Ink(0.95f));
-                c.Box(value_x0, cy - 1.8f, bar1, cy + 1.8f, Ink(0.7f), 0.5f);
-                // the handle: a red disc with a dark rim
-                ImVec2 knob(c.o.x + at * c.sx, c.o.y + cy * c.sy);
-                dl->AddCircleFilled(knob, 4.2f * c.sy, Red(), 32);
-                dl->AddCircle(knob, 4.2f * c.sy, Ink(0.9f), 32, c.Line(0.5f));
+                // the game's own bar: a rounded frame of two lines, dark as far as the value, a tick at the middle
+                const float half = 5.6f, inset = 1.5f;
+                float round = 2.2f * c.sy;
+                ImVec2 f0 = c.P(value_x0, cy - half), f1 = c.P(bar1, cy + half);
+                ImVec2 i0 = c.P(value_x0 + inset, cy - half + inset), i1 = c.P(bar1 - inset, cy + half - inset);
+                dl->AddRectFilled(f0, f1, Ink(0.3f), round);
+                dl->AddRectFilled(i0, i1, Ink(0.25f), round * 0.6f);
+                float end = i0.x + (i1.x - i0.x) * fill;
+                if (end > i0.x + 1) {
+                    dl->PushClipRect(i0, ImVec2(end, i1.y), true);
+                    dl->AddRectFilled(i0, i1, Ink(0.93f), round * 0.6f);
+                    dl->PopClipRect();
+                }
+                dl->AddRect(f0, f1, Ink(on ? 0.95f : 0.75f), round, 0, c.Line(0.6f));
+                dl->AddRect(i0, i1, Ink(0.6f), round * 0.6f, 0, c.Line(0.4f));
+                float mid = std::floor((i0.x + i1.x) / 2);
+                dl->AddRectFilled(ImVec2(mid, f0.y), ImVec2(mid + c.Line(0.5f), f1.y), Ink(0.55f));
+                if (r.editing) dl->AddRectFilled(ImVec2(end - c.Line(0.7f), i0.y), ImVec2(end + c.Line(0.7f), i1.y), Red());
                 c.Text(10.0f, value_x1, cy, Ink(on ? 1.0f : 0.85f), r.value, 1.0f, 22);
                 hit.bar = {c.P(value_x0, y), c.P(bar1, y + h)};
                 hit.left = {c.P(value_x0 - 4, y), c.P(at, y + h)};
