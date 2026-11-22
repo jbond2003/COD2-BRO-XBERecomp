@@ -1459,12 +1459,12 @@ void DrawModern() {
                 build();
             }
         }
-        // a slider or a switch is picked with A or Enter before left and right change it, and let go with A, Enter
-        // or back. An arrow choice needs no pick: its arrows say what left and right do (his ask, 2026-11-22)
+        // a setting is picked with A or Enter before left and right change it, and let go with A, Enter or back
         {
             ui::modern::Row::Kind shown = page.rows[size_t(p.selected)].kind;
             bool editable = rows[size_t(p.selected)].kind != ModernRow::kBind &&
-                            (shown == ui::modern::Row::kSlider || shown == ui::modern::Row::kToggle);
+                            (shown == ui::modern::Row::kChoice || shown == ui::modern::Row::kSlider ||
+                             shown == ui::modern::Row::kToggle);
             if (p.editing >= 0) {
                 if (enter || back) p.editing = -1;
                 enter = back = clear = defaults = false;
@@ -1578,7 +1578,7 @@ void DrawModern() {
     sel.slot = g_slot;
     sel.waiting = capturing;
     sel.editing = p.editing == p.selected;
-    sel.locked = !sel.editing && !p.pointer && (sel.kind == ui::modern::Row::kSlider || sel.kind == ui::modern::Row::kToggle);
+    sel.locked = !sel.editing && !p.pointer;
     page.title = "Options";
     const std::string& profile = game::Opt().settings_profile;
     if (!profile.empty() && profile != "*") page.profile = profile;
