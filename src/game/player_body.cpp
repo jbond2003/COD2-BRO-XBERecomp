@@ -1,6 +1,6 @@
-// Your own body, seen when you look down (Graphics, Player Body, off unless chosen).
+// Your own body, seen when you look down. Always on: there is no setting for it.
 //
-// The game draws no body for the player: only the gun and the arms that hold it. With the setting on, a script model
+// The game draws no body for the player: only the gun and the arms that hold it. A script model
 // is spawned (GScr_Spawn 0x3061E0, as the level scripts spawn theirs) with the body model of one of the level's own
 // 1st Infantry soldiers (an "actor_<level>_1stInf..." entity's model, +0x258) and the soldiers' animation tree
 // ([0x987A90], G_SetEntityAnimTree 0x25DF60), so the game animates, lights and draws it as it does any soldier. It
@@ -38,7 +38,6 @@ constexpr uint32_t kActorAnims = 0x987A90;
 constexpr uint32_t kSpawn = 0x3061E0;        // GScr_Spawn (class name slot, origin, 0) -> handle, cdecl
 constexpr uint32_t kSetAnimTree = 0x25DF60;  // G_SetEntityAnimTree: eax the anims, edi the entity
 constexpr uint32_t kSetAnimKnobAll = 0x3019B0;  // GScr_SetAnimKnobAll (handle, anim, root, weight, blend, rate, restart)
-constexpr uint32_t kScriptDelete = 0x2FD520;    // GScr_Delete (handle)
 // the soldiers' tree (generic_human), by its nodes' numbers
 constexpr uint32_t kStand = 165, kRun = 242, kCrouch = 135, kCrouchRun = 234;
 constexpr float kBehind = 11.0f;  // units behind the eye: looking down shows the chest, the legs and the boots
@@ -167,21 +166,12 @@ void FindBones(uint32_t model) {
 X86_FUNC(sub_00245A20) {
     uint32_t ref = ctx.eax;
     uint32_t owner = R32(ref + 0xD8);
-    bool on = game::Opt().player_body;
-    if ((!on && !g.handle) || !owner) return __imp__sub_00245A20(ctx, base);
+    if (!owner) return __imp__sub_00245A20(ctx, base);
     X86HostFp host_fp;
     uint32_t now = R32(kLevelTime);
     if (now < g.last_time) g.handle = 0, g.next_try = 0;  // the map restarted
     g.last_time = now;
     uint32_t body = Body(), player = Player(), scene = R32(kScene);
-    if (!on) {  // switched off: the body goes
-        if (body) {
-            Kept kept(ctx);
-            CallGuest(ctx, kScriptDelete, {g.handle});
-        }
-        g.handle = 0;
-        return __imp__sub_00245A20(ctx, base);
-    }
     if (!body && player && now >= g.next_try && G<uint8_t>(owner) == 11 && R32(owner + 0x258) && Has(ClassName(owner), "1stInf")) {
         if (!Spawn(ctx, owner, player)) g.next_try = now + 2000;
         return __imp__sub_00245A20(ctx, base);
