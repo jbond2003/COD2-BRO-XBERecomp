@@ -1764,8 +1764,8 @@ void PcOptionsPad(const input::Pad& pad) {
     if (pad.analog[1] > 0x40) bits |= kPadB;
     if (pad.analog[2] > 0x40) bits |= kPadX;
     if (pad.analog[3] > 0x40) bits |= kPadY;
-    if (pad.analog[5] > 0x40 || pad.analog[6] > 0x40) bits |= kPadPrev;  // white, the left trigger
-    if (pad.analog[4] > 0x40 || pad.analog[7] > 0x40) bits |= kPadNext;  // black, the right trigger
+    if (pad.analog[5] > 0x40 || pad.analog[6] > 0x40) bits |= kPadPrev;  // LB (white), the left trigger
+    if (pad.analog[4] > 0x40 || pad.analog[7] > 0x40) bits |= kPadNext;  // RB (black), the right trigger
     g_paper_pad.store(pad.connected ? bits : 0, std::memory_order_relaxed);
 }
 

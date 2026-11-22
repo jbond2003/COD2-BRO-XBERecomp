@@ -138,8 +138,8 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
             c.Text(7.5f, x0 + key_w / 2, (y0 + y1) / 2, Ink(0.9f), text, 0.5f, key_w - 2);
             hit = {c.P(x0, y0), c.P(x0 + key_w, y1)};
         };
-        key(left, page.controller ? "LT" : "Q", hits.tab_prev);
-        key(right - key_w, page.controller ? "RT" : "E", hits.tab_next);
+        key(left, page.controller ? "LB" : "Q", hits.tab_prev);
+        key(right - key_w, page.controller ? "RB" : "E", hits.tab_next);
         float t0 = left + key_w + gap * 1.5f, t1 = right - key_w - gap * 1.5f;
         int n = std::max(1, int(page.tabs.size()));
         float tw = (t1 - t0 - gap * float(n - 1)) / float(n);
@@ -400,7 +400,7 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
         const Item items[] = {
             {"Enter", nullptr, "A", IM_COL32(63, 143, 58, 255), "SELECT"},
             {"Esc", nullptr, "B", IM_COL32(181, 56, 44, 255), "BACK"},
-            {"Q", "E", "LT", 0, "TABS"},
+            {"Q", "E", "LB", 0, "TABS"},
             {"R", nullptr, "X", IM_COL32(47, 95, 174, 255), "DEFAULTS"},
             {"F", nullptr, "Y", IM_COL32(201, 162, 31, 255), "APPLY"},
         };
@@ -414,7 +414,7 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
             };
             if (page.controller) {
                 cap(it.button, it.color != 0);
-                if (!it.color) cap("RT", false);
+                if (!it.color) cap("RB", false);
             } else {
                 cap(it.key, false);
                 if (it.key2) cap(it.key2, false);
@@ -427,7 +427,7 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
         for (const Item& it : items) {
             if (page.controller) {
                 x += Cap(dl, ImVec2(x, cy), h, it.button, it.color ? it.color : cream, it.color ? IM_COL32_WHITE : dark, it.color != 0) + gap;
-                if (!it.color) x += Cap(dl, ImVec2(x, cy), h, "RT", cream, dark, false) + gap;
+                if (!it.color) x += Cap(dl, ImVec2(x, cy), h, "RB", cream, dark, false) + gap;
             } else {
                 x += Cap(dl, ImVec2(x, cy), h, it.key, cream, dark, false) + gap;
                 if (it.key2) x += Cap(dl, ImVec2(x, cy), h, it.key2, cream, dark, false) + gap;
