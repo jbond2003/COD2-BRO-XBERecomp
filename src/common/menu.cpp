@@ -113,7 +113,7 @@ const std::vector<Mode>& Modes() {
 enum RowId { kSection, kDisplayMode, kResolution, kRenderResolution, kFov, kMaxFps, kVsync, kFpsCounter, kAniso,
              kTextureReplacement, kTextureDumping, kDumpFormat, kMouseX, kMouseY, kInvertY, kInvertX, kQwerty, kPrompts,
              kBrightness, kAimAssist, kHints, kHideHud, kViewDistance, kKeepBodies, kCutsceneBars, kLeanToggle,
-             kMusicVolume, kMenuMusicVolume, kEffectsVolume, kVoiceVolume, kMsaa, kSmaa, kAdsDof, kGunBlur };
+             kMusicVolume, kMenuMusicVolume, kEffectsVolume, kVoiceVolume, kMsaa, kSmaa, kAdsDof, kGunBlur, kAimToggle };
 
 struct Row {
     RowId id;
@@ -240,6 +240,9 @@ std::string RowText(RowId id, int step, Settings& s) {
         case kHideHud:
             if (step) O().hide_hud = !O().hide_hud;
             return OnOff(O().hide_hud);
+        case kAimToggle:
+            if (step) O().aim_toggle = !O().aim_toggle;
+            return O().aim_toggle ? "TOGGLE" : "HOLD";
         case kLeanToggle:
             if (step) O().lean_toggle = !O().lean_toggle;
             return O().lean_toggle ? "TOGGLE" : "HOLD (ORIGINAL)";
@@ -356,6 +359,7 @@ void SetDefaults(Settings& s, game::Options& o, int parts) {
         o.hints = true;
         o.hide_hud = false;
         o.lean_toggle = false;
+        o.aim_toggle = false;
     }
     if (parts & kAudioPart) {
         o.music_volume = 100;
@@ -414,6 +418,7 @@ void CopyRows(Settings& s, game::Options& o, const Settings& from, const game::O
     o.hints = from_o.hints;
     o.hide_hud = from_o.hide_hud;
     o.lean_toggle = from_o.lean_toggle;
+    o.aim_toggle = from_o.aim_toggle;
     o.view_distance = from_o.view_distance;
     o.keep_bodies = from_o.keep_bodies;
     o.ads_dof = from_o.ads_dof;
@@ -436,7 +441,7 @@ bool RowsDiffer(const Settings& a, const game::Options& c, const Settings& b, co
            c.invert_mouse != d.invert_mouse || c.invert_mouse_x != d.invert_mouse_x ||
            c.qwerty_typewriter != d.qwerty_typewriter || c.button_prompts != d.button_prompts ||
            c.brightness != d.brightness || c.aim_assist != d.aim_assist || c.hints != d.hints ||
-           c.hide_hud != d.hide_hud || c.lean_toggle != d.lean_toggle || c.view_distance != d.view_distance || c.keep_bodies != d.keep_bodies || c.ads_dof != d.ads_dof || c.gun_blur != d.gun_blur ||
+           c.hide_hud != d.hide_hud || c.lean_toggle != d.lean_toggle || c.aim_toggle != d.aim_toggle || c.view_distance != d.view_distance || c.keep_bodies != d.keep_bodies || c.ads_dof != d.ads_dof || c.gun_blur != d.gun_blur ||
            c.cutscene_bars != d.cutscene_bars || c.music_volume != d.music_volume ||
            c.menu_music_volume != d.menu_music_volume || c.effects_volume != d.effects_volume ||
            c.voice_volume != d.voice_volume;
@@ -833,6 +838,7 @@ constexpr TabRow kTabRows[] = {
     {kGameplayTab, kAimAssist, "Controller Aim Assist", "The game's pull towards an enemy under the sight, on a controller.", "cg_aimAssist"},
     {kGameplayTab, kHints, "Tutorial Hints", "The lines that tell you how to crouch, lean, throw and the like.", "cg_hints"},
     {kGameplayTab, kHideHud, "Hide the HUD", "Takes the compass, the health and the ammunition off the screen.", "cg_drawHud"},
+    {kGameplayTab, kAimToggle, "Aim Down Sights", "Hold: you aim while the key is down. Toggle: a press brings the gun up and the next one lowers it. For the keyboard and mouse.", "cg_aimToggle"},
     {kGameplayTab, kLeanToggle, "Leaning", "Hold: you lean while the key is down. Toggle: a press leans and the next one straightens you.", "cg_leanToggle"},
     {kGameplayTab, kSection, "Menus", "", ""},
     {kGameplayTab, kQwerty, "Profile Name Keys", "The order of the letters on the screen where a profile is named.", "cg_qwertyNames"},

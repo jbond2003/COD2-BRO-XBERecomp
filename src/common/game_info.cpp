@@ -264,6 +264,7 @@ const app::GameInfo app::kGame = {
                 {"hints", &game::Opt().hints, nullptr},
                 {"hide_hud", &game::Opt().hide_hud, nullptr},
                 {"lean_toggle", &game::Opt().lean_toggle, nullptr},
+                {"aim_toggle", &game::Opt().aim_toggle, nullptr},
                 {"music_volume", nullptr, &game::Opt().music_volume},
                 {"menu_music_volume", nullptr, &game::Opt().menu_music_volume},
                 {"effects_volume", nullptr, &game::Opt().effects_volume},

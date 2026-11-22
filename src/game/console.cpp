@@ -183,6 +183,7 @@ const PortVariable kPortVariables[] = {
     {"cg_hints", "Tutorial Hints", "0 or 1", 0, 1, 1, 1, PORT_BOOL(Opt().hints)},
     {"cg_drawHud", "Hide the HUD", "1 the HUD is drawn, 0 it is hidden", 0, 1, 1, 1,
      [] { return Opt().hide_hud ? 0.0 : 1.0; }, [](double v) { Opt().hide_hud = v == 0; }},
+    {"cg_aimToggle", "Aim Down Sights", "1 toggle, 0 hold", 0, 1, 0, 1, PORT_BOOL(Opt().aim_toggle)},
     {"cg_leanToggle", "Leaning", "1 toggle, 0 hold as the game had it", 0, 1, 0, 1, PORT_BOOL(Opt().lean_toggle)},
     {"snd_musicVolume", "Music volume", "0 to 100", 0, 100, 100, 1, PORT_NUMBER(Opt().music_volume, uint32_t)},
     {"snd_menuMusicVolume", "Main Menu Music volume", "0 to 100", 0, 100, 100, 1,

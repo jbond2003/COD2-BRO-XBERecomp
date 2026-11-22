@@ -244,6 +244,16 @@ struct Held {
 // pause again. 0 not down, 1 pressed in play, 2 pressed in a menu
 int g_escape_from = 0;
 
+// Aim Down Sights as a toggle (the Gameplay tab): a press of its key brings the gun up and the next one lowers it.
+// Out of play (a menu, a cutscene's pause) the gun is let down.
+bool AimToggled(bool down, bool play) {
+    static bool was_down = false, aiming = false;
+    if (!play) aiming = false;
+    else if (down && !was_down) aiming = !aiming;
+    was_down = down;
+    return aiming;
+}
+
 Held PressActions(const Binds& binds, bool play, Pad& p) {
     Held held;
     // in a menu the wheel and the mouse buttons do nothing, a bound key presses its button, and Enter, Backspace and
@@ -259,7 +269,9 @@ Held PressActions(const Binds& binds, bool play, Pad& p) {
     };
     for (size_t i = 0; i < kCount; i++) {
         int b = kActions[i].button;
-        if (!std::any_of(binds[i].begin(), binds[i].end(), [&](int vk) { return pressed(i, vk); })) continue;
+        bool down = std::any_of(binds[i].begin(), binds[i].end(), [&](int vk) { return pressed(i, vk); });
+        if (game::Opt().aim_toggle && std::strcmp(kActions[i].action.id, "aim") == 0) down = AimToggled(down, play);
+        if (!down) continue;
         held.used = true;
         if (b == kWalk) {
             held.walk = true;

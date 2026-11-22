@@ -27,6 +27,7 @@ struct Options {
     bool aim_assist = true;     // the game's sticky aim on a controller (never on the keyboard and mouse)
     bool hints = true;          // the level scripts' tutorial hints
     bool hide_hud = false;      // no HUD in a level
+    bool aim_toggle = false;    // a press of the aim key brings the gun up, the next lowers it (mouse_keyboard.cpp)
     bool lean_toggle = false;   // a lean stays until its button is pressed again (src/game/lean.cpp), else while held
     // percent, 100 the game's own (src/game/audio.cpp)
     uint32_t music_volume = 100;       // the music in a mission
