@@ -1191,7 +1191,7 @@ void BuildModern(ui::modern::Page& page, std::vector<ModernRow>& rows) {
     if (tab == kCheatsTab) {
         const char* risk = "Cheats are on until the game is closed. They can break missions: use them at your own risk.";
         if (!cheats::Unlocked()) {
-            words("Cheats are locked. Type the password. Tab goes to the next page.");
+            words("Cheats are locked. Type the password.");
             Row r;
             r.kind = Row::kEntry;
             r.label = "Password";
