@@ -877,7 +877,7 @@ constexpr TabRow kTabRows[] = {
     {kDisplayTab, kDisplayMode, "Display Mode", "Fullscreen, a borderless window the size of the desktop, or a window.", ""},
     {kDisplayTab, kResolution, "Resolution", "The size of the game's window or screen mode.", ""},
     {kDisplayTab, kVsync, "VSync", "Each frame waits for the monitor. No tearing, a little more delay on the mouse.", "r_swapInterval"},
-    {kDisplayTab, kMaxFps, "Max Frame Rate", "The most frames a second. The game's own is 30; its speed is the same at any rate.", "com_maxfps"},
+    {kDisplayTab, kMaxFps, "Max Frame Rate", "The most frames a second. The game's own is 30.", "com_maxfps"},
     {kDisplayTab, kSection, "Picture", "", ""},
     {kDisplayTab, kFov, "Field of View", "How wide you see. Higher shows more of the battlefield and makes things look further away.", "cg_fov"},
     {kDisplayTab, kBrightness, "Brightness", "Lightens or darkens the whole picture. 100 is the game's own.", "r_gamma"},
