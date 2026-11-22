@@ -25,6 +25,12 @@ struct Row {
     bool locked = false;   // the selected line's value waits for that pick
 };
 
+// the Controller tab's picture: what each button does, by where its line ends
+enum PadLabel {
+    kPadRT, kPadRB, kPadX, kPadY, kPadB, kPadA, kPadLT, kPadLB, kPadMove, kPadL3, kPadUp, kPadLeft, kPadDown,
+    kPadRight, kPadBack, kPadStart, kPadR3, kPadLook, kPadLabels
+};
+
 struct Page {
     std::string title;
     std::string profile;  // the profile signed in, top right; empty for none
@@ -37,6 +43,11 @@ struct Page {
     std::string note_title, note_text, note_command, note_change;
     int changes = 0;       // lines waiting for Apply
     bool controller = false;  // the bottom line shows the controller's buttons, else the keys
+    // the Controller tab: the lines in two columns at the top, no note, and under them the controller (the game's
+    // Xbox one, or the Modern configuration's) with what each button does
+    bool pad = false;
+    bool pad_modern = false;
+    std::string pad_labels[kPadLabels];
     std::string hint;      // a line over the foot, in place of the count of changes
     // leaving with changes waiting: a slip over the sheet asks what to do with them
     bool confirm = false;

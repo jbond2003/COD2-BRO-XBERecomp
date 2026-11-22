@@ -852,9 +852,9 @@ void DrawPaper() {
 
 // ---- the settings menu on F10: the settings by tab on the game's sheet (modern_menu.h) ----
 
-constexpr int kDisplayTab = 0, kGraphicsTab = 1, kGameplayTab = 2, kAudioTab = 3, kControlsTab = 4, kCheatsTab = 5,
-              kTabs = 6;
-const char* const kTabNames[kTabs] = {"Display", "Graphics", "Gameplay", "Audio", "Controls", "Cheats"};
+constexpr int kDisplayTab = 0, kGraphicsTab = 1, kGameplayTab = 2, kAudioTab = 3, kControlsTab = 4,
+              kControllerTab = 5, kCheatsTab = 6, kTabs = 7;
+const char* const kTabNames[kTabs] = {"Display", "Graphics", "Gameplay", "Audio", "Controls", "Controller", "Cheats"};
 
 // a tab's settings: kSection is a heading. The note is what the slip at the right says, the variable the console's
 // name for the same setting (src/game/console.cpp)
@@ -913,13 +913,13 @@ constexpr TabRow kTabRows[] = {
     {kControlsTab, kMouseY, "Vertical Sensitivity", "How far a move of the mouse looks up and down.", "m_sensitivityY"},
     {kControlsTab, kInvertY, "Invert Vertical Look", "Pushing the mouse away looks down.", "m_invertMouse"},
     {kControlsTab, kInvertX, "Invert Horizontal Look", "Moving the mouse left looks right.", "m_invertMouseX"},
-    {kControlsTab, kSection, "Controller", "", ""},
-    {kControlsTab, kGInvert, "Invert Aim", "Pushing the right stick away looks down.", ""},
-    {kControlsTab, kGVibration, "Vibration", "The controller shakes with gunfire and explosions.", ""},
-    {kControlsTab, kGSensX, "Horizontal Sensitivity", "How fast the right stick turns you left and right.", ""},
-    {kControlsTab, kGSensY, "Vertical Sensitivity", "How fast the right stick looks up and down.", ""},
-    {kControlsTab, kGAdsToggle, "Aim Down Sights", "Hold: you aim while the trigger is down. Toggle: a pull brings the gun up and the next one lowers it.", ""},
-    {kControlsTab, kGLayout, "Controller Configuration", "Which button does what. Modern is this port's own, laid out as shooters are today; A to D are the game's.", ""},
+    // the Controller tab is the game's Controller screen: these in two columns of three, the picture under them
+    {kControllerTab, kGInvert, "Invert Aim", "Pushing the right stick away looks down.", ""},
+    {kControllerTab, kGVibration, "Vibration", "The controller shakes with gunfire and explosions.", ""},
+    {kControllerTab, kGAdsToggle, "Aim Down Sights", "Hold the button to aim, or press it once to bring the gun up.", ""},
+    {kControllerTab, kGSensX, "Horizontal Sensitivity", "How fast the right stick turns you left and right.", ""},
+    {kControllerTab, kGSensY, "Vertical Sensitivity", "How fast the right stick looks up and down.", ""},
+    {kControllerTab, kGLayout, "Controller Configuration", "Which button does what. A to D are the game's, Modern is this port's.", ""},
 };
 
 constexpr struct {
@@ -1041,6 +1041,39 @@ std::string LiveText(RowId id) {
     std::string text = RowText(id, 0, Get());
     g_row_options = held;
     return text;
+}
+
+// what each button does in a controller configuration (the game's style_h/e/f/g.cfg for A to D, pad_layout.cpp's
+// binds for Modern), in the order of ui::modern::PadLabel: RT, RB, X, Y, B, A, LT, LB, the left stick, its click, the
+// pad's up, left and down, its right, Back, Start, the right stick's click, the right stick. "ADS" is the aim button
+constexpr const char* kPadWords[5][ui::modern::kPadLabels] = {
+    {"Attack", "Activate", "Grenade", "Up/Jump", "Lower Stance", "Melee", "ADS", "Reload", "Move", "Sprint",
+     "Next Weapon", "Lean Left", "Next Weapon", "Lean Right", "Objectives", "Pause", "N/A", "Look"},
+    {"Attack", "Raise Stance", "Activate/Reload", "Next Weapon", "Melee", "Up/Jump", "Grenade", "Lower Stance", "Move",
+     "Sprint", "Raise Stance", "Lean Left", "Lower Stance", "Lean Right", "Objectives", "Pause", "ADS", "Look"},
+    {"Attack", "Activate", "Reload", "Up/Jump", "Lower Stance", "Melee", "Grenade", "Next Weapon", "Move", "Sprint",
+     "Next Weapon", "Lean Left", "Prev Weapon", "Lean Right", "Objectives", "Pause", "ADS", "Look"},
+    {"Attack", "Reload", "Melee", "Activate", "Sprint", "Up/Jump", "Grenade", "Next Weapon", "Move", "Lower Stance",
+     "Raise Stance", "Lean Left", "Lower Stance", "Lean Right", "Objectives", "Pause", "ADS", "Look"},
+    {"Attack", "Grenade", "Activate/Reload", "Next Weapon", "Crouch/Prone", "Up/Jump", "ADS", "Grenade", "Move",
+     "Sprint", "Objectives", "Lean Left", "Prev Weapon", "Lean Right", "Objectives", "Pause", "Melee", "Look"},
+};
+
+// the Controller tab's picture for the configuration picked on the page (waiting for Apply or not)
+void BuildPad(ui::modern::Page& page) {
+    std::string picked = PanelText(kGLayout, 0);
+    int layout = 0;
+    for (int i = 0; i < 5; i++)
+        if (picked == kLayoutNames[i]) layout = i;
+    bool toggle = PanelText(kGAdsToggle, 0) == "TOGGLE";
+    page.pad = true;
+    page.pad_modern = layout == 4;
+    for (int i = 0; i < ui::modern::kPadLabels; i++) {
+        std::string word = kPadWords[layout][i];
+        if (word == "ADS" && toggle) word = "Toggle ADS";
+        if (i == ui::modern::kPadL3 || i == ui::modern::kPadR3) word = "(Click) " + word;
+        page.pad_labels[i] = word;
+    }
 }
 
 // the lines waiting for Apply, over every tab
@@ -1507,6 +1540,10 @@ void DrawModern() {
     page.note_command = row.variable;
     if (row.kind == ModernRow::kSetting && sel.changed)
         page.note_change = "Now " + Sentence(LiveText(row.row)) + ", after Apply " + Sentence(PanelText(row.row, 0));
+    if (p.tab == kControllerTab) {
+        BuildPad(page);
+        page.hint = row.note;  // no slip on this tab: its words go over the foot
+    }
     if (capturing) page.hint = "Press a key for it. Escape keeps the old one.";
     else if (sel.editing)
         page.hint = p.controller ? "Left and right change it. Press A when done." : "Left and right change it. Press Enter when done.";

@@ -49,5 +49,7 @@ int VisibleRows();
 ImFont* Face();
 bool FaceBold();
 bool Sheet(ImTextureID& texture, ImVec2& uv0, ImVec2& uv1);
+// a controller picture in the atlas, 512 square: the game's Xbox controller, or the Modern configuration's
+bool Pad(bool modern, ImTextureID& texture, ImVec2& uv0, ImVec2& uv1);
 
 }  // namespace ui::paper

@@ -22,6 +22,7 @@ namespace game {
 bool ReadFrontEndPicture(const std::string& name, std::vector<uint8_t>& rgba, uint32_t& width,
                          uint32_t& height);  // src/game/prompts.cpp
 bool ReadEarlyGameFile(const std::string& xbox_path, std::vector<uint8_t>& out);  // src/game/prompts.cpp
+bool ModernPadPixels(std::vector<uint8_t>& rgba, uint32_t& width, uint32_t& height);  // src/game/pad_picture.cpp
 }
 #endif
 
@@ -35,6 +36,14 @@ bool g_bold = false;  // a bold face, else drawn twice for weight
 int g_paper_rect = -1;
 std::vector<uint8_t> g_paper_pixels;
 uint32_t g_paper_w = 0, g_paper_h = 0;
+// the controller pictures of the Controller tab, in the atlas too: the game's Xbox controller (xboxlineA.dds of
+// sp/frontend.cod) and the Modern configuration's (modern_controller.png); 512 square each
+struct PadPicture {
+    int rect = -1;
+    std::vector<uint8_t> pixels;
+};
+PadPicture g_pads[2];
+constexpr uint32_t kPadSize = 512;
 // the sheet in that picture (alpha over half), its printed frame's top and bottom lines and the rule under the title
 constexpr float kSheetLeft = 12, kSheetTop = 81, kSheetRight = 499, kSheetBottom = 430;
 constexpr float kRuleY = 143;
@@ -125,6 +134,13 @@ void LoadFonts() {
     if (game::ReadFrontEndPicture("single_options_misc.dds", g_paper_pixels, g_paper_w, g_paper_h))
         g_paper_rect = io.Fonts->AddCustomRectRegular(int(g_paper_w), int(g_paper_h));
     LOGR("PC Options: %s", g_paper_rect >= 0 ? "the game's paper" : "no paper from the game files, a drawn one");
+    for (int i = 0; i < 2; i++) {
+        uint32_t w = 0, h = 0;
+        bool read = i ? game::ModernPadPixels(g_pads[i].pixels, w, h)
+                      : game::ReadFrontEndPicture("xboxlineA.dds", g_pads[i].pixels, w, h);
+        if (read && w == kPadSize && h == kPadSize) g_pads[i].rect = io.Fonts->AddCustomRectRegular(int(w), int(h));
+        else LOGW("PC Options: no %s controller picture", i ? "Modern" : "Xbox");
+    }
     std::vector<uint8_t> ttf;
     const char* windir = std::getenv("WINDIR");
     std::string bold = std::string(windir ? windir : "C:\\Windows") + "\\Fonts\\GARABD.TTF";
@@ -157,6 +173,13 @@ void LoadFonts() {
             g_paper_rect = io.Fonts->AddCustomRectRegular(512, 512);
         }
     }
+    for (int i = 0; i < 2; i++)
+        if (const char* raw = std::getenv(i ? "PAD_MODERN_RGBA" : "PAD_XBOX_RGBA")) {
+            std::ifstream f(raw, std::ios::binary);
+            g_pads[i].pixels.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+            if (g_pads[i].pixels.size() == kPadSize * kPadSize * 4)
+                g_pads[i].rect = io.Fonts->AddCustomRectRegular(int(kPadSize), int(kPadSize));
+        }
     if (const char* face = std::getenv("PAPER_FACE")) {
         ImFontConfig cfg;
         cfg.OversampleH = 2;
@@ -186,22 +209,26 @@ void LoadFonts() {
 }
 
 void Upload() {
-    if (g_paper_rect < 0) return;
     ImFontAtlas* atlas = ImGui::GetIO().Fonts;
     unsigned char* texture = nullptr;
     int tw = 0, th = 0;
     atlas->GetTexDataAsRGBA32(&texture, &tw, &th);
-    const ImFontAtlasCustomRect* rect = atlas->GetCustomRectByIndex(g_paper_rect);
-    if (!texture || !rect->IsPacked()) {
-        g_paper_rect = -1;
-        return;
-    }
-    for (uint32_t y = 0; y < g_paper_h; y++)
-        std::memcpy(texture + (size_t(rect->Y + y) * size_t(tw) + rect->X) * 4,
-                    g_paper_pixels.data() + size_t(y) * g_paper_w * 4, size_t(g_paper_w) * 4);
-    atlas->TexPixelsUseColors = true;
-    g_paper_pixels.clear();
-    g_paper_pixels.shrink_to_fit();
+    auto put = [&](int& index, std::vector<uint8_t>& pixels, uint32_t w, uint32_t h) {
+        if (index < 0) return;
+        const ImFontAtlasCustomRect* rect = atlas->GetCustomRectByIndex(index);
+        if (!texture || !rect->IsPacked()) {
+            index = -1;
+            return;
+        }
+        for (uint32_t y = 0; y < h; y++)
+            std::memcpy(texture + (size_t(rect->Y + y) * size_t(tw) + rect->X) * 4, pixels.data() + size_t(y) * w * 4,
+                        size_t(w) * 4);
+        atlas->TexPixelsUseColors = true;
+        pixels.clear();
+        pixels.shrink_to_fit();
+    };
+    put(g_paper_rect, g_paper_pixels, g_paper_w, g_paper_h);
+    for (PadPicture& pad : g_pads) put(pad.rect, pad.pixels, kPadSize, kPadSize);
 }
 
 int VisibleRows() { return g_rows; }
@@ -212,6 +239,15 @@ bool Sheet(ImTextureID& texture, ImVec2& uv0, ImVec2& uv1) {
     if (g_paper_rect < 0) return false;
     ImFontAtlas* atlas = ImGui::GetIO().Fonts;
     atlas->CalcCustomRectUV(atlas->GetCustomRectByIndex(g_paper_rect), &uv0, &uv1);
+    texture = atlas->TexID;
+    return true;
+}
+
+bool Pad(bool modern, ImTextureID& texture, ImVec2& uv0, ImVec2& uv1) {
+    int rect = g_pads[modern ? 1 : 0].rect;
+    if (rect < 0) return false;
+    ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+    atlas->CalcCustomRectUV(atlas->GetCustomRectByIndex(rect), &uv0, &uv1);
     texture = atlas->TexID;
     return true;
 }

@@ -157,6 +157,20 @@ std::shared_ptr<const Picture> Decode() { return nullptr; }
 
 bool ModernPad() { return Opt().modern_layout; }
 
+// the Modern picture as straight RGBA bytes, for the settings menu's Controller tab (src/common/paper_page.cpp)
+bool ModernPadPixels(std::vector<uint8_t>& rgba, uint32_t& width, uint32_t& height) {
+    std::shared_ptr<const Picture> pic = Decode();
+    if (!pic) return false;
+    width = pic->width, height = pic->height;
+    rgba.resize(pic->argb.size() * 4);
+    for (size_t i = 0; i < pic->argb.size(); i++) {
+        uint32_t c = pic->argb[i];
+        rgba[i * 4] = uint8_t(c >> 16), rgba[i * 4 + 1] = uint8_t(c >> 8), rgba[i * 4 + 2] = uint8_t(c);
+        rgba[i * 4 + 3] = uint8_t(c >> 24);
+    }
+    return true;
+}
+
 // render thread (texture_override's provider, src/game/prompts.cpp): the picture while Modern is picked
 std::shared_ptr<const Picture> ModernPadPicture() {
     if (!ModernPad()) return nullptr;

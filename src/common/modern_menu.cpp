@@ -94,6 +94,52 @@ float Cap(ImDrawList* dl, ImVec2 at, float h, const char* text, ImU32 fill, ImU3
     return w;
 }
 
+// where a controller picture's lines end, in its texels, and how the label sits there
+struct PadAnchor {
+    float x, y;
+    float align;  // 0 the label starts here, 0.5 centred, 1 ends here
+    float dx, dy;  // moved by this many texels
+};
+// the trigger's line and its bumper's are closer than a label is high: the trigger's label goes above its line
+constexpr float kPadApart = 7.0f;
+// the game's Xbox controller (xboxlineA.dds): the black button is RB, the white LB
+constexpr PadAnchor kXboxPad[kPadLabels] = {
+    {412, 163, 0, 3, 0},   {412, 287, 0, 3, 0},   {412, 185, 0, 3, 0},   {412, 205.5f, 0, 3, 0}, {412, 229.5f, 0, 3, 0},
+    {412, 252.5f, 0, 3, 0}, {87, 162, 1, -3, 0},   {412, 305, 0, 3, 0},   {87, 228, 1, -3, 0},    {87, 190, 1, -3, 0},
+    {205, 155, 0.5f, 0, -9}, {87, 304, 1, -3, 0},  {87, 317.5f, 1, -3, 0}, {220, 341, 1, 8, 9},   {87, 260, 1, -3, 0},
+    {87, 279.5f, 1, -3, 0}, {290, 343, 0.5f, 0, 24}, {315, 335, 0, 9, 10},
+};
+// the Modern configuration's (modern_controller.png)
+constexpr PadAnchor kModernPad[kPadLabels] = {
+    {395, 161, 0, 3, -kPadApart}, {412, 174, 0, 3, 2},  {435, 189, 0, 3, 0},   {435, 207, 0, 3, 0},  {435, 229.5f, 0, 3, 0},
+    {435, 250.5f, 0, 3, 0}, {121, 160, 1, -3, -kPadApart}, {121, 173, 1, -3, 2}, {100, 219.5f, 1, -3, 0}, {102, 245.5f, 1, -3, 0},
+    {101, 265.5f, 1, -3, 0}, {98, 290.5f, 1, -3, 0}, {98, 307.5f, 1, -3, 0}, {228, 345, 1, 8, 9},  {231, 154, 1, 4, -9},
+    {276, 154, 0, -4, -9},  {292, 345, 0.5f, 0, 24}, {310, 340, 0, 4, 9},
+};
+
+// the controller and its labels: the picture's texels kPadTop..kPadBottom down fill y0..y1 (screen pixels), its middle
+// on cx
+constexpr float kPadTop = 134.0f, kPadBottom = 380.0f, kPadLetter = 17.0f;
+void DrawPad(ImDrawList* dl, const Page& page, float cx, float y0, float y1) {
+    float s = (y1 - y0) / (kPadBottom - kPadTop);  // screen pixels a texel
+    ImVec2 o(std::floor(cx - 256.0f * s), std::floor(y0 - kPadTop * s));
+    ImTextureID texture{};
+    ImVec2 uv0, uv1;
+    if (paper::Pad(page.pad_modern, texture, uv0, uv1))
+        dl->AddImage(texture, o, ImVec2(o.x + 512.0f * s, o.y + 512.0f * s), uv0, uv1);
+    const PadAnchor* anchors = page.pad_modern ? kModernPad : kXboxPad;
+    float px = std::max(9.0f, kPadLetter * s);
+    for (int i = 0; i < kPadLabels; i++) {
+        const std::string& text = page.pad_labels[i];
+        if (text.empty()) continue;
+        const PadAnchor& a = anchors[i];
+        ImVec2 m = paper::Face()->CalcTextSizeA(px, 1e9f, 0.0f, text.c_str());
+        ImVec2 pos(std::floor(o.x + (a.x + a.dx) * s - m.x * a.align), std::floor(o.y + (a.y + a.dy) * s - m.y * 0.5f));
+        dl->AddText(paper::Face(), px, pos, Ink(0.95f), text.c_str());
+        if (!paper::FaceBold()) dl->AddText(paper::Face(), px, ImVec2(pos.x + std::max(1.0f, px * 0.03f), pos.y), Ink(0.95f), text.c_str());
+    }
+}
+
 }  // namespace
 
 int VisibleRows() { return g_rows; }
@@ -160,8 +206,12 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
     }
 
     // the list, scrolled by whole rows to keep the selection in view
-    const float list_left = kFrameLeft + 5, list_right = 302.0f, list_top = 171.0f, list_bottom = 376.0f;
-    const float value_w = 112.0f, value_x1 = list_right - 3, value_x0 = value_x1 - value_w;
+    // (the Controller tab: no scrolling, the lines in two columns across the sheet, three to a column)
+    const float list_top = 171.0f, list_bottom = 376.0f;
+    const int pad_rows = 3;
+    const float pad_gap = 6.0f, pad_mid = (kFrameLeft + kFrameRight) / 2;
+    float list_left = kFrameLeft + 5, list_right = page.pad ? pad_mid - pad_gap : 302.0f;
+    float value_w = page.pad ? 92.0f : 112.0f, value_x1 = list_right - 3, value_x0 = value_x1 - value_w;
     int count = int(page.rows.size());
     auto fits_from = [&](int first) {  // how many rows fit from first
         float y = list_top;
@@ -183,12 +233,23 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
         // a heading above the selection comes into view with it
         if (first > 0 && first == page.selected && page.rows[size_t(first - 1)].kind == Row::kHeading) first--;
     }
+    if (page.pad) first = 0;
     scroll = float(first);
-    int shown = fits_from(first);
+    int shown = page.pad ? count : fits_from(first);
     g_rows = std::max(1, shown);
     float y = list_top;
+    int pad_line = 0;
     for (int i = first; i < first + shown; i++) {
         const Row& r = page.rows[size_t(i)];
+        if (page.pad) {
+            if (r.kind == Row::kHeading || r.kind == Row::kText) continue;
+            bool second = pad_line / pad_rows > 0;
+            list_left = second ? pad_mid + pad_gap : kFrameLeft + 5;
+            list_right = second ? kFrameRight - 5 : pad_mid - pad_gap;
+            value_x1 = list_right - 3, value_x0 = value_x1 - value_w;
+            y = list_top + float(pad_line % pad_rows) * RowHeight(r);
+            pad_line++;
+        }
         float h = RowHeight(r), cy = y + h / 2;
         Hits::Line& hit = hits.rows[size_t(i)];
         bool on = i == page.selected;
@@ -312,7 +373,7 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
         y += h;
     }
     // a scroll mark when the list is longer than the page
-    if (shown < count) {
+    if (shown < count && !page.pad) {
         float x = list_right + 3.5f, top = list_top + 2, bottom = list_bottom - 2;
         c.Fill(x - 0.3f, top, x + 0.3f, bottom, Ink(0.25f));
         float len = (bottom - top) * float(shown) / float(count);
@@ -321,7 +382,8 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
     }
 
     // the note about the selected line, a slip on the sheet
-    if (!page.note_title.empty()) {
+    if (page.pad) DrawPad(dl, page, c.o.x + pad_mid * c.sx, c.Y(list_top + float(pad_rows) * 19.0f + 3.0f), c.Y(list_bottom));
+    if (!page.note_title.empty() && !page.pad) {
         const float n0 = 314.0f, n1 = kFrameRight - 5, top = 176.0f, pad = 8.0f;
         float wrap = (n1 - n0 - pad * 2) * c.sx, text_px = 9.6f * c.sy;
         ImVec2 body = paper::Face()->CalcTextSizeA(text_px, 1e9f, wrap, page.note_text.c_str());
