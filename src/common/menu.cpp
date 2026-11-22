@@ -663,7 +663,7 @@ std::string TitleCase(const std::string& text) {
 }
 
 std::string Sentence(const std::string& text) {
-    static constexpr const char* kKeep[] = {"PNG", "DDS", "QWERTY", "ABC", "FPS", "FOV", "D-PAD"};
+    static constexpr const char* kKeep[] = {"PNG", "DDS", "QWERTY", "ABC", "FPS", "FOV", "D-PAD", "SSAO", "GTAO"};
     std::string out;
     size_t i = 0;
     while (i < text.size()) {
