@@ -134,6 +134,7 @@ struct PortVariable {
 };
 
 constexpr double kFilters[] = {0, 2, 4, 8, 16};
+constexpr double kSampleCounts[] = {0, 2, 4, 8};
 
 double Nearest(const double* values, size_t count, double v) {
     double best = values[0];
@@ -157,6 +158,8 @@ const PortVariable kPortVariables[] = {
      [] { return double(Opt().brightness) / 100.0; }, [](double v) { Opt().brightness = uint32_t(v * 100.0 + 0.5); }},
     {"r_anisotropy", "Anisotropic Filtering", "0 (as the game asks), 2, 4, 8 or 16", 0, 16, 0, 1,
      PORT_NUMBER(app::Get().aniso, uint32_t)},
+    {"r_msaa", "MSAA", "0 (off), 2, 4 or 8", 0, 8, 0, 1, PORT_NUMBER(app::Get().msaa, uint32_t)},
+    {"r_smaa", "SMAA", "0 or 1", 0, 1, 0, 1, PORT_BOOL(app::Get().smaa)},
     // both directions at once, as the PC games' one sensitivity is (it shows the horizontal one)
     {"sensitivity", "Mouse Sensitivity, both directions", "0.1 to 5", 0.1, 5, 1, 0.1,
      [] { return double(Opt().mouse_sensitivity); },
@@ -209,6 +212,7 @@ double Fit(const PortVariable& v, double typed) {
     value = std::round(value / v.step) * v.step;
     if (std::strcmp(v.name, "com_maxfps") == 0 && value > 0 && value < 5) value = 5;
     if (std::strcmp(v.name, "r_anisotropy") == 0) value = Nearest(kFilters, std::size(kFilters), value);
+    if (std::strcmp(v.name, "r_msaa") == 0) value = Nearest(kSampleCounts, std::size(kSampleCounts), value);
     return std::clamp(value, v.low, v.high);
 }
 

@@ -35,7 +35,7 @@ Direct3D 12, and adds a few things of its own:
 - H hides the HUD and brings it back (the key can be changed).
 - The M1 Garand can be reloaded before its clip is empty.
 - A PC settings menu on the game's own paper, opened by PC Options in the game's menus or by F10, with a tab each
-  for display (with brightness, and cutscenes without black bars), graphics (with level of detail, and bodies that
+  for display (with brightness, and cutscenes without black bars), graphics (with MSAA and SMAA anti-aliasing, level of detail, and bodies that
   stay), gameplay, audio (music, main menu music, sound effects and dialogue volumes), controls (mouse and key
   bindings) and cheats.
 - More lines in the game's Gameplay menu, and in the pause menu's options: controller aim assist, tutorial hints,

@@ -46,6 +46,8 @@ constexpr ImVec4 kHeading{0.93f, 0.66f, 0.26f, 1.0f};  // the FPS counter's bras
 
 constexpr uint32_t kAnisoValues[] = {0, 2, 4, 8, 16};
 const char* const kAnisoNames[] = {"GAME DEFAULT", "2x", "4x", "8x", "16x"};
+constexpr uint32_t kMsaaValues[] = {0, 2, 4, 8};
+const char* const kMsaaNames[] = {"OFF", "2x", "4x", "8x"};
 // Times the game's own distances for models' detail. v0.1.1 offered 1, 2, 4, 8: DetailLevel places those.
 constexpr uint32_t kViewDistances[] = {1, 4, 8};
 const char* const kViewDistanceNames[] = {"LOW (ORIGINAL)", "MEDIUM", "HIGH"};
@@ -111,7 +113,7 @@ const std::vector<Mode>& Modes() {
 enum RowId { kSection, kDisplayMode, kResolution, kRenderResolution, kFov, kMaxFps, kVsync, kFpsCounter, kAniso,
              kTextureReplacement, kTextureDumping, kDumpFormat, kMouseX, kMouseY, kInvertY, kInvertX, kQwerty, kPrompts,
              kBrightness, kAimAssist, kHints, kHideHud, kViewDistance, kKeepBodies, kCutsceneBars, kLeanToggle,
-             kMusicVolume, kMenuMusicVolume, kEffectsVolume, kVoiceVolume };
+             kMusicVolume, kMenuMusicVolume, kEffectsVolume, kVoiceVolume, kMsaa, kSmaa };
 
 struct Row {
     RowId id;
@@ -250,6 +252,12 @@ std::string RowText(RowId id, int step, Settings& s) {
         case kAniso:
             std::snprintf(text, sizeof(text), "%s", kAnisoNames[StepTable(kAnisoValues, s.aniso, step)]);
             break;
+        case kMsaa:
+            std::snprintf(text, sizeof(text), "%s", kMsaaNames[StepTable(kMsaaValues, s.msaa, step)]);
+            break;
+        case kSmaa:
+            if (step) s.smaa = !s.smaa;
+            return OnOff(s.smaa);
         case kViewDistance:
         {
             int level = DetailLevel(O().view_distance);
@@ -351,6 +359,8 @@ void SetDefaults(Settings& s, game::Options& o, int parts) {
     }
     if (parts & kGraphicsPart) {
         s.aniso = d.aniso;
+        s.msaa = 0;
+        s.smaa = false;
         o.view_distance = 1;
         o.keep_bodies = false;
         s.custom_textures = d.custom_textures;
@@ -378,6 +388,8 @@ void CopyRows(Settings& s, game::Options& o, const Settings& from, const game::O
     s.fps_cap = from.fps_cap;
     s.vsync = from.vsync;
     s.aniso = from.aniso;
+    s.msaa = from.msaa;
+    s.smaa = from.smaa;
     s.custom_textures = from.custom_textures;
     s.dump_textures = from.dump_textures;
     s.texture_dump_format = from.texture_dump_format;
@@ -407,6 +419,7 @@ void CopyRows(Settings& s, game::Options& o, const Settings& from, const game::O
 bool RowsDiffer(const Settings& a, const game::Options& c, const Settings& b, const game::Options& d) {
     return a.display_mode != b.display_mode || a.width != b.width || a.height != b.height ||
            a.render_percent != b.render_percent || a.fps_cap != b.fps_cap || a.vsync != b.vsync || a.aniso != b.aniso ||
+           a.msaa != b.msaa || a.smaa != b.smaa ||
            a.custom_textures != b.custom_textures || a.dump_textures != b.dump_textures ||
            a.texture_dump_format != b.texture_dump_format || c.fps_counter != d.fps_counter || c.fov != d.fov ||
            c.mouse_sensitivity != d.mouse_sensitivity || c.mouse_vertical_sensitivity != d.mouse_vertical_sensitivity ||
@@ -796,6 +809,8 @@ constexpr TabRow kTabRows[] = {
     {kGraphicsTab, kSection, "Quality", "", ""},
     {kGraphicsTab, kRenderResolution, "Render Resolution", "The size the game is drawn at, as a share of the window. Over 100 is sharper and costs frame rate, under it is the other way.", "r_renderScale"},
     {kGraphicsTab, kAniso, "Anisotropic Filtering", "Keeps the ground and walls sharp at a shallow angle.", "r_anisotropy"},
+    {kGraphicsTab, kMsaa, "MSAA", "Smooths the jagged edges of soldiers, buildings and the ground. Higher is smoother and costs frame rate.", "r_msaa"},
+    {kGraphicsTab, kSmaa, "SMAA", "A light filter that smooths every edge on screen, fences and leaves too. Works on its own or with MSAA.", "r_smaa"},
     {kGraphicsTab, kViewDistance, "Level of Detail", "How far away soldiers and objects keep their detailed models. Low is the game's own.", "cg_viewDistance"},
     {kGraphicsTab, kKeepBodies, "Bodies Stay", "The fallen stay where they fell and are not cleared away.", "cg_bodiesStay"},
     {kGraphicsTab, kSection, "Textures", "", ""},
