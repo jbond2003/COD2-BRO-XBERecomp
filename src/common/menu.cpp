@@ -1002,7 +1002,7 @@ void BuildModern(ui::modern::Page& page, std::vector<ModernRow>& rows) {
             r.kind = Row::kSlider;
             r.fill = fill;
             r.value = text.substr(0, text.find(" ("));
-        } else if (text == "ON" || text == "OFF") {
+        } else if (t.id != kMsaa && (text == "ON" || text == "OFF")) {  // MSAA has Off among its sample counts
             r.kind = Row::kToggle;
             r.on = text == "ON";
         } else {
