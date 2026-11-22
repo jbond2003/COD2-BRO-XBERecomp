@@ -410,8 +410,10 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
         }
         if (!page.note_command.empty()) {
             c.Text(5.6f, n0 + pad, ny, Ink(0.6f), Spaced("Console"));
-            ImFont* mono = ImGui::GetIO().Fonts->Fonts[0];
-            float mono_px = std::max(13.0f, std::round(9.0f * c.sy / 13.0f) * 13.0f);
+            // in Hack, as the console shows it; ImGui's own font (pixel sharp at multiples of 13) if none
+            ImFont* mono = paper::Mono();
+            float mono_px = mono ? std::max(13.0f, std::round(9.0f * c.sy)) : std::max(13.0f, std::round(9.0f * c.sy / 13.0f) * 13.0f);
+            if (!mono) mono = ImGui::GetIO().Fonts->Fonts[0];
             ImVec2 m = mono->CalcTextSizeA(mono_px, 1e9f, 0.0f, page.note_command.c_str());
             ImVec2 b0(c.X(n0 + pad), c.Y(ny + 5.5f)), b1(b0.x + m.x + c.sx * 5.0f, b0.y + m.y + c.sy * 3.0f);
             dl->AddRectFilled(b0, b1, Ink(0.9f));

@@ -97,6 +97,8 @@ void SetNames(std::vector<std::string> names) {
 #ifdef _WIN32
 #include <imgui.h>
 
+#include "common/paper_page.h"
+
 namespace app::console {
 
 namespace {
@@ -231,6 +233,9 @@ void Draw() {
     s.was_open = open;
     if (!open) return;
     if (opened) s.to_end = true;
+    // in Hack, the console's typeface
+    ImFont* mono = ::ui::paper::Mono();
+    if (mono) ImGui::PushFont(mono);
 
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     float em = ImGui::GetFontSize();
@@ -322,6 +327,7 @@ void Draw() {
     ImGui::End();
     ImGui::PopStyleVar(3);
     ImGui::PopStyleColor(6);
+    if (mono) ImGui::PopFont();
 }
 
 }  // namespace app::console

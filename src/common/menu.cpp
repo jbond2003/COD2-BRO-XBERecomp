@@ -1587,17 +1587,20 @@ void DrawModern() {
     p.follow = false;
 }
 
-// top right, over the game
+// top right, over the game, in Hack as the console is
 void DrawFpsCounter(double fps) {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
-    float em = ImGui::GetFontSize();
+    ImFont* font = ::ui::paper::Mono();
+    float em = font ? ::ui::paper::MonoSize() : ImGui::GetFontSize();
+    if (!font) font = ImGui::GetFont();
     char text[32];
     std::snprintf(text, sizeof(text), "%.0f FPS", fps);
-    ImVec2 size = ImGui::CalcTextSize(text);
-    ImVec2 pos(vp->Pos.x + vp->Size.x - size.x - em, vp->Pos.y + em * 0.6f);
+    ImVec2 size = font->CalcTextSizeA(em, FLT_MAX, 0.0f, text);
+    ImVec2 pos(std::floor(vp->Pos.x + vp->Size.x - size.x - em), std::floor(vp->Pos.y + em * 0.6f));
+    float shadow = std::max(1.0f, std::round(em / 16.0f));
     ImDrawList* list = ImGui::GetForegroundDrawList();
-    list->AddText(ImVec2(pos.x + 1, pos.y + 1), IM_COL32(0, 0, 0, 200), text);
-    list->AddText(pos, ImGui::GetColorU32(kHeading), text);
+    list->AddText(font, em, ImVec2(pos.x + shadow, pos.y + shadow), IM_COL32(0, 0, 0, 200), text);
+    list->AddText(font, em, pos, ImGui::GetColorU32(kHeading), text);
 }
 
 // a message from the cheats (src/game/cheats.cpp), such as the thereisacow1337 profile's: a line at the top of the screen for two seconds, then fading

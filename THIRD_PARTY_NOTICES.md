@@ -47,6 +47,11 @@ CoD2-BRO-Native-Loader by SmokeDoggy044, GPL-2.0-or-later, used here under GPL-3
 `fonts/` holds EB Garamond Bold, Jost Medium and Anton, unmodified, each under the SIL Open Font License 1.1; the
 license texts are in `fonts/licenses/`.
 
+`fonts/Hack-Regular.ttf` is Hack 3.003 (https://sourcefoundry.org/hack/), unmodified, the FPS counter's and the
+console's typeface. Copyright 2018 Source Foundry Authors, MIT License; Bitstream Vera Sans Mono Copyright 2003
+Bitstream Inc., Bitstream Vera License with Reserved Font Names "Bitstream" and "Vera"; the DejaVu changes are in the
+public domain. The full texts are in `fonts/licenses/Hack-LICENSE.md`.
+
 ## SMAA
 
 The SMAA option uses the reference shader and lookup tables of SMAA (github.com/iryoku/smaa), MIT licence:

@@ -16,6 +16,14 @@
 #include <vector>
 
 #ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+
 #include "core/log.h"
 
 namespace game {
@@ -31,6 +39,10 @@ namespace ui::paper {
 namespace {
 
 ImFont* g_serif = nullptr;
+// Hack (fonts/Hack-Regular.ttf, built into the exe): the FPS counter and the console, baked at the size it has on
+// the main monitor and scaled from there for other window sizes
+ImFont* g_mono = nullptr;
+constexpr float kMonoPx = 16.0f;  // at 720 lines
 bool g_bold = false;  // a bold face, else drawn twice for weight
 // the game's own option page (single_options_misc.dds of sp/frontend.cod, the Sound page's), in the font atlas
 int g_paper_rect = -1;
@@ -60,6 +72,25 @@ ImU32 Ink(float alpha) { return ImGui::GetColorU32(ImVec4(kInk.x, kInk.y, kInk.z
 ImU32 Col(const ImVec4& c, float alpha = 1.0f) { return ImGui::GetColorU32(ImVec4(c.x, c.y, c.z, c.w * alpha)); }
 
 ImFont* Serif() { return g_serif ? g_serif : ImGui::GetFont(); }
+
+#ifdef _WIN32
+void LoadMono(ImGuiIO& io) {
+    HMODULE module = GetModuleHandleW(nullptr);
+    HRSRC resource = FindResourceA(module, "COD2BRO_FONT_HACK", MAKEINTRESOURCEA(10));  // RT_RCDATA
+    DWORD bytes = resource ? SizeofResource(module, resource) : 0;
+    const void* ttf = resource ? LockResource(LoadResource(module, resource)) : nullptr;
+    if (ttf && bytes) {
+        void* data = IM_ALLOC(bytes);  // the atlas owns it
+        std::memcpy(data, ttf, bytes);
+        float lines = float(GetSystemMetrics(SM_CYSCREEN));
+        ImFontConfig cfg;
+        cfg.OversampleH = 2;
+        cfg.OversampleV = 1;
+        g_mono = io.Fonts->AddFontFromMemoryTTF(data, int(bytes), std::round(kMonoPx * std::max(1.0f, lines / 720.0f)), &cfg);
+    }
+    if (!g_mono) LOGW("Console: no Hack font in the exe, ImGui's own");
+}
+#endif
 
 ImVec2 Measure(float size, const char* text) {
     return Serif()->CalcTextSizeA(size, 1e9f, 0.0f, text);
@@ -130,6 +161,7 @@ void LoadFonts() {
     ImGuiIO& io = ImGui::GetIO();
     if (io.Fonts->Fonts.empty()) io.Fonts->AddFontDefault();
 #ifdef _WIN32
+    LoadMono(io);
     // the game's paper, and its typeface from the disc (media/GARA.TTF)
     if (game::ReadFrontEndPicture("single_options_misc.dds", g_paper_pixels, g_paper_w, g_paper_h))
         g_paper_rect = io.Fonts->AddCustomRectRegular(int(g_paper_w), int(g_paper_h));
@@ -232,6 +264,14 @@ void Upload() {
 }
 
 int VisibleRows() { return g_rows; }
+
+ImFont* Mono() {
+    // what PushFont makes ImGui's font size: the font's size times this times the global scale
+    if (g_mono) g_mono->Scale = MonoSize() / (g_mono->FontSize * ImGui::GetIO().FontGlobalScale);
+    return g_mono;
+}
+
+float MonoSize() { return kMonoPx * ImGui::GetIO().FontGlobalScale; }
 
 ImFont* Face() { return Serif(); }
 bool FaceBold() { return g_bold; }

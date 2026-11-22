@@ -48,6 +48,10 @@ int VisibleRows();
 // the sheet is 12..499 across and 81..430 down, its printed frame 97..407 down and the rule under the title at 143
 ImFont* Face();
 bool FaceBold();
+// Hack, for the FPS counter and the console: null when the exe has none. Pushed with ImGui::PushFont its size is
+// MonoSize(), the console's text size for the window's height
+ImFont* Mono();
+float MonoSize();
 bool Sheet(ImTextureID& texture, ImVec2& uv0, ImVec2& uv1);
 // a controller picture in the atlas, 512 square: the game's Xbox controller, or the Modern configuration's
 bool Pad(bool modern, ImTextureID& texture, ImVec2& uv0, ImVec2& uv1);
