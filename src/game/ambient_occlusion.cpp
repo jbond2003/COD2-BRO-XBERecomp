@@ -21,6 +21,7 @@
 namespace {
 
 constexpr uint32_t kScene = 0x90259C;
+constexpr uint32_t kFrontEnd = 0x95F8F8;
 constexpr float kWorldFar = 500.0f;  // a scene that sees less far is not the world's
 constexpr float kGunFar = 32.0f;     // nor is one that sees less far than this the gun's
 constexpr float kGunRadius = 3.0f;   // the gun and the hands are shaded from this near: a finger is about one unit thick
@@ -33,7 +34,8 @@ constexpr float kStrength = 1.4f;     // 30% lighter than 2.0 (his ask): 1.4x th
 void AmbientOcclusion(X86Context&, uint8_t*) {
     using namespace kernel;
     uint32_t mode = game::Opt().ambient_occlusion;
-    if (!mode) return;
+    // not in the front end ([0x95F8F8], null in a level): its one 3D thing is the turning badge beside the menus
+    if (!mode || R32(kFrontEnd)) return;
     uint32_t scene = R32(kScene);
     X86HostFp host_fp;
     bool solid = scene && R32(scene + 0x300) == 1 && R32(scene + 0x30C);
