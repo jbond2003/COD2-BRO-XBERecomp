@@ -94,13 +94,16 @@ float Cap(ImDrawList* dl, ImVec2 at, float h, const char* text, ImU32 fill, ImU3
     return w;
 }
 
+// the page's set of button pictures (paper::Button)
+int ButtonSet(const Page& page) { return page.buttons_modern ? (page.buttons_playstation ? 2 : 1) : 0; }
+
 // a controller's button as the game shows it (paper::Button), h high with its left edge at at.x and its middle on
 // at.y; returns its width, 0 when there is no picture of it. Measured only when dl is null
-float ButtonPicture(ImDrawList* dl, ImVec2 at, float h, int button, bool modern) {
+float ButtonPicture(ImDrawList* dl, ImVec2 at, float h, int button, int set) {
     ImTextureID texture{};
     ImVec2 uv0, uv1;
     float aspect = 1;
-    if (!paper::Button(button, modern, texture, uv0, uv1, aspect)) return 0;
+    if (!paper::Button(button, set, texture, uv0, uv1, aspect)) return 0;
     float w = std::floor(h * aspect);
     ImVec2 a(std::floor(at.x), std::floor(at.y - h / 2));
     if (dl) dl->AddImage(texture, a, ImVec2(a.x + w, a.y + std::floor(h)), uv0, uv1);
@@ -192,14 +195,14 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
         const float y0 = 149.0f, y1 = 165.0f, gap = 2.5f;
         // a controller's shoulder buttons are its pictures of them, wider than a key
         const float button_h = page.buttons_modern ? 9.0f : 13.0f;
-        float picture_w = page.controller ? ButtonPicture(nullptr, ImVec2(0, 0), button_h * c.sy, paper::kButtonLB, page.buttons_modern) / c.sx : 0;
+        float picture_w = page.controller ? ButtonPicture(nullptr, ImVec2(0, 0), button_h * c.sy, paper::kButtonLB, ButtonSet(page)) / c.sx : 0;
         const float key_w = picture_w > 0 ? std::max(12.0f, picture_w) : 12.0f;
         float left = kFrameLeft + 5, right = kFrameRight - 5;
         auto key = [&](float x0, const char* text, int button, Rect& hit) {
             hit = {c.P(x0, y0), c.P(x0 + key_w, y1)};
             if (picture_w > 0) {
                 float w = picture_w * c.sx;
-                ButtonPicture(c.dl, ImVec2(c.X(x0 + key_w / 2) - w / 2, c.Y((y0 + y1) / 2)), button_h * c.sy, button, page.buttons_modern);
+                ButtonPicture(c.dl, ImVec2(c.X(x0 + key_w / 2) - w / 2, c.Y((y0 + y1) / 2)), button_h * c.sy, button, ButtonSet(page));
                 return;
             }
             c.Fill(x0, y0 + 2, x0 + key_w, y1 - 2, Col(kCream, 0.35f));
@@ -528,7 +531,7 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
             };
             auto button = [&](int picture, const char* t, ImU32 color) {
                 bool shoulder = picture == paper::kButtonLB || picture == paper::kButtonRB;
-                float pw = ButtonPicture(out, ImVec2(x + w, cy), shoulder ? shoulder_h : face_h, picture, page.buttons_modern);
+                float pw = ButtonPicture(out, ImVec2(x + w, cy), shoulder ? shoulder_h : face_h, picture, ButtonSet(page));
                 if (pw > 0) w += pw + gap;
                 else cap(t, color ? color : cream, color ? IM_COL32_WHITE : dark, color != 0);
             };

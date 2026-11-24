@@ -1,6 +1,7 @@
 // The controller's buttons (button_images/ beside CMakeLists.txt, THIRD_PARTY_NOTICES.md), embedded in the exe:
 // A B X Y, Start, Back and the dpad from XNA Game Studio's Button Images sample (its own .tga files, Microsoft
-// Permissive License); LB RB LT RT by Nicolae Xelu Berbece (CC0, 360_*.png as .tga). prompts.cpp draws them in place of the game's button icons while a controller is in use with the Modern layout.
+// Permissive License); LB RB LT RT by Nicolae Xelu Berbece (CC0, 360_*.png as .tga); a PlayStation pad's buttons
+// (ps_*.tga, from ButtonIcon-PS4-*.png) for when one is in use. prompts.cpp draws them in place of the game's button icons while a controller is in use with the Modern layout.
 // Each is read once and trimmed to what is not transparent.
 
 #include <algorithm>
@@ -30,7 +31,7 @@ namespace game {
 
 // the pictures, in this order (src/cursor.rc.in names the resources COD2BRO_XNA_<n>)
 enum ButtonImage { kXnaA, kXnaB, kXnaX, kXnaY, kXnaBack, kXnaStart, kXnaDpad, kXnaLB, kXnaRB, kXnaLT, kXnaRT,
-                   kXnaCount };
+                   kPsCross, kPsCircle, kPsSquare, kPsTriangle, kPsL1, kPsR1, kPsL2, kPsR2, kPsDpad, kXnaCount };
 
 // straight alpha, 0xAARRGGBB, rows top to bottom
 struct ButtonPicture {
@@ -44,7 +45,9 @@ constexpr const char* kFiles[kXnaCount] = {
     "xboxControllerButtonA.tga", "xboxControllerButtonB.tga",     "xboxControllerButtonX.tga",
     "xboxControllerButtonY.tga", "xboxControllerBack.tga",        "xboxControllerStart.tga",
     "xboxControllerDPad.tga",    "360_LB.tga",                    "360_RB.tga",
-    "360_LT.tga",                "360_RT.tga"};
+    "360_LT.tga",                "360_RT.tga",
+    "ps_cross.tga", "ps_circle.tga", "ps_square.tga", "ps_triangle.tga", "ps_l1.tga", "ps_r1.tga", "ps_l2.tga",
+    "ps_r2.tga", "ps_dpad.tga"};
 
 std::once_flag g_loaded;
 std::array<ButtonPicture, kXnaCount> g_pictures;
@@ -121,7 +124,7 @@ void Load() {
         std::vector<uint8_t> bytes;
         if (ReadBytes(i, bytes) && DecodeTga(bytes.data(), bytes.size(), g_pictures[size_t(i)])) found++;
     }
-    if (found == kXnaCount) LOGR("button prompts: the controller's %d button pictures for the Modern layout", found);
+    if (found == kXnaCount) LOGR("button prompts: the %d controller button pictures for the Modern layout", found);
     else LOGE("button prompts: only %d of the %d controller button pictures could be read", found, int(kXnaCount));
 }
 

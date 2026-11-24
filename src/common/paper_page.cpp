@@ -31,7 +31,7 @@ bool ReadFrontEndPicture(const std::string& name, std::vector<uint8_t>& rgba, ui
                          uint32_t& height);  // src/game/prompts.cpp
 bool ReadEarlyGameFile(const std::string& xbox_path, std::vector<uint8_t>& out);  // src/game/prompts.cpp
 bool ModernPadPixels(std::vector<uint8_t>& rgba, uint32_t& width, uint32_t& height);  // src/game/pad_picture.cpp
-bool MenuButtonPixels(int button, bool modern, std::vector<uint8_t>& rgba, uint32_t& width,
+bool MenuButtonPixels(int button, int set, std::vector<uint8_t>& rgba, uint32_t& width,
                       uint32_t& height);  // src/game/prompts.cpp
 }
 #endif
@@ -57,14 +57,14 @@ struct PadPicture {
     std::vector<uint8_t> pixels;
 };
 PadPicture g_pads[2];
-// a controller's buttons for the settings menu's lines (A B X Y LB RB), in the atlas too: the game's own icons, and
-// the Modern configuration's pictures
+// a controller's buttons for the settings menu's lines (A B X Y LB RB), in the atlas too: the game's own icons, the
+// Modern configuration's pictures, and its pictures for a PlayStation pad
 struct ButtonPicture {
     int rect = -1;
     std::vector<uint8_t> pixels;
     uint32_t w = 0, h = 0;
 };
-ButtonPicture g_buttons[2][kButtons];
+ButtonPicture g_buttons[3][kButtons];
 constexpr uint32_t kPadSize = 512;
 // the sheet in that picture (alpha over half), its printed frame's top and bottom lines and the rule under the title
 constexpr float kSheetLeft = 12, kSheetTop = 81, kSheetRight = 499, kSheetBottom = 430;
@@ -184,14 +184,14 @@ void LoadFonts() {
         else LOGW("PC Options: no %s controller picture", i ? "Modern" : "Xbox");
     }
     int buttons = 0;
-    for (int set = 0; set < 2; set++)
+    for (int set = 0; set < 3; set++)
         for (int i = 0; i < kButtons; i++) {
             ButtonPicture& b = g_buttons[set][i];
-            if (!game::MenuButtonPixels(i, set == 1, b.pixels, b.w, b.h)) continue;
+            if (!game::MenuButtonPixels(i, set, b.pixels, b.w, b.h)) continue;
             b.rect = io.Fonts->AddCustomRectRegular(int(b.w), int(b.h));
             buttons++;
         }
-    LOGR("PC Options: %d of its %d controller button pictures", buttons, 2 * kButtons);
+    LOGR("PC Options: %d of its %d controller button pictures", buttons, 3 * kButtons);
     std::vector<uint8_t> ttf;
     const char* windir = std::getenv("WINDIR");
     std::string bold = std::string(windir ? windir : "C:\\Windows") + "\\Fonts\\GARABD.TTF";
@@ -323,9 +323,9 @@ bool Pad(bool modern, ImTextureID& texture, ImVec2& uv0, ImVec2& uv1) {
     return true;
 }
 
-bool Button(int button, bool modern, ImTextureID& texture, ImVec2& uv0, ImVec2& uv1, float& aspect) {
-    if (button < 0 || button >= kButtons) return false;
-    const ButtonPicture& b = g_buttons[modern ? 1 : 0][button];
+bool Button(int button, int set, ImTextureID& texture, ImVec2& uv0, ImVec2& uv1, float& aspect) {
+    if (button < 0 || button >= kButtons || set < 0 || set > 2) return false;
+    const ButtonPicture& b = g_buttons[set][button];
     if (b.rect < 0 || !b.h) return false;
     ImFontAtlas* atlas = ImGui::GetIO().Fonts;
     atlas->CalcCustomRectUV(atlas->GetCustomRectByIndex(b.rect), &uv0, &uv1);

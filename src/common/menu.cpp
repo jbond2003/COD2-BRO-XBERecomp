@@ -34,6 +34,7 @@ float app::g_zoom = 1.0f;
 #include "common/options.h"
 #include "common/paper_page.h"
 #include "common/update_check.h"
+#include "core/input.h"
 
 namespace app {
 
@@ -1613,6 +1614,7 @@ void DrawModern() {
     page.follow = p.follow;
     page.controller = p.controller;
     page.buttons_modern = game::Opt().modern_layout;
+    page.buttons_playstation = input::PlayStationPadInUse();
     page.changes = ModernChanges();
     page.note_title = row.kind == ModernRow::kBind ? "Key Bindings" : sel.label;
     page.note_text = row.note;

@@ -45,6 +45,7 @@ struct Page {
     int changes = 0;       // lines waiting for Apply
     bool controller = false;  // the bottom line shows the controller's buttons, else the keys
     bool buttons_modern = false;  // those buttons are the Modern configuration's pictures, else the game's own icons
+    bool buttons_playstation = false;  // and with buttons_modern, a PlayStation pad's
     // the Controller tab: the lines in two columns at the top, no note, and under them the controller (the game's
     // Xbox one, or the Modern configuration's) with what each button does
     bool pad = false;
