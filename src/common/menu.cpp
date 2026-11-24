@@ -335,15 +335,16 @@ std::string RowText(RowId id, int step, Settings& s) {
         case kShadows: {
             // Low is the game's own: a blot straight down under each soldier, near the camera. High: shadows fall
             // away from the sun, vehicles cast them too, and they reach six times as far (src/game/shadows.cpp).
-            // Settings changed by console to something in between show as High.
+            // Something in between (set by console, or kept from before this row) shows Custom and steps to High.
             game::Options& o = O();
-            bool high = o.sun_shadows || o.shadow_distance;
+            bool high = o.sun_shadows && o.shadow_distance == 2, low = !o.sun_shadows && !o.shadow_distance;
             if (step) {
                 high = !high;
+                low = !high;
                 o.sun_shadows = high;
                 o.shadow_distance = high ? 2 : 0;
             }
-            return high ? "HIGH" : "LOW (ORIGINAL)";
+            return high ? "HIGH" : low ? "LOW (ORIGINAL)" : "CUSTOM";
         }
         case kAdsDof:
             if (step) O().ads_dof = !O().ads_dof;
