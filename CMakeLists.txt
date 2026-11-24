@@ -39,12 +39,14 @@ endif()
 add_xbe_image(CoD2BRO default.xbe game.toml ${GAME_PARTITIONS} game)
 
 # the menu pointer, embedded (src/common/software_cursor.cpp; cursor.png from MOHRS-XBERecomp), and the Controller
-# screen's Modern picture (src/game/pad_picture.cpp; modern_controller.png by jojo8479)
+# screen's Modern picture (src/game/pad_picture.cpp; modern_controller.png by jojo8479) and the Modern layout's
+# controller buttons (src/game/button_images.cpp; button_images/, XNA Game Studio's Button Images sample)
 if(WIN32)
     set(cursor_resource ${CMAKE_CURRENT_BINARY_DIR}/cursor.rc)
     configure_file(src/cursor.rc.in ${cursor_resource} @ONLY)
+    file(GLOB button_images CONFIGURE_DEPENDS button_images/*.tga)
     set_source_files_properties(${cursor_resource} PROPERTIES OBJECT_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/cursor.png;${CMAKE_CURRENT_SOURCE_DIR}/modern_controller.png")
+        "${CMAKE_CURRENT_SOURCE_DIR}/cursor.png;${CMAKE_CURRENT_SOURCE_DIR}/modern_controller.png;${button_images}")
     target_sources(CoD2BRO PRIVATE ${cursor_resource})
     # the look-alike fonts sharp text falls back on, embedded (src/game/sharp_text.cpp; fonts/, SIL OFL)
     set(fonts_resource ${CMAKE_CURRENT_BINARY_DIR}/fonts.rc)
