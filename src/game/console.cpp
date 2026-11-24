@@ -180,6 +180,8 @@ const PortVariable kPortVariables[] = {
     {"r_dof", "Depth of Field When Aiming", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().ads_dof)},
     {"r_blurGunSight", "Blur Gun Sight", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().gun_blur)},
     {"r_sunShadows", "Sun Shadows", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().sun_shadows)},
+    {"r_shadowDistance", "Shadow Distance", "0 the game's own, 1 far or 2 very far", 0, 2, 0, 1,
+     PORT_NUMBER(Opt().shadow_distance, uint32_t)},
     {"cg_bodiesStay", "Bodies Stay", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().keep_bodies)},
     {"cg_cutsceneBars", "Cutscene Black Bars", "0 or 1", 0, 1, 1, 1, PORT_BOOL(Opt().cutscene_bars)},
     {"cg_aimAssist", "Controller Aim Assist", "0 or 1", 0, 1, 1, 1, PORT_BOOL(Opt().aim_assist)},

@@ -272,6 +272,7 @@ const app::GameInfo app::kGame = {
                 {"ads_depth_of_field", &game::Opt().ads_dof, nullptr},
                 {"blur_gun_sight", &game::Opt().gun_blur, nullptr},
                 {"sun_shadows", &game::Opt().sun_shadows, nullptr},
+                {"shadow_distance", nullptr, &game::Opt().shadow_distance},
                 {"cutscene_bars", &game::Opt().cutscene_bars, nullptr},
                 {"aim_assist", &game::Opt().aim_assist, nullptr},
                 {"hints", &game::Opt().hints, nullptr},

@@ -113,7 +113,7 @@ const std::vector<Mode>& Modes() {
 enum RowId { kSection, kDisplayMode, kResolution, kRenderResolution, kFov, kMaxFps, kVsync, kFpsCounter, kAniso,
              kTextureReplacement, kTextureDumping, kDumpFormat, kMouseX, kMouseY, kInvertY, kInvertX, kQwerty, kPrompts,
              kBrightness, kAimAssist, kHints, kHideHud, kViewDistance, kKeepBodies, kCutsceneBars, kLeanToggle,
-             kMusicVolume, kMenuMusicVolume, kEffectsVolume, kVoiceVolume, kMsaa, kSmaa, kAmbientOcclusion, kAdsDof, kGunBlur, kAimToggle, kPreset, kSunShadows,
+             kMusicVolume, kMenuMusicVolume, kEffectsVolume, kVoiceVolume, kMsaa, kSmaa, kAmbientOcclusion, kAdsDof, kGunBlur, kAimToggle, kPreset, kSunShadows, kShadowDistance,
              // the game's own options (options.h's GameOption, src/game/game_options.cpp)
              kGSubtitles, kGCrosshair, kGTags, kGTank, kGAdsToggle, kGInvert, kGVibration, kGVolume, kGLayout,
              kGSensX, kGSensY };
@@ -333,6 +333,13 @@ std::string RowText(RowId id, int step, Settings& s) {
         case kSunShadows:
             if (step) O().sun_shadows = !O().sun_shadows;
             return OnOff(O().sun_shadows);
+        case kShadowDistance: {
+            static const char* const kNames[] = {"ORIGINAL", "FAR", "VERY FAR"};
+            uint32_t& v = O().shadow_distance;
+            if (v > 2) v = 0;
+            if (step) v = (v + (step > 0 ? 1 : 2)) % 3;
+            return kNames[v];
+        }
         case kAdsDof:
             if (step) O().ads_dof = !O().ads_dof;
             return OnOff(O().ads_dof);
@@ -463,6 +470,7 @@ void SetDefaults(Settings& s, game::Options& o, int parts) {
         o.ads_dof = false;
         o.gun_blur = false;
         o.sun_shadows = false;
+        o.shadow_distance = 0;
         s.custom_textures = d.custom_textures;
         s.dump_textures = d.dump_textures;
         s.texture_dump_format = d.texture_dump_format;
@@ -522,6 +530,7 @@ void CopyRows(Settings& s, game::Options& o, const Settings& from, const game::O
     o.ads_dof = from_o.ads_dof;
     o.gun_blur = from_o.gun_blur;
     o.sun_shadows = from_o.sun_shadows;
+    o.shadow_distance = from_o.shadow_distance;
     o.cutscene_bars = from_o.cutscene_bars;
     o.music_volume = from_o.music_volume;
     o.menu_music_volume = from_o.menu_music_volume;
@@ -541,7 +550,7 @@ bool RowsDiffer(const Settings& a, const game::Options& c, const Settings& b, co
            c.qwerty_typewriter != d.qwerty_typewriter || c.button_prompts != d.button_prompts ||
            c.brightness != d.brightness || c.aim_assist != d.aim_assist || c.hints != d.hints ||
            c.hide_hud != d.hide_hud || c.lean_toggle != d.lean_toggle || c.game_options != d.game_options || c.look_sensitivity_x != d.look_sensitivity_x ||
-           c.look_sensitivity_y != d.look_sensitivity_y || c.modern_layout != d.modern_layout || c.aim_toggle != d.aim_toggle || c.view_distance != d.view_distance || c.keep_bodies != d.keep_bodies || c.ambient_occlusion != d.ambient_occlusion || c.ads_dof != d.ads_dof || c.gun_blur != d.gun_blur || c.sun_shadows != d.sun_shadows ||
+           c.look_sensitivity_y != d.look_sensitivity_y || c.modern_layout != d.modern_layout || c.aim_toggle != d.aim_toggle || c.view_distance != d.view_distance || c.keep_bodies != d.keep_bodies || c.ambient_occlusion != d.ambient_occlusion || c.ads_dof != d.ads_dof || c.gun_blur != d.gun_blur || c.sun_shadows != d.sun_shadows || c.shadow_distance != d.shadow_distance ||
            c.cutscene_bars != d.cutscene_bars || c.music_volume != d.music_volume ||
            c.menu_music_volume != d.menu_music_volume || c.effects_volume != d.effects_volume ||
            c.voice_volume != d.voice_volume;
@@ -936,6 +945,7 @@ constexpr TabRow kTabRows[] = {
     {kGraphicsTab, kAdsDof, "Depth of Field When Aiming", "While you aim down the sights, what is in the sight picture stays sharp and everything around it goes out of focus.", "r_dof"},
     {kGraphicsTab, kGunBlur, "Blur Gun Sight", "While you aim down the sights, the part of the gun nearest your eye goes softly out of focus.", "r_blurGunSight"},
     {kGraphicsTab, kSunShadows, "Sun Shadows", "Soldiers and vehicles cast their shadows away from the sun, not straight down under them.", "r_sunShadows"},
+    {kGraphicsTab, kShadowDistance, "Shadow Distance", "How far from you soldiers and vehicles still cast shadows: twice or three times the game's own distance.", "r_shadowDistance"},
     {kGraphicsTab, kViewDistance, "Level of Detail", "How far away soldiers and objects keep their detailed models.", "cg_viewDistance"},
     {kGraphicsTab, kKeepBodies, "Bodies Stay", "The fallen stay where they fell and are not cleared away.", "cg_bodiesStay"},
     {kGraphicsTab, kSection, "Textures", "", ""},

@@ -44,6 +44,11 @@ constexpr uint32_t kShadowCamera = 0x988730;
 constexpr uint32_t kViewOrigin = 0x95E240;
 constexpr uint32_t kCellLighting = 0x23E510;
 constexpr uint32_t kShadowLift = 0x8DB1A0;   // the camera's height over the eye, 100
+constexpr uint32_t kShadowWidth = 0x8DB19C;  // the picture's width in the world, 700 (a level's script can set it)
+constexpr uint32_t kShadowDepth = 0x8DB1A4;  // how far along its look the picture is laid on the world, 500
+constexpr float kOwnDepth = 500.0f;
+constexpr uint32_t kTracePoint = 0x286D00;   // CG_TracePoint: eax mask, ecx end; result, start, mins, maxs, skip
+constexpr uint32_t kClientNum = 0x9725CC;
 constexpr float kShadowReach = 700.0f;  // parts this near the camera cast a shadow though out of the view
 constexpr float kLeastDrop = 0.6f;  // the sun is taken no lower than this (37 degrees up): longer shadows leave the picture
 
@@ -52,7 +57,15 @@ struct {
     uint32_t grid = 0;  // the grid it was read from: another level's is another sun
     float lean = 0;     // 0 straight down to 1 along the sun, eased
     std::chrono::steady_clock::time_point at;
+    float height = 60;  // the eye over the ground, eased
 } g_sun;
+float g_own_width = 0;  // the picture's width as the game or its level has it
+
+// Shadow Distance (Graphics): the picture's width times this
+float Farther() {
+    uint32_t d = game::Opt().shadow_distance;
+    return d == 1 ? 2.0f : d >= 2 ? 3.0f : 1.0f;
+}
 
 // the directional light with the most weight in the sample nearest the point; false where none reaches
 bool FindSun(uint32_t grid, const float* at) {
@@ -99,6 +112,11 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
         W32(ctx.esp, top);
     }
     if (grid != g_sun.grid) g_sun = {}, g_sun.grid = grid;
+    // the width for the frames to come (this one has used it already), and the game's own depth unless leaning
+    if (g_own_width == 0) g_own_width = G<float>(kShadowWidth);
+    float farther = Farther();
+    if (g_own_width > 0) G<float>(kShadowWidth) = g_own_width * farther;
+    G<float>(kShadowDepth) = kOwnDepth;
     bool lit = game::Opt().sun_shadows && grid && FindSun(grid, &G<float>(kViewOrigin));
     // Out of the sun (indoors, or the setting off) the shadows ease back to straight down, and out again in it.
     auto now = std::chrono::steady_clock::now();
@@ -126,10 +144,45 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
     cam[0] = ax, cam[1] = ay, cam[2] = az, cam[3] = 0;
     cam[4] = vx, cam[5] = vy, cam[6] = vz, cam[7] = vx;
     cam[8] = lx, cam[9] = ly, cam[10] = lz, cam[11] = 0;
-    // as high over the eye as before, back along the light. The picture is laid on the world for 500 units along the
-    // light from there (nglAddShadowProjector 0x704F0), which reaches 200 units below the eye at the lowest sun.
-    float back = G<float>(kShadowLift) / -lz;
+    // How high the eye is over the ground (a soldier's 60 units, a tank's camera a few hundred, more over a slope):
+    // a trace straight down from it, eased so that a wall's top passing under the eye does not make the shadows jump.
+    float lift = G<float>(kShadowLift);
+    {
+        constexpr float kDown = 2000.0f;
+        X86Context kept = ctx;
+        uint32_t top = R32(ctx.esp);
+        ctx.esp -= 0x80;  // start, end, a point for mins and maxs, the result (0x40)
+        uint32_t start = ctx.esp, end = ctx.esp + 0x10, zero = ctx.esp + 0x20, result = ctx.esp + 0x30;
+        const float* eye = &G<float>(kViewOrigin);
+        for (int i = 0; i < 3; i++) G<float>(start + i * 4) = G<float>(end + i * 4) = eye[i], W32(zero + i * 4, 0);
+        G<float>(end + 8) = eye[2] - kDown;
+        W32(result + 0x20, 0x3F800000);
+        ctx.eax = 0x11, ctx.ecx = end;
+        CallGuest(ctx, kTracePoint, {result, start, zero, zero, R32(kClientNum)});
+        float part = G<float>(result + 0x20);
+        ctx = kept;
+        W32(ctx.esp, top);
+        float height = part > 0.0f && part < 1.0f ? part * kDown : 60.0f;
+        g_sun.height += std::clamp(height - g_sun.height, -passed * 400.0f, passed * 400.0f);
+    }
+    // Back along the light from the picture's place, so that its middle falls on the ground under where the game put
+    // it and not on a point as high as the eye (from a tank's camera that put the picture a tank's length aside,
+    // and shadows went missing as the view turned). It is laid on the world (nglAddShadowProjector 0x704F0) down
+    // to as far under the ground as the game's own reaches, more with Shadow Distance.
+    float back = (lift + g_sun.height) / -lz;
     cam[12] -= lx * back, cam[13] -= ly * back;
+    G<float>(kShadowDepth) = (lift + g_sun.height + (kOwnDepth - lift - 60.0f) * farther) / -lz;
+}
+
+// a level's script sets the picture's width (GScr slot 129)
+X86_EXTERN_FUNC(__imp__sub_002F4BE0);
+X86_FUNC(sub_002F4BE0) {
+    {
+        X86HostFp host_fp;
+        float width = G<float>(ctx.esp + 4);
+        if (width > 0) g_own_width = width;
+    }
+    __imp__sub_002F4BE0(ctx, base);
 }
 
 // Shadows in the shape of what casts them.
@@ -177,5 +230,6 @@ X86_FUNC(sub_00068850) {
     const float* at = &G<float>(matrix + 0x30);
     const float* eye = &G<float>(kViewOrigin);
     float x = at[0] - eye[0], y = at[1] - eye[1], z = at[2] - eye[2];
-    if (x * x + y * y + z * z < kShadowReach * kShadowReach) ctx.eax = 1;
+    float reach = kShadowReach * Farther();
+    if (x * x + y * y + z * z < reach * reach) ctx.eax = 1;
 }
