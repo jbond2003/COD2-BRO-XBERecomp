@@ -87,8 +87,8 @@ SOFTWARE.
 ## XNA Game Studio Button Images
 
 `button_images/` holds pictures of the Xbox 360 controller's buttons from the Button Images sample of XNA Game Studio
-(© 2007 Microsoft Corporation), from the XNAGameStudio archive kept by SimonDarksideJ
-(https://github.com/SimonDarksideJ/XNAGameStudio, the sample at
+(© 2007 Microsoft Corporation), from the XNA Game Studio Archive by Simon (Darkside) Jackson
+(https://github.com/SimonDarksideJ/XNAGameStudio, MIT License below; the sample at
 https://github.com/SimonDarksideJ/XNAGameStudio/tree/archive/Samples/ButtonImages),
 the sample's own .tga files, unmodified, with its licence (`button_images/Microsoft Permissive License.rtf`). The
 Modern controller layout's button prompts draw them (`src/game/button_images.cpp`). The licence grants no right to
@@ -141,4 +141,30 @@ compiled or object code form, you may only do so under a license that complies w
 guarantees or conditions. You may have additional consumer rights under your local laws which this license cannot
 change. To the extent permitted under your local laws, the contributors exclude the implied warranties of
 merchantability, fitness for a particular purpose and non-infringement.
+```
+
+The XNA Game Studio Archive's own licence (https://github.com/SimonDarksideJ/XNAGameStudio/blob/archive/LICENSE):
+
+```
+The MIT License (MIT)
+
+Copyright (c) 2016 Simon (Darkside) Jackson
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
