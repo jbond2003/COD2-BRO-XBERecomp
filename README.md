@@ -85,7 +85,8 @@ regional release has its code at other addresses and is not supported.
 - [CoD2 BRO Native Loader](https://github.com/SmokeDoggy044/CoD2-BRO-Native-Loader) by SmokeDoggy044, the guide for this
   port's features and a reference for parts of it.
 - jojo8479, who drew the controller picture for the Modern layout.
-- The controller button prompts: ButtonIcon-Xbox, ButtonIcon-XboxOne and ButtonIcon-PS4 pictures (SOURCE TO BE CREDITED).
+- The controller button prompts (original Xbox, Xbox One and PlayStation 4 buttons) are by Nicolae Xelu Berbece
+  (@xelubest), released under Creative Commons 0 (CC0).
 - Made with the help of [Claude](https://claude.ai).
 
 <details>

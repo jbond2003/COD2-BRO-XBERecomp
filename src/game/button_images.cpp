@@ -1,10 +1,10 @@
 // The controller's buttons for the prompts (button_images/ beside CMakeLists.txt, THIRD_PARTY_NOTICES.md), embedded in
-// the exe: an Xbox pad's from ButtonIcon-XboxOne-*.png (xb_*.tga), and a PlayStation pad's from ButtonIcon-PS4-*.png
-// (ps_*.tga) for when one is in use; the game's own four layouts get the original Xbox controller's from
-// ButtonIcon-Xbox-*.png (og_*.tga). Each dpad's plain picture, left and right together, and up and down together,
-// are made from its single arms' pictures (each half from one); the PS4 Options and Share names are light grey with a
-// dark rim, so they read over the game. prompts.cpp draws them in place of the game's button icons; each is read once and trimmed to what
-// is not transparent.
+// the exe, all by Nicolae Xelu Berbece (CC0): for the Modern layout an Xbox pad's from ButtonIcon-XboxOne-*.png
+// (xb_*.tga), and a PlayStation pad's from ButtonIcon-PS4-*.png (ps_*.tga) for when one is in use; for the game's own
+// four layouts the original Xbox controller's from ButtonIcon-Xbox-*.png (og_*.tga). Each dpad's plain picture, left
+// and right together, and up and down together are made from its single arms' pictures (each half from one); the PS4
+// Options and Share names are light grey with a dark rim, so they read over the game. prompts.cpp draws them in place
+// of the game's button icons; each is read once and trimmed to what is not transparent.
 
 #include <algorithm>
 #include <array>
