@@ -946,7 +946,7 @@ constexpr TabRow kTabRows[] = {
     {kGraphicsTab, kAdsDof, "Depth of Field When Aiming", "While you aim down the sights, what is in the sight picture stays sharp and everything around it goes out of focus.", "r_dof"},
     {kGraphicsTab, kGunBlur, "Blur Gun Sight", "While you aim down the sights, the part of the gun nearest your eye goes softly out of focus.", "r_blurGunSight"},
     {kGraphicsTab, kSunShadows, "Sun Shadows", "Soldiers and vehicles cast their shadows away from the sun, not straight down under them.", "r_sunShadows"},
-    {kGraphicsTab, kShadowDistance, "Shadow Distance", "How far from you soldiers and vehicles still cast shadows: twice or three times the game's own distance.", "r_shadowDistance"},
+    {kGraphicsTab, kShadowDistance, "Shadow Distance", "How far from you soldiers and vehicles still cast shadows: three or six times the game's own distance.", "r_shadowDistance"},
     {kGraphicsTab, kViewDistance, "Level of Detail", "How far away soldiers and objects keep their detailed models.", "cg_viewDistance"},
     {kGraphicsTab, kKeepBodies, "Bodies Stay", "The fallen stay where they fell and are not cleared away.", "cg_bodiesStay"},
     {kGraphicsTab, kSection, "Textures", "", ""},

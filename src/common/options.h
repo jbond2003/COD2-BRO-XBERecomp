@@ -43,7 +43,7 @@ struct Options {
     uint32_t view_distance = 1;  // times the game's own distances for models' detail (src/game/detail.cpp)
     uint32_t ambient_occlusion = 0;  // soft shade in corners and creases: 0 off, 1 SSAO, 2 GTAO (src/game/ambient_occlusion.cpp)
     bool ads_dof = false;        // all but the sight picture goes out of focus while aiming (src/game/fov.cpp)
-    uint32_t shadow_distance = 0;  // how far round the camera shadows are cast: 0 the game's own, 1 twice, 2 three times
+    uint32_t shadow_distance = 0;  // how far round the camera shadows are cast: 0 the game's own, 1 three times, 2 six times
     bool sun_shadows = false;    // shadows fall away from the sun (src/game/shadows.cpp)
     bool gun_blur = false;       // the gun nearest the eye goes out of focus while aiming (src/game/fov.cpp)
     bool keep_bodies = false;    // dead soldiers stay where they fell (src/game/bodies.cpp)

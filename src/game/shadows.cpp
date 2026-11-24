@@ -65,7 +65,7 @@ float g_own_width = 0;  // the picture's width as the game or its level has it
 // Shadow Distance (Graphics): the picture's width times this
 float Farther() {
     uint32_t d = game::Opt().shadow_distance;
-    return d == 1 ? 2.0f : d >= 2 ? 3.0f : 1.0f;
+    return d == 1 ? 3.0f : d >= 2 ? 6.0f : 1.0f;
 }
 
 // the directional light with the most weight in the sample nearest the point; false where none reaches
@@ -178,6 +178,13 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
     float back = (lift + g_sun.height) / -lz;
     cam[12] -= lx * back, cam[13] -= ly * back;
     G<float>(kShadowDepth) = (lift + g_sun.height + (kOwnDepth - lift - 60.0f) * farther) / -lz;
+}
+
+// Tanks and trucks. The game adds a vehicle to the scene (0x246F67) with "casts no shadow" (the last of
+// R_AddDObjSurfaces' six arguments, pushed as 0): under a blot laid straight down a tank hid its own. With the
+// shadows falling away from the sun, or reaching further than the game's own, a vehicle casts one like a soldier.
+void VehicleShadow(X86Context& ctx, uint8_t*) {
+    if (game::Opt().sun_shadows || game::Opt().shadow_distance) W32(ctx.esp + 0x14, 1);
 }
 
 // a level's script sets the picture's width (GScr slot 129)

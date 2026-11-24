@@ -447,3 +447,9 @@ call = "RigidShadowMatrix"
 [[hook]]
 at = 0x00241636
 call = "SunShadowCamera"
+
+# game/shadows.cpp: a vehicle about to be added to the scene (R_AddDObjSurfaces), its arguments pushed: casts no
+# shadow as the game has it
+[[hook]]
+at = 0x00246F67
+call = "VehicleShadow"
