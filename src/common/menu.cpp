@@ -1484,6 +1484,20 @@ void DrawModern() {
                 build();
             }
         }
+        // the Controller tab's lines are in two columns of three: left and right on a line not picked go across
+        if (p.tab == kControllerTab && p.editing < 0 && step) {
+            std::vector<int> stops;
+            for (int i = 0; i < int(page.rows.size()); i++)
+                if (ModernStop(page.rows[size_t(i)])) stops.push_back(i);
+            auto at = std::find(stops.begin(), stops.end(), p.selected);
+            if (at != stops.end()) {
+                constexpr int kColumn = 3;
+                int k = int(at - stops.begin()), across = k < kColumn ? k + kColumn : k - kColumn;
+                if (across >= 0 && across < int(stops.size())) p.selected = stops[size_t(across)], p.follow = true;
+            }
+            step = 0;
+            p.pointer = false;
+        }
         // a setting is picked with A or Enter before left and right change it, and let go with A, Enter or back
         {
             ui::modern::Row::Kind shown = page.rows[size_t(p.selected)].kind;

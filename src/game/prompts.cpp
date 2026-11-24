@@ -884,9 +884,9 @@ bool ReadFrontEndPicture(const std::string& name, std::vector<uint8_t>& rgba, ui
 bool MenuButtonPixels(int button, int set, std::vector<uint8_t>& rgba, uint32_t& width, uint32_t& height) {
     std::vector<uint32_t> argb;  // without the border
     uint32_t w = 0, h = 0;
-    constexpr int kXbox[] = {kXboxA, kXboxB, kXboxX, kXboxY, kXboxLB, kXboxRB};
-    constexpr int kPs[] = {kPsCross, kPsCircle, kPsSquare, kPsTriangle, kPsL1, kPsR1};
-    constexpr int kOg[] = {kOgA, kOgB, kOgX, kOgY, kOgWhite, kOgBlack};
+    constexpr int kXbox[] = {kXboxA, kXboxB, kXboxX, kXboxY, kXboxLB, kXboxRB, kXboxLT, kXboxRT};
+    constexpr int kPs[] = {kPsCross, kPsCircle, kPsSquare, kPsTriangle, kPsL1, kPsR1, kPsL2, kPsR2};
+    constexpr int kOg[] = {kOgA, kOgB, kOgX, kOgY, kOgWhite, kOgBlack, kOgLT, kOgRT};
     if (button < 0 || button >= int(std::size(kXbox))) return false;
     // set 0: the original Xbox controller's pictures, else the game's own icon
     const ButtonPicture* p = PadButton(set == 2 ? kPs[button] : set == 1 ? kXbox[button] : kOg[button]);
@@ -898,7 +898,7 @@ bool MenuButtonPixels(int button, int set, std::vector<uint8_t>& rgba, uint32_t&
         FitPicture(canvas, *p, 0, 0, float(w), float(h));
         argb = canvas.Finish()->argb;
     } else {
-        constexpr Icon kIcons[] = {kA, kB, kX, kY, kWhite, kBlack};
+        constexpr Icon kIcons[] = {kA, kB, kX, kY, kWhite, kBlack, kLeftTrigger, kRightTrigger};
         if (button < 0 || button >= int(std::size(kIcons))) return false;
         std::map<std::string, Entry> files = ReadDirectory();
         std::vector<uint8_t> dds, table;
