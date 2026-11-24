@@ -86,7 +86,8 @@ SOFTWARE.
 
 ## XNA Game Studio Button Images
 
-`button_images/` holds pictures of the Xbox 360 controller's buttons from the Button Images sample of XNA Game Studio
+`button_images/xboxController*.tga` (A, B, X, Y, Start, Back, the dpad) are pictures of the Xbox 360 controller's
+buttons from the Button Images sample of XNA Game Studio
 (© 2007 Microsoft Corporation), from the XNA Game Studio Archive by Simon (Darkside) Jackson
 (https://github.com/SimonDarksideJ/XNAGameStudio, MIT License below; the sample at
 https://github.com/SimonDarksideJ/XNAGameStudio/tree/archive/Samples/ButtonImages),
@@ -168,3 +169,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Xelu's controller prompts
+
+`button_images/360_LB.tga`, `360_RB.tga`, `360_LT.tga` and `360_RT.tga` (the Modern layout's LB, RB, LT and RT) are
+360_LB.png, 360_RB.png, 360_LT.png and 360_RT.png by Nicolae Xelu Berbece (@xelubest), stored as .tga, otherwise
+unmodified. Released under Creative Commons 0 (CC0): https://creativecommons.org/publicdomain/zero/1.0/

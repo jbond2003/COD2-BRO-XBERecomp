@@ -3,8 +3,8 @@
 // start and back) and four footer icons (Xbox_A/B/X/YButton.dds), all in sp/global.cod. While the keyboard and mouse
 // are in use the renderer draws keycaps and mouse pictures in their place (gpu/texture_override.h), labelled with the
 // keys that give each button in the controller layout picked in the game's options; the controller's icons come back
-// the moment a controller is used; with the Modern layout picked a controller's buttons are XNA Game Studio's
-// pictures of them instead (button_images.cpp), the other layouts keep the game's own, white and black buttons too. After
+// the moment a controller is used; with the Modern layout picked a controller's buttons are pictures of an
+// Xbox 360 controller's instead (button_images.cpp), the other layouts keep the game's own, white and black buttons too. After
 // CoD2-BRO-Native-Loader's text/key_prompts.cpp (GPL-2.0-or-later, THIRD_PARTY_NOTICES.md).
 
 #include <algorithm>
@@ -73,7 +73,7 @@ enum Icon {
 using Labels = std::array<std::string, kIconCount>;
 // labels[kA] saying this: a controller is in use, the game's own pictures stay
 constexpr const char* kControllerSet = "@controller";
-// labels[kStart] saying this with kControllerSet: the Modern layout's controller, every icon an XNA picture
+// labels[kStart] saying this with kControllerSet: the Modern layout's controller, every icon a picture from button_images.cpp
 constexpr const char* kXnaSet = "@xna";
 
 constexpr const char* kPack = "D:\\sp\\global.cod";
@@ -568,7 +568,7 @@ void FitPicture(Canvas& canvas, const game::ButtonPicture& p, float left, float 
         }
 }
 
-// the Modern layout's controller: each icon the XNA picture of its button; the dpad's directions are the dpad with
+// the Modern layout's controller: each icon the picture of its button (button_images.cpp); the dpad's directions are the dpad with
 // arrows on the arms pressed
 void DrawXna(Canvas& canvas, const IconTexture& t, float s) {
     for (const Box& b : t.boxes) {
@@ -733,7 +733,7 @@ void Update() {
     if (!keyboard) {
         Labels pad;
         pad[kA] = kControllerSet;
-        // the Modern layout's: XNA Game Studio's pictures of a controller's buttons, if they are in the exe
+        // the Modern layout's: the pictures of an Xbox 360 controller's buttons, if they are in the exe
         if (game::Opt().modern_layout && game::XnaButton(game::kXnaA)) pad[kStart] = kXnaSet;
         SetLabels(pad);
         return;
@@ -855,7 +855,7 @@ bool ReadFrontEndPicture(const std::string& name, std::vector<uint8_t>& rgba, ui
 }
 
 // A controller button for the settings menu's own lines (0 A, 1 B, 2 X, 3 Y, 4 LB, 5 RB), as the game shows it
-// everywhere else: the Modern layout's XNA picture, or the game's own icon (the white button is LB, the black RB).
+// everywhere else: the Modern layout's picture (button_images.cpp), or the game's own icon (the white button is LB, the black RB).
 // Straight RGBA with a clear texel all round, so it can sit among other pictures.
 bool MenuButtonPixels(int button, bool modern, std::vector<uint8_t>& rgba, uint32_t& width, uint32_t& height) {
     std::vector<uint32_t> argb;  // without the border

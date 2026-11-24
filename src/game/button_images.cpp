@@ -1,6 +1,6 @@
-// The controller's buttons as XNA Game Studio's Button Images sample draws them (button_images/ beside
-// CMakeLists.txt, the sample's own .tga files, Microsoft Permissive License, THIRD_PARTY_NOTICES.md), embedded in the
-// exe. prompts.cpp draws them in place of the game's button icons while a controller is in use with the Modern layout.
+// The controller's buttons (button_images/ beside CMakeLists.txt, THIRD_PARTY_NOTICES.md), embedded in the exe:
+// A B X Y, Start, Back and the dpad from XNA Game Studio's Button Images sample (its own .tga files, Microsoft
+// Permissive License); LB RB LT RT by Nicolae Xelu Berbece (CC0, 360_*.png as .tga). prompts.cpp draws them in place of the game's button icons while a controller is in use with the Modern layout.
 // Each is read once and trimmed to what is not transparent.
 
 #include <algorithm>
@@ -43,8 +43,8 @@ namespace {
 constexpr const char* kFiles[kXnaCount] = {
     "xboxControllerButtonA.tga", "xboxControllerButtonB.tga",     "xboxControllerButtonX.tga",
     "xboxControllerButtonY.tga", "xboxControllerBack.tga",        "xboxControllerStart.tga",
-    "xboxControllerDPad.tga",    "xboxControllerLeftShoulder.tga", "xboxControllerRightShoulder.tga",
-    "xboxControllerLeftTrigger.tga", "xboxControllerRightTrigger.tga"};
+    "xboxControllerDPad.tga",    "360_LB.tga",                    "360_RB.tga",
+    "360_LT.tga",                "360_RT.tga"};
 
 std::once_flag g_loaded;
 std::array<ButtonPicture, kXnaCount> g_pictures;
