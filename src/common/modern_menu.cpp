@@ -451,8 +451,10 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
     {
         const float y0 = 381.0f, y1 = 399.0f, cy = (y0 + y1) / 2;
         float dx0 = kFrameLeft + 5, dx1 = dx0 + 96;
-        c.Box(dx0, y0, dx1, y1, Ink(0.6f), 1.0f);
-        c.Text(11.0f, (dx0 + dx1) / 2, cy, Ink(0.75f), "Reset to Defaults", 0.5f, 88);
+        // lit as a picked On or Off is while there is something for it to put back
+        if (page.not_defaults) c.Fill(dx0, y0, dx1, y1, Ink(0.95f));
+        c.Box(dx0, y0, dx1, y1, Ink(page.not_defaults ? 0.95f : 0.6f), 1.0f);
+        c.Text(11.0f, (dx0 + dx1) / 2, cy, page.not_defaults ? Col(kCream) : Ink(0.75f), "Reset to Defaults", 0.5f, 88);
         hits.defaults = {c.P(dx0, y0), c.P(dx1, y1)};
         float ax1 = kFrameRight - 5, ax0 = ax1 - 90;
         bool waiting = page.changes > 0;

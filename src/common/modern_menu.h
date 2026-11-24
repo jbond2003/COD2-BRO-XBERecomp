@@ -43,6 +43,7 @@ struct Page {
     // the note about the selected line
     std::string note_title, note_text, note_command, note_change;
     int changes = 0;       // lines waiting for Apply
+    bool not_defaults = false;  // a setting (as shown, Apply or not) is not its default: Reset to Defaults is lit
     bool controller = false;  // the bottom line shows the controller's buttons, else the keys
     bool buttons_modern = false;  // those buttons are the Modern configuration's pictures, else the game's own icons
     bool buttons_playstation = false;  // and with buttons_modern, a PlayStation pad's

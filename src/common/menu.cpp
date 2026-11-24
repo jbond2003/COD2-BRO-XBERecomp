@@ -1630,6 +1630,15 @@ void DrawModern() {
     page.buttons_modern = game::Opt().modern_layout;
     page.buttons_playstation = game::PlayStationPrompts();
     page.changes = ModernChanges();
+    {
+        // the settings as the menu shows them, against their defaults
+        Settings s = g_panel_pending ? g_panel_settings : Get();
+        game::Options o = g_panel_pending ? g_panel_options : game::Opt();
+        Settings ds = s;
+        game::Options d = o;
+        SetDefaults(ds, d, kEveryPart);
+        page.not_defaults = RowsDiffer(s, o, ds, d);
+    }
     page.note_title = row.kind == ModernRow::kBind ? "Key Bindings" : sel.label;
     page.note_text = row.note;
     page.note_command = row.variable;
