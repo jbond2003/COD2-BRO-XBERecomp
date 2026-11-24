@@ -1,7 +1,8 @@
 // The controller's buttons (button_images/ beside CMakeLists.txt, THIRD_PARTY_NOTICES.md), embedded in the exe:
 // A B X Y, Start, Back and the dpad from XNA Game Studio's Button Images sample (its own .tga files, Microsoft
 // Permissive License); LB RB LT RT by Nicolae Xelu Berbece (CC0, 360_*.png as .tga); a PlayStation pad's buttons
-// (ps_*.tga, from ButtonIcon-PS4-*.png) for when one is in use. prompts.cpp draws them in place of the game's button icons while a controller is in use with the Modern layout.
+// (ps_*.tga, from ButtonIcon-PS4-*.png; its dpad's left and right, and up and down, lit together made from the
+// single ones) for when one is in use. prompts.cpp draws them in place of the game's button icons while a controller is in use with the Modern layout.
 // Each is read once and trimmed to what is not transparent.
 
 #include <algorithm>
@@ -31,7 +32,8 @@ namespace game {
 
 // the pictures, in this order (src/cursor.rc.in names the resources COD2BRO_XNA_<n>)
 enum ButtonImage { kXnaA, kXnaB, kXnaX, kXnaY, kXnaBack, kXnaStart, kXnaDpad, kXnaLB, kXnaRB, kXnaLT, kXnaRT,
-                   kPsCross, kPsCircle, kPsSquare, kPsTriangle, kPsL1, kPsR1, kPsL2, kPsR2, kPsDpad, kXnaCount };
+                   kPsCross, kPsCircle, kPsSquare, kPsTriangle, kPsL1, kPsR1, kPsL2, kPsR2, kPsDpad,
+                   kPsDpadUp, kPsDpadDown, kPsDpadLeft, kPsDpadRight, kPsDpadLeftRight, kPsDpadUpDown, kXnaCount };
 
 // straight alpha, 0xAARRGGBB, rows top to bottom
 struct ButtonPicture {
@@ -47,7 +49,8 @@ constexpr const char* kFiles[kXnaCount] = {
     "xboxControllerDPad.tga",    "360_LB.tga",                    "360_RB.tga",
     "360_LT.tga",                "360_RT.tga",
     "ps_cross.tga", "ps_circle.tga", "ps_square.tga", "ps_triangle.tga", "ps_l1.tga", "ps_r1.tga", "ps_l2.tga",
-    "ps_r2.tga", "ps_dpad.tga"};
+    "ps_r2.tga", "ps_dpad.tga", "ps_dpad_up.tga", "ps_dpad_down.tga", "ps_dpad_left.tga", "ps_dpad_right.tga",
+    "ps_dpad_leftright.tga", "ps_dpad_updown.tga"};
 
 std::once_flag g_loaded;
 std::array<ButtonPicture, kXnaCount> g_pictures;

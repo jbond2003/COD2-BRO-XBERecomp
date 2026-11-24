@@ -51,7 +51,8 @@ struct ButtonPicture {  // src/game/button_images.cpp
     std::vector<uint32_t> argb;
 };
 enum ButtonImage { kXnaA, kXnaB, kXnaX, kXnaY, kXnaBack, kXnaStart, kXnaDpad, kXnaLB, kXnaRB, kXnaLT, kXnaRT,
-                   kPsCross, kPsCircle, kPsSquare, kPsTriangle, kPsL1, kPsR1, kPsL2, kPsR2, kPsDpad, kXnaCount };
+                   kPsCross, kPsCircle, kPsSquare, kPsTriangle, kPsL1, kPsR1, kPsL2, kPsR2, kPsDpad,
+                   kPsDpadUp, kPsDpadDown, kPsDpadLeft, kPsDpadRight, kPsDpadLeftRight, kPsDpadUpDown, kXnaCount };
 const ButtonPicture* XnaButton(int which);
 // src/game/sharp_text.cpp: a game font sheet drawn again sharp, null for any other texture
 std::shared_ptr<const gpu::texture_override::Picture> SmoothSky(const gpu::TextureDesc& d, const uint8_t* guest);
@@ -585,7 +586,8 @@ void PlayStationSmall(Canvas& canvas, float left, float top, float w, float h, c
 }
 
 // the Modern layout's controller: each icon the picture of its button (button_images.cpp); the dpad's directions are the dpad with
-// arrows on the arms pressed. With a PlayStation pad its own buttons (Start and Back stay the Xbox pad's)
+// arrows on the arms pressed. With a PlayStation pad its own buttons, its dpad's arms lit, and Options and Share
+// drawn in Start's and Back's places
 void DrawXna(Canvas& canvas, const IconTexture& t, float s, bool playstation) {
     for (const Box& b : t.boxes) {
         int which = -1;
@@ -601,9 +603,15 @@ void DrawXna(Canvas& canvas, const IconTexture& t, float s, bool playstation) {
         case kBlack: which = playstation ? game::kPsR1 : game::kXnaRB; break;
         case kStart: which = game::kXnaStart; break;
         case kBack: which = game::kXnaBack; break;
+        case kDpadUp: which = playstation ? game::kPsDpadUp : game::kXnaDpad; break;
+        case kDpadDown: which = playstation ? game::kPsDpadDown : game::kXnaDpad; break;
+        case kDpadLeft: which = playstation ? game::kPsDpadLeft : game::kXnaDpad; break;
+        case kDpadRight: which = playstation ? game::kPsDpadRight : game::kXnaDpad; break;
+        case kDpadLeftRight: which = playstation ? game::kPsDpadLeftRight : game::kXnaDpad; break;
+        case kDpadUpDown: which = playstation ? game::kPsDpadUpDown : game::kXnaDpad; break;
         default: which = playstation ? game::kPsDpad : game::kXnaDpad; break;
         }
-        bool dpad = which == game::kXnaDpad || which == game::kPsDpad;
+        bool dpad = which == game::kXnaDpad;  // the Xbox pad's has no pictures of its arms pressed: arrows on it
         float left = float(b.x) * s, top = float(b.y) * s, w = float(b.width) * s, h = float(b.height) * s;
         if (playstation && (b.icon == kStart || b.icon == kBack)) {
             PlayStationSmall(canvas, left, top, w, h, b.icon == kStart ? "OPTIONS" : "SHARE");
