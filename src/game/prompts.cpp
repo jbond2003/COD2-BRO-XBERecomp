@@ -736,7 +736,7 @@ void Update() {
         pad[kA] = kControllerSet;
         // the Modern layout's pictures, a PlayStation pad's with one in use
         if (game::Opt().modern_layout && game::PadButton(game::kXboxA))
-            pad[kStart] = input::PlayStationPadInUse() && game::PadButton(game::kPsCross) ? kPsSet : kXboxSet;
+            pad[kStart] = game::PlayStationPrompts() && game::PadButton(game::kPsCross) ? kPsSet : kXboxSet;
         SetLabels(pad);
         return;
     }
@@ -806,6 +806,12 @@ void Update() {
 }  // namespace
 
 namespace game {
+
+// the console's playstation 1: a PlayStation pad's prompts whatever pad is in use (not saved), for a look without one
+std::atomic<bool> g_playstation_prompts{false};
+
+// the Modern layout's prompts are a PlayStation pad's: one is in use, or the console asked for them
+bool PlayStationPrompts() { return g_playstation_prompts.load() || input::PlayStationPadInUse(); }
 
 void InitPrompts() { gpu::texture_override::SetProvider(Provide); }
 

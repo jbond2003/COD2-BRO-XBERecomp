@@ -31,6 +31,7 @@
 #include "app/app.h"
 #include "common/cheats.h"
 #include "common/console.h"
+#include "common/menu_state.h"
 #include "common/options.h"
 #include "core/log.h"
 #include "cpu/x86_ops.h"
@@ -186,6 +187,9 @@ const PortVariable kPortVariables[] = {
     {"cg_cutsceneBars", "Cutscene Black Bars", "0 or 1", 0, 1, 1, 1, PORT_BOOL(Opt().cutscene_bars)},
     {"cg_aimAssist", "Controller Aim Assist", "0 or 1", 0, 1, 1, 1, PORT_BOOL(Opt().aim_assist)},
     {"cg_hints", "Tutorial Hints", "0 or 1", 0, 1, 1, 1, PORT_BOOL(Opt().hints)},
+    // not saved: a look at the PlayStation prompts without a PlayStation pad
+    {"playstation", "PlayStation button prompts (Modern layout)", "1 a PlayStation pad's, 0 the pad in use", 0, 1, 0, 1,
+     [] { return double(g_playstation_prompts.load()); }, [](double v) { g_playstation_prompts = v != 0; }},
     {"cg_drawHud", "Hide the HUD", "1 the HUD is drawn, 0 it is hidden", 0, 1, 1, 1,
      [] { return Opt().hide_hud ? 0.0 : 1.0; }, [](double v) { Opt().hide_hud = v == 0; }},
     {"cg_aimToggle", "Aim Down Sights", "1 toggle, 0 hold", 0, 1, 0, 1, PORT_BOOL(Opt().aim_toggle)},
