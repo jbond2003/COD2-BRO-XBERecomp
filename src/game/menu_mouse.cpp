@@ -473,6 +473,12 @@ Pointer TakePointer() {
     out.right_clicks = (p.pressed & 2) ? 1 : 0;
     out.wheel = p.wheel;
     if (!p.active) return out;
+    // a move is the mouse's own, in the window's pixels: where the pointer lies on the game's 640 x 480 screen also
+    // changes when the picture's fit does (a mission's start screen after the menus), which is nobody's move and
+    // must not make the mouse the input in use ("Click to start the game" for a player on a controller)
+    static float last_px = -1, last_py = -1;
+    bool moved = std::abs(p.x - last_px) > 0.5f || std::abs(p.y - last_py) > 0.5f;
+    last_px = p.x, last_py = p.y;
     float x, y;
     app::FrameView view;
     if (app::FrameBandView(p.width, p.height, view)) {
@@ -485,7 +491,7 @@ Pointer TakePointer() {
     }
     out.inside = true;
     out.x = x, out.y = y;
-    out.moved = std::abs(x - last_x) > 0.5f || std::abs(y - last_y) > 0.5f;
+    out.moved = moved && (std::abs(x - last_x) > 0.5f || std::abs(y - last_y) > 0.5f);
     last_x = x, last_y = y;
     if (out.moved || out.left_clicks || out.right_clicks || out.wheel) input::UseMenuMouse();
     return out;
@@ -1934,10 +1940,9 @@ void RefreshStartText(X86Context& ctx, uint32_t menu, bool keyboard) {
     static uint32_t last_menu = 0;
     static bool last_keyboard = false;
     if (menu == last_menu && keyboard == last_keyboard) return;
-    bool first = menu != last_menu;
+    // (also when the screen is first seen: the game gave the text some frames ago, for the input in use then)
     last_menu = menu;
     last_keyboard = keyboard;
-    if (first) return;  // just set by the game itself, for this input
     uint32_t screens = R32(R32(kInGame) + 4);
     for (const auto& s : kStartPrompts) {
         if (R32(screens + s.screen * 4) != menu) continue;

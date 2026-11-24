@@ -55,5 +55,9 @@ float MonoSize();
 bool Sheet(ImTextureID& texture, ImVec2& uv0, ImVec2& uv1);
 // a controller picture in the atlas, 512 square: the game's Xbox controller, or the Modern configuration's
 bool Pad(bool modern, ImTextureID& texture, ImVec2& uv0, ImVec2& uv1);
+// a controller's button as the game shows it elsewhere (its own icon, or the Modern configuration's picture), in
+// the atlas; aspect is its width over its height. False when the game's files or the exe gave none
+enum Button { kButtonA, kButtonB, kButtonX, kButtonY, kButtonLB, kButtonRB, kButtons };
+bool Button(int button, bool modern, ImTextureID& texture, ImVec2& uv0, ImVec2& uv1, float& aspect);
 
 }  // namespace ui::paper

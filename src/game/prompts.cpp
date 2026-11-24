@@ -854,6 +854,62 @@ bool ReadFrontEndPicture(const std::string& name, std::vector<uint8_t>& rgba, ui
     return true;
 }
 
+// A controller button for the settings menu's own lines (0 A, 1 B, 2 X, 3 Y, 4 LB, 5 RB), as the game shows it
+// everywhere else: the Modern layout's XNA picture, or the game's own icon (the white button is LB, the black RB).
+// Straight RGBA with a clear texel all round, so it can sit among other pictures.
+bool MenuButtonPixels(int button, bool modern, std::vector<uint8_t>& rgba, uint32_t& width, uint32_t& height) {
+    std::vector<uint32_t> argb;  // without the border
+    uint32_t w = 0, h = 0;
+    if (modern) {
+        constexpr int kXna[] = {kXnaA, kXnaB, kXnaX, kXnaY, kXnaLB, kXnaRB};
+        if (button < 0 || button >= int(std::size(kXna))) return false;
+        const ButtonPicture* p = XnaButton(kXna[button]);
+        if (!p || !p->width || !p->height) return false;
+        h = 96;
+        w = std::clamp(uint32_t(std::lround(float(h) * float(p->width) / float(p->height))), 16u, 320u);
+        Canvas canvas(w, h);
+        FitPicture(canvas, *p, 0, 0, float(w), float(h));
+        argb = canvas.Finish()->argb;
+    } else {
+        constexpr Icon kIcons[] = {kA, kB, kX, kY, kWhite, kBlack};
+        if (button < 0 || button >= int(std::size(kIcons))) return false;
+        std::map<std::string, Entry> files = ReadDirectory();
+        std::vector<uint8_t> dds, table;
+        auto read = [&](const char* name, std::vector<uint8_t>& out) {
+            auto it = files.find(name);
+            return it != files.end() && ReadAny(kPack, it->second.offset, it->second.size, out);
+        };
+        if (!read("i_button_icons_xb_en.dds", dds) || !read("i_button_icons_xb_en.fdf", table)) return false;
+        if (dds.size() <= 128 || std::memcmp(dds.data(), "DDS ", 4) != 0 || std::memcmp(dds.data() + 84, "DXT3", 4) != 0)
+            return false;
+        uint32_t th = U32(dds, 12), tw = U32(dds, 16), size = Level0Size(dds, tw, th);
+        if (!tw || !th || tw > 1024 || th > 1024 || !size || 128 + size > dds.size()) return false;
+        std::vector<Color> texels = DecodeDxt3(std::vector<uint8_t>(dds.begin() + 128, dds.begin() + 128 + size), tw, th);
+        const Box* box = nullptr;
+        std::vector<Box> boxes = IconTable(table);
+        for (const Box& b : boxes)
+            if (b.icon == kIcons[button]) box = &b;
+        if (!box || box->x < 0 || box->y < 0 || box->x + box->width > int(tw) || box->y + box->height > int(th)) return false;
+        w = uint32_t(box->width), h = uint32_t(box->height);
+        argb.resize(size_t(w) * h);
+        auto byte = [](float v) { return uint32_t(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f); };
+        for (uint32_t y = 0; y < h; y++)
+            for (uint32_t x = 0; x < w; x++) {
+                const Color& c = texels[size_t(uint32_t(box->y) + y) * tw + uint32_t(box->x) + x];
+                argb[size_t(y) * w + x] = byte(c.a) << 24 | byte(c.r) << 16 | byte(c.g) << 8 | byte(c.b);
+            }
+    }
+    width = w + 2, height = h + 2;
+    rgba.assign(size_t(width) * height * 4, 0);
+    for (uint32_t y = 0; y < h; y++)
+        for (uint32_t x = 0; x < w; x++) {
+            uint32_t c = argb[size_t(y) * w + x];
+            uint8_t* d = &rgba[(size_t(y + 1) * width + x + 1) * 4];
+            d[0] = uint8_t(c >> 16), d[1] = uint8_t(c >> 8), d[2] = uint8_t(c), d[3] = uint8_t(c >> 24);
+        }
+    return true;
+}
+
 // each client frame, in menus and in play
 void UpdatePrompts() { Update(); }
 

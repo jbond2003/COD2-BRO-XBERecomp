@@ -1013,6 +1013,8 @@ struct ModernState {
     int confirm_choice = 0;
     int editing = -1;         // the line picked with A or Enter: left and right change it until it is let go
     bool pointer = false;     // the mouse was the last thing used: its lines change at a click, without the pick
+    bool mouse_seen = false;  // where the pointer rests as the menu opens is not a move of it
+    double settle = 0;        // until then the controller's buttons held as the menu opened are not presses
     ui::modern::Hits hits;
 } g_modern;
 
@@ -1371,6 +1373,10 @@ void DrawModern() {
         p.pad_repeat = now + (slider ? 0.03 : 0.12);
     }
     p.pad_prev = pad;
+    // the A that picked PC Options in the game's menu is still down as this opens, and the game thread's word of it
+    // can come a frame or two late: nothing held in the first moments is a press, or it would pick the first setting
+    if (p.settle == 0) p.settle = now + 0.3;
+    if (now < p.settle) p.pad_prev |= ~kDirs, pressed &= kDirs;
     if (pressed) p.controller = true;
 
     ImGuiIO& io = ImGui::GetIO();
@@ -1523,8 +1529,9 @@ void DrawModern() {
                 held = GetAsyncKeyState(GetSystemMetrics(SM_SWAPBUTTON) ? VK_RBUTTON : VK_LBUTTON) < 0;
             }
         }
-        bool moved = m.x != p.mouse.x || m.y != p.mouse.y;
+        bool moved = p.mouse_seen && (m.x != p.mouse.x || m.y != p.mouse.y);
         p.mouse = m;
+        p.mouse_seen = true;
         bool left = (held && !p.held) || ImGui::IsMouseClicked(ImGuiMouseButton_Left);
         if (left && p.held) left = false;  // one press, once
         bool right = ImGui::IsMouseClicked(ImGuiMouseButton_Right);
@@ -1595,6 +1602,7 @@ void DrawModern() {
     page.selected = p.selected;
     page.follow = p.follow;
     page.controller = p.controller;
+    page.buttons_modern = game::Opt().modern_layout;
     page.changes = ModernChanges();
     page.note_title = row.kind == ModernRow::kBind ? "Key Bindings" : sel.label;
     page.note_text = row.note;
@@ -1951,6 +1959,10 @@ void ToggleMenu() {
         g_modern = {};
         g_close_request.store(false, std::memory_order_relaxed);
         g_modern.pad_prev = ~0u;  // a button held as it opens (the A that picked PC Options) is let go of first
+        // opened with a controller it is a controller's menu from the first frame: its buttons along the bottom, no
+        // pointer, and no button to press first
+        g_modern.controller = !input::KeyboardActive();
+        g_modern.pointer = !g_modern.controller;
         if (g_bindings_only.load(std::memory_order_relaxed)) g_modern.tab = kControlsTab;
         input::ReleaseCursor();
     }
