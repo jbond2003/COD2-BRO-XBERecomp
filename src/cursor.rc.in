@@ -30,3 +30,5 @@ COD2BRO_XNA_22 RCDATA "@CMAKE_CURRENT_SOURCE_DIR@/button_images/ps_dpad_left.tga
 COD2BRO_XNA_23 RCDATA "@CMAKE_CURRENT_SOURCE_DIR@/button_images/ps_dpad_right.tga"
 COD2BRO_XNA_24 RCDATA "@CMAKE_CURRENT_SOURCE_DIR@/button_images/ps_dpad_leftright.tga"
 COD2BRO_XNA_25 RCDATA "@CMAKE_CURRENT_SOURCE_DIR@/button_images/ps_dpad_updown.tga"
+COD2BRO_XNA_26 RCDATA "@CMAKE_CURRENT_SOURCE_DIR@/button_images/ps_options.tga"
+COD2BRO_XNA_27 RCDATA "@CMAKE_CURRENT_SOURCE_DIR@/button_images/ps_share.tga"

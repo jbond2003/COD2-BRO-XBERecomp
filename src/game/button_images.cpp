@@ -33,7 +33,8 @@ namespace game {
 // the pictures, in this order (src/cursor.rc.in names the resources COD2BRO_XNA_<n>)
 enum ButtonImage { kXnaA, kXnaB, kXnaX, kXnaY, kXnaBack, kXnaStart, kXnaDpad, kXnaLB, kXnaRB, kXnaLT, kXnaRT,
                    kPsCross, kPsCircle, kPsSquare, kPsTriangle, kPsL1, kPsR1, kPsL2, kPsR2, kPsDpad,
-                   kPsDpadUp, kPsDpadDown, kPsDpadLeft, kPsDpadRight, kPsDpadLeftRight, kPsDpadUpDown, kXnaCount };
+                   kPsDpadUp, kPsDpadDown, kPsDpadLeft, kPsDpadRight, kPsDpadLeftRight, kPsDpadUpDown,
+                   kPsOptions, kPsShare, kXnaCount };
 
 // straight alpha, 0xAARRGGBB, rows top to bottom
 struct ButtonPicture {
@@ -50,7 +51,7 @@ constexpr const char* kFiles[kXnaCount] = {
     "360_LT.tga",                "360_RT.tga",
     "ps_cross.tga", "ps_circle.tga", "ps_square.tga", "ps_triangle.tga", "ps_l1.tga", "ps_r1.tga", "ps_l2.tga",
     "ps_r2.tga", "ps_dpad.tga", "ps_dpad_up.tga", "ps_dpad_down.tga", "ps_dpad_left.tga", "ps_dpad_right.tga",
-    "ps_dpad_leftright.tga", "ps_dpad_updown.tga"};
+    "ps_dpad_leftright.tga", "ps_dpad_updown.tga", "ps_options.tga", "ps_share.tga"};
 
 std::once_flag g_loaded;
 std::array<ButtonPicture, kXnaCount> g_pictures;

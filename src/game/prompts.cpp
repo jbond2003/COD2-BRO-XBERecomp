@@ -52,7 +52,8 @@ struct ButtonPicture {  // src/game/button_images.cpp
 };
 enum ButtonImage { kXnaA, kXnaB, kXnaX, kXnaY, kXnaBack, kXnaStart, kXnaDpad, kXnaLB, kXnaRB, kXnaLT, kXnaRT,
                    kPsCross, kPsCircle, kPsSquare, kPsTriangle, kPsL1, kPsR1, kPsL2, kPsR2, kPsDpad,
-                   kPsDpadUp, kPsDpadDown, kPsDpadLeft, kPsDpadRight, kPsDpadLeftRight, kPsDpadUpDown, kXnaCount };
+                   kPsDpadUp, kPsDpadDown, kPsDpadLeft, kPsDpadRight, kPsDpadLeftRight, kPsDpadUpDown,
+                   kPsOptions, kPsShare, kXnaCount };
 const ButtonPicture* XnaButton(int which);
 // src/game/sharp_text.cpp: a game font sheet drawn again sharp, null for any other texture
 std::shared_ptr<const gpu::texture_override::Picture> SmoothSky(const gpu::TextureDesc& d, const uint8_t* guest);
@@ -572,22 +573,9 @@ void FitPicture(Canvas& canvas, const game::ButtonPicture& p, float left, float 
         }
 }
 
-// a PlayStation pad's Options or Share (Start and Back's places): a small dark pill with its name, as dark as the
-// pad's other button pictures
-void PlayStationSmall(Canvas& canvas, float left, float top, float w, float h, const char* name) {
-    float cx = left + w / 2, cy = top + h / 2;
-    float hw = w * 0.48f, hh = h * 0.26f, rim = std::max(1.0f, h * 0.05f);
-    canvas.Fill(cx - hw, cy - hh, cx + hw, cy + hh, Color{0.10f, 0.10f, 0.11f, 1.0f},
-                [&](float px, float py) { return RoundedRect(px, py, cx, cy, hw, hh, hh); });
-    canvas.Fill(cx - hw, cy - hh, cx + hw, cy + hh, Color{0.27f, 0.27f, 0.29f, 1.0f}, [&](float px, float py) {
-        return RoundedRect(px, py, cx, cy, hw - rim, hh - rim, hh - rim);
-    });
-    Text(canvas, cx, cy, (hw - rim) * 1.7f, (hh - rim) * 0.9f, name, Color{0.86f, 0.86f, 0.88f, 1.0f});
-}
-
 // the Modern layout's controller: each icon the picture of its button (button_images.cpp); the dpad's directions are the dpad with
-// arrows on the arms pressed. With a PlayStation pad its own buttons, its dpad's arms lit, and Options and Share
-// drawn in Start's and Back's places
+// arrows on the arms pressed. With a PlayStation pad its own buttons, its dpad's arms lit, and Options and Share in
+// Start's and Back's places
 void DrawXna(Canvas& canvas, const IconTexture& t, float s, bool playstation) {
     for (const Box& b : t.boxes) {
         int which = -1;
@@ -601,8 +589,8 @@ void DrawXna(Canvas& canvas, const IconTexture& t, float s, bool playstation) {
         // the layout's LB and RB are the original's white and black
         case kWhite: which = playstation ? game::kPsL1 : game::kXnaLB; break;
         case kBlack: which = playstation ? game::kPsR1 : game::kXnaRB; break;
-        case kStart: which = game::kXnaStart; break;
-        case kBack: which = game::kXnaBack; break;
+        case kStart: which = playstation ? game::kPsOptions : game::kXnaStart; break;  // Options and Share in their places
+        case kBack: which = playstation ? game::kPsShare : game::kXnaBack; break;
         case kDpadUp: which = playstation ? game::kPsDpadUp : game::kXnaDpad; break;
         case kDpadDown: which = playstation ? game::kPsDpadDown : game::kXnaDpad; break;
         case kDpadLeft: which = playstation ? game::kPsDpadLeft : game::kXnaDpad; break;
@@ -613,10 +601,6 @@ void DrawXna(Canvas& canvas, const IconTexture& t, float s, bool playstation) {
         }
         bool dpad = which == game::kXnaDpad;  // the Xbox pad's has no pictures of its arms pressed: arrows on it
         float left = float(b.x) * s, top = float(b.y) * s, w = float(b.width) * s, h = float(b.height) * s;
-        if (playstation && (b.icon == kStart || b.icon == kBack)) {
-            PlayStationSmall(canvas, left, top, w, h, b.icon == kStart ? "OPTIONS" : "SHARE");
-            continue;
-        }
         const game::ButtonPicture* p = game::XnaButton(which);
         if (!p) continue;
         // a small margin, none for the wide shoulder buttons, which are short enough already
