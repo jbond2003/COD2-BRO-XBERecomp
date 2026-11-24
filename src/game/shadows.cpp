@@ -47,6 +47,7 @@ constexpr uint32_t kShadowLift = 0x8DB1A0;   // the camera's height over the eye
 constexpr uint32_t kShadowWidth = 0x8DB19C;  // the picture's width in the world, 700 (a level's script can set it)
 constexpr uint32_t kShadowDepth = 0x8DB1A4;  // how far along its look the picture is laid on the world, 500
 constexpr float kOwnDepth = 500.0f;
+constexpr uint32_t kBandBelow = 0x8DB124;   // how far under the camera a thing not animated still casts a shadow, 100
 constexpr uint32_t kTracePoint = 0x286D00;   // CG_TracePoint: eax mask, ecx end; result, start, mins, maxs, skip
 constexpr uint32_t kClientNum = 0x9725CC;
 constexpr float kShadowReach = 700.0f;  // parts this near the camera cast a shadow though out of the view
@@ -123,6 +124,31 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
     float passed = std::clamp(std::chrono::duration<float>(now - g_sun.at).count(), 0.0f, 0.1f);
     g_sun.at = now;
     g_sun.lean += std::clamp((lit ? 1.0f : 0.0f) - g_sun.lean, -passed * 1.5f, passed * 1.5f);
+    // How high the eye is over the ground (a soldier's 60 units, a tank's camera a few hundred, more over a slope):
+    // a trace straight down from it, eased so that a wall's top passing under the eye does not make the shadows jump.
+    {
+        constexpr float kDown = 2000.0f;
+        X86Context kept = ctx;
+        uint32_t top = R32(ctx.esp);
+        ctx.esp -= 0x80;  // start, end, a point for mins and maxs, the result (0x40)
+        uint32_t start = ctx.esp, end = ctx.esp + 0x10, zero = ctx.esp + 0x20, result = ctx.esp + 0x30;
+        const float* eye = &G<float>(kViewOrigin);
+        for (int i = 0; i < 3; i++) G<float>(start + i * 4) = G<float>(end + i * 4) = eye[i], W32(zero + i * 4, 0);
+        G<float>(end + 8) = eye[2] - kDown;
+        W32(result + 0x20, 0x3F800000);
+        ctx.eax = 0x11, ctx.ecx = end;
+        CallGuest(ctx, kTracePoint, {result, start, zero, zero, R32(kClientNum)});
+        float part = G<float>(result + 0x20);
+        ctx = kept;
+        W32(ctx.esp, top);
+        float height = part > 0.0f && part < 1.0f ? part * kDown : 60.0f;
+        g_sun.height += std::clamp(height - g_sun.height, -passed * 400.0f, passed * 400.0f);
+    }
+    // A thing that is not animated (a wreck, a crate, a body that has come to rest) casts a shadow only within a band
+    // of heights about the camera, 100 units under it to 40 over (0x8DB124, 0x8DB120, read by R_AddDObjSurfaces at
+    // 0x24442A): right for a soldier's eye, but a tank's camera is higher over the ground than that, and nothing
+    // lying on it cast a shadow. The band goes down to as far under the ground as it did from a soldier's eye.
+    G<float>(kBandBelow) = std::max(100.0f, g_sun.height + 40.0f * farther);
     if (!(g_sun.sun[2] < 0) || !(g_sun.lean > 0)) return;  // straight down, as the game has it
     // the way the light travels, no flatter than kLeastDrop
     float lx = g_sun.sun[0], ly = g_sun.sun[1], lz = g_sun.sun[2];
@@ -144,31 +170,11 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
     cam[0] = ax, cam[1] = ay, cam[2] = az, cam[3] = 0;
     cam[4] = vx, cam[5] = vy, cam[6] = vz, cam[7] = vx;
     cam[8] = lx, cam[9] = ly, cam[10] = lz, cam[11] = 0;
-    // How high the eye is over the ground (a soldier's 60 units, a tank's camera a few hundred, more over a slope):
-    // a trace straight down from it, eased so that a wall's top passing under the eye does not make the shadows jump.
-    float lift = G<float>(kShadowLift);
-    {
-        constexpr float kDown = 2000.0f;
-        X86Context kept = ctx;
-        uint32_t top = R32(ctx.esp);
-        ctx.esp -= 0x80;  // start, end, a point for mins and maxs, the result (0x40)
-        uint32_t start = ctx.esp, end = ctx.esp + 0x10, zero = ctx.esp + 0x20, result = ctx.esp + 0x30;
-        const float* eye = &G<float>(kViewOrigin);
-        for (int i = 0; i < 3; i++) G<float>(start + i * 4) = G<float>(end + i * 4) = eye[i], W32(zero + i * 4, 0);
-        G<float>(end + 8) = eye[2] - kDown;
-        W32(result + 0x20, 0x3F800000);
-        ctx.eax = 0x11, ctx.ecx = end;
-        CallGuest(ctx, kTracePoint, {result, start, zero, zero, R32(kClientNum)});
-        float part = G<float>(result + 0x20);
-        ctx = kept;
-        W32(ctx.esp, top);
-        float height = part > 0.0f && part < 1.0f ? part * kDown : 60.0f;
-        g_sun.height += std::clamp(height - g_sun.height, -passed * 400.0f, passed * 400.0f);
-    }
     // Back along the light from the picture's place, so that its middle falls on the ground under where the game put
     // it and not on a point as high as the eye (from a tank's camera that put the picture a tank's length aside,
     // and shadows went missing as the view turned). It is laid on the world (nglAddShadowProjector 0x704F0) down
     // to as far under the ground as the game's own reaches, more with Shadow Distance.
+    float lift = G<float>(kShadowLift);
     float back = (lift + g_sun.height) / -lz;
     cam[12] -= lx * back, cam[13] -= ly * back;
     G<float>(kShadowDepth) = (lift + g_sun.height + (kOwnDepth - lift - 60.0f) * farther) / -lz;
