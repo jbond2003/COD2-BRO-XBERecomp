@@ -114,7 +114,7 @@ const std::vector<Mode>& Modes() {
 enum RowId { kSection, kDisplayMode, kResolution, kRenderResolution, kFov, kMaxFps, kVsync, kFpsCounter, kAniso,
              kTextureReplacement, kTextureDumping, kDumpFormat, kMouseX, kMouseY, kInvertY, kInvertX, kQwerty, kPrompts,
              kBrightness, kAimAssist, kHints, kHideHud, kViewDistance, kKeepBodies, kCutsceneBars, kLeanToggle,
-             kMusicVolume, kMenuMusicVolume, kEffectsVolume, kVoiceVolume, kMsaa, kSmaa, kAmbientOcclusion, kAdsDof, kGunBlur, kAimToggle, kPreset, kSunShadows, kShadowDistance,
+             kMusicVolume, kMenuMusicVolume, kEffectsVolume, kVoiceVolume, kMsaa, kSmaa, kAmbientOcclusion, kAdsDof, kGunBlur, kAimToggle, kPreset, kShadows,
              // the game's own options (options.h's GameOption, src/game/game_options.cpp)
              kGSubtitles, kGCrosshair, kGTags, kGTank, kGAdsToggle, kGInvert, kGVibration, kGVolume, kGLayout,
              kGSensX, kGSensY };
@@ -306,14 +306,15 @@ std::string RowText(RowId id, int step, Settings& s) {
             // smoothing by SMAA. The settings themselves say which it is: any of them changed by hand shows Custom.
             // A step goes to the other one.
             game::Options& o = O();
-            bool original = !o.ads_dof && !o.gun_blur && !o.sun_shadows && !o.ambient_occlusion && !o.keep_bodies &&
+            bool original = !o.ads_dof && !o.gun_blur && !o.sun_shadows && !o.shadow_distance && !o.ambient_occlusion && !o.keep_bodies &&
                             DetailLevel(o.view_distance) == 0 && s.aniso == 0 && s.msaa == 0 && !s.smaa;
-            bool remastered = o.ads_dof && o.gun_blur && o.sun_shadows && o.ambient_occlusion == 2 && o.keep_bodies &&
+            bool remastered = o.ads_dof && o.gun_blur && o.sun_shadows && o.shadow_distance == 2 && o.ambient_occlusion == 2 && o.keep_bodies &&
                               DetailLevel(o.view_distance) == 2 && s.aniso == 16 && s.msaa == 0 && s.smaa;
             if (step) {
                 bool to = original ? true : remastered ? false : step > 0;  // to Remastered
                 o.ads_dof = o.gun_blur = o.sun_shadows = o.keep_bodies = s.smaa = to;
                 o.ambient_occlusion = to ? 2 : 0;
+                o.shadow_distance = to ? 2 : 0;
                 o.view_distance = to ? 8 : 1;
                 s.aniso = to ? 16 : 0;
                 s.msaa = 0;
@@ -331,15 +332,18 @@ std::string RowText(RowId id, int step, Settings& s) {
         case kGunBlur:
             if (step) O().gun_blur = !O().gun_blur;
             return OnOff(O().gun_blur);
-        case kSunShadows:
-            if (step) O().sun_shadows = !O().sun_shadows;
-            return OnOff(O().sun_shadows);
-        case kShadowDistance: {
-            static const char* const kNames[] = {"ORIGINAL", "FAR", "VERY FAR"};
-            uint32_t& v = O().shadow_distance;
-            if (v > 2) v = 0;
-            if (step) v = (v + (step > 0 ? 1 : 2)) % 3;
-            return kNames[v];
+        case kShadows: {
+            // Low is the game's own: a blot straight down under each soldier, near the camera. High: shadows fall
+            // away from the sun, vehicles cast them too, and they reach six times as far (src/game/shadows.cpp).
+            // Settings changed by console to something in between show as High.
+            game::Options& o = O();
+            bool high = o.sun_shadows || o.shadow_distance;
+            if (step) {
+                high = !high;
+                o.sun_shadows = high;
+                o.shadow_distance = high ? 2 : 0;
+            }
+            return high ? "HIGH" : "LOW (ORIGINAL)";
         }
         case kAdsDof:
             if (step) O().ads_dof = !O().ads_dof;
@@ -936,7 +940,7 @@ constexpr TabRow kTabRows[] = {
     {kDisplayTab, kCutsceneBars, "Cutscene Black Bars", "The black bars the game puts over its cutscenes.", "cg_cutsceneBars"},
     {kDisplayTab, kFpsCounter, "FPS Counter", "The frame rate, at the top right of the screen.", "cg_drawFPS"},
     {kGraphicsTab, kSection, "Preset", "", ""},
-    {kGraphicsTab, kPreset, "Graphics Preset", "Original is the game as it shipped. Remastered turns on SMAA, Ambient Occlusion (GTAO), Sun Shadows, Depth of Field When Aiming, Blur Gun Sight and Bodies Stay, with Level of Detail at High and Anisotropic Filtering at 16x. Change any of these yourself and it reads Custom.", ""},
+    {kGraphicsTab, kPreset, "Graphics Preset", "Original is the game as it shipped. Remastered turns on SMAA, Ambient Occlusion (GTAO), Shadows at High, Depth of Field When Aiming, Blur Gun Sight and Bodies Stay, with Level of Detail at High and Anisotropic Filtering at 16x. Change any of these yourself and it reads Custom.", ""},
     {kGraphicsTab, kSection, "Quality", "", ""},
     {kGraphicsTab, kRenderResolution, "Render Resolution", "The size the game is drawn at, as a share of the window. Over 100 is sharper and costs frame rate, under it is the other way.", "r_renderScale"},
     {kGraphicsTab, kAniso, "Anisotropic Filtering", "Keeps the ground and walls sharp at a shallow angle.", "r_anisotropy"},
@@ -945,8 +949,7 @@ constexpr TabRow kTabRows[] = {
     {kGraphicsTab, kAmbientOcclusion, "Ambient Occlusion", "Soft shade where surfaces meet: in corners, under ledges and around objects. SSAO is the lighter of the two, GTAO the more exact.", "r_ambientOcclusion"},
     {kGraphicsTab, kAdsDof, "Depth of Field When Aiming", "While you aim down the sights, what is in the sight picture stays sharp and everything around it goes out of focus.", "r_dof"},
     {kGraphicsTab, kGunBlur, "Blur Gun Sight", "While you aim down the sights, the part of the gun nearest your eye goes softly out of focus.", "r_blurGunSight"},
-    {kGraphicsTab, kSunShadows, "Sun Shadows", "Soldiers and vehicles cast their shadows away from the sun, not straight down under them.", "r_sunShadows"},
-    {kGraphicsTab, kShadowDistance, "Shadow Distance", "How far from you soldiers and vehicles still cast shadows: three or six times the game's own distance.", "r_shadowDistance"},
+    {kGraphicsTab, kShadows, "Shadows", "Low is the game's own: a dark patch straight down under each soldier. High: shadows fall away from the sun, tanks and trucks cast them too, and they reach six times as far.", "r_sunShadows"},
     {kGraphicsTab, kViewDistance, "Level of Detail", "How far away soldiers and objects keep their detailed models.", "cg_viewDistance"},
     {kGraphicsTab, kKeepBodies, "Bodies Stay", "The fallen stay where they fell and are not cleared away.", "cg_bodiesStay"},
     {kGraphicsTab, kSection, "Textures", "", ""},
