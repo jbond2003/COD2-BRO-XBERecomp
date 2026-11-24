@@ -1,9 +1,9 @@
-// The controller's buttons (button_images/ beside CMakeLists.txt, THIRD_PARTY_NOTICES.md), embedded in the exe:
-// A B X Y, Start, Back and the dpad from XNA Game Studio's Button Images sample (its own .tga files, Microsoft
-// Permissive License); LB RB LT RT by Nicolae Xelu Berbece (CC0, 360_*.png as .tga); a PlayStation pad's buttons
-// (ps_*.tga, from ButtonIcon-PS4-*.png; its dpad's left and right, and up and down, lit together made from the
-// single ones) for when one is in use. prompts.cpp draws them in place of the game's button icons while a controller is in use with the Modern layout.
-// Each is read once and trimmed to what is not transparent.
+// The Modern layout's controller buttons (button_images/ beside CMakeLists.txt, THIRD_PARTY_NOTICES.md), embedded in
+// the exe: an Xbox pad's from ButtonIcon-XboxOne-*.png (xb_*.tga), and a PlayStation pad's from ButtonIcon-PS4-*.png
+// (ps_*.tga) for when one is in use. Each dpad's plain picture, left and right together, and up and down together,
+// are made from its single arms' pictures (each half from one); the PS4 Options and Share names are light grey with a
+// dark rim, so they read over the game. prompts.cpp draws them in place of the game's button icons; each is read once and trimmed to what
+// is not transparent.
 
 #include <algorithm>
 #include <array>
@@ -30,11 +30,12 @@
 
 namespace game {
 
-// the pictures, in this order (src/cursor.rc.in names the resources COD2BRO_XNA_<n>)
-enum ButtonImage { kXnaA, kXnaB, kXnaX, kXnaY, kXnaBack, kXnaStart, kXnaDpad, kXnaLB, kXnaRB, kXnaLT, kXnaRT,
+// the pictures, in this order (src/cursor.rc.in names the resources COD2BRO_PAD_<n>)
+enum ButtonImage { kXboxA, kXboxB, kXboxX, kXboxY, kXboxBack, kXboxStart, kXboxDpad, kXboxLB, kXboxRB, kXboxLT, kXboxRT,
+                   kXboxDpadUp, kXboxDpadDown, kXboxDpadLeft, kXboxDpadRight, kXboxDpadLeftRight, kXboxDpadUpDown,
                    kPsCross, kPsCircle, kPsSquare, kPsTriangle, kPsL1, kPsR1, kPsL2, kPsR2, kPsDpad,
                    kPsDpadUp, kPsDpadDown, kPsDpadLeft, kPsDpadRight, kPsDpadLeftRight, kPsDpadUpDown,
-                   kPsOptions, kPsShare, kXnaCount };
+                   kPsOptions, kPsShare, kButtonImageCount };
 
 // straight alpha, 0xAARRGGBB, rows top to bottom
 struct ButtonPicture {
@@ -44,17 +45,16 @@ struct ButtonPicture {
 
 namespace {
 
-constexpr const char* kFiles[kXnaCount] = {
-    "xboxControllerButtonA.tga", "xboxControllerButtonB.tga",     "xboxControllerButtonX.tga",
-    "xboxControllerButtonY.tga", "xboxControllerBack.tga",        "xboxControllerStart.tga",
-    "xboxControllerDPad.tga",    "360_LB.tga",                    "360_RB.tga",
-    "360_LT.tga",                "360_RT.tga",
+constexpr const char* kFiles[kButtonImageCount] = {
+    "xb_a.tga", "xb_b.tga", "xb_x.tga", "xb_y.tga", "xb_view.tga", "xb_menu.tga", "xb_dpad.tga", "xb_lb.tga",
+    "xb_rb.tga", "xb_lt.tga", "xb_rt.tga", "xb_dpad_up.tga", "xb_dpad_down.tga", "xb_dpad_left.tga",
+    "xb_dpad_right.tga", "xb_dpad_leftright.tga", "xb_dpad_updown.tga",
     "ps_cross.tga", "ps_circle.tga", "ps_square.tga", "ps_triangle.tga", "ps_l1.tga", "ps_r1.tga", "ps_l2.tga",
     "ps_r2.tga", "ps_dpad.tga", "ps_dpad_up.tga", "ps_dpad_down.tga", "ps_dpad_left.tga", "ps_dpad_right.tga",
     "ps_dpad_leftright.tga", "ps_dpad_updown.tga", "ps_options.tga", "ps_share.tga"};
 
 std::once_flag g_loaded;
-std::array<ButtonPicture, kXnaCount> g_pictures;
+std::array<ButtonPicture, kButtonImageCount> g_pictures;
 
 // a 32 bit Targa, plain or run length coded
 bool DecodeTga(const uint8_t* d, size_t size, ButtonPicture& out) {
@@ -103,7 +103,7 @@ bool DecodeTga(const uint8_t* d, size_t size, ButtonPicture& out) {
 bool ReadBytes(int i, std::vector<uint8_t>& out) {
 #ifdef _WIN32
     HMODULE module = GetModuleHandleW(nullptr);
-    std::string name = "COD2BRO_XNA_" + std::to_string(i);
+    std::string name = "COD2BRO_PAD_" + std::to_string(i);
     HRSRC resource = FindResourceA(module, name.c_str(), MAKEINTRESOURCEA(10));  // RT_RCDATA
     if (!resource) return false;
     DWORD bytes = SizeofResource(module, resource);
@@ -124,20 +124,20 @@ bool ReadBytes(int i, std::vector<uint8_t>& out) {
 
 void Load() {
     int found = 0;
-    for (int i = 0; i < kXnaCount; i++) {
+    for (int i = 0; i < kButtonImageCount; i++) {
         std::vector<uint8_t> bytes;
         if (ReadBytes(i, bytes) && DecodeTga(bytes.data(), bytes.size(), g_pictures[size_t(i)])) found++;
     }
-    if (found == kXnaCount) LOGR("button prompts: the %d controller button pictures for the Modern layout", found);
-    else LOGE("button prompts: only %d of the %d controller button pictures could be read", found, int(kXnaCount));
+    if (found == kButtonImageCount) LOGR("button prompts: the %d controller button pictures for the Modern layout", found);
+    else LOGE("button prompts: only %d of the %d controller button pictures could be read", found, int(kButtonImageCount));
 }
 
 }  // namespace
 
 // one of the pictures, null if it could not be read
-const ButtonPicture* XnaButton(int which) {
+const ButtonPicture* PadButton(int which) {
     std::call_once(g_loaded, Load);
-    if (which < 0 || which >= kXnaCount || g_pictures[size_t(which)].argb.empty()) return nullptr;
+    if (which < 0 || which >= kButtonImageCount || g_pictures[size_t(which)].argb.empty()) return nullptr;
     return &g_pictures[size_t(which)];
 }
 

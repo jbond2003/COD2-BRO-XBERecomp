@@ -40,7 +40,7 @@ add_xbe_image(CoD2BRO default.xbe game.toml ${GAME_PARTITIONS} game)
 
 # the menu pointer, embedded (src/common/software_cursor.cpp; cursor.png from MOHRS-XBERecomp), and the Controller
 # screen's Modern picture (src/game/pad_picture.cpp; modern_controller.png by jojo8479) and the Modern layout's
-# controller buttons (src/game/button_images.cpp; button_images/: XNA Game Studio's Button Images, Xelu's LB RB LT RT)
+# controller buttons (src/game/button_images.cpp; button_images/)
 if(WIN32)
     set(cursor_resource ${CMAKE_CURRENT_BINARY_DIR}/cursor.rc)
     configure_file(src/cursor.rc.in ${cursor_resource} @ONLY)
