@@ -84,7 +84,11 @@ regional release has its code at other addresses and is not supported.
 - [CoD2 BRO Native Loader](https://github.com/SmokeDoggy044/CoD2-BRO-Native-Loader) by SmokeDoggy044, the guide for this
   port's features and a reference for parts of it.
 - jojo8479, who drew the controller picture for the Modern layout.
-- The Modern layout's controller button prompts are the Button Images sample of XNA Game Studio (Microsoft, Ms-PL).
+- The Modern layout's controller button prompts are the Button Images sample of XNA Game Studio (© 2007 Microsoft
+  Corporation, Microsoft Permissive License), from the
+  [XNAGameStudio archive](https://github.com/SimonDarksideJ/XNAGameStudio) kept by SimonDarksideJ
+  ([the sample](https://github.com/SimonDarksideJ/XNAGameStudio/tree/archive/Samples/ButtonImages)). The original
+  pictures and their licence are in `button_images/`.
 - Made with the help of [Claude](https://claude.ai).
 
 <details>

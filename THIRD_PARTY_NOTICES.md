@@ -87,7 +87,9 @@ SOFTWARE.
 ## XNA Game Studio Button Images
 
 `button_images/` holds pictures of the Xbox 360 controller's buttons from the Button Images sample of XNA Game Studio
-(© 2007 Microsoft Corporation, https://github.com/SimonDarksideJ/XNAGameStudio/tree/archive/Samples/ButtonImages),
+(© 2007 Microsoft Corporation), from the XNAGameStudio archive kept by SimonDarksideJ
+(https://github.com/SimonDarksideJ/XNAGameStudio, the sample at
+https://github.com/SimonDarksideJ/XNAGameStudio/tree/archive/Samples/ButtonImages),
 the sample's own .tga files, unmodified, with its licence (`button_images/Microsoft Permissive License.rtf`). The
 Modern controller layout's button prompts draw them (`src/game/button_images.cpp`). The licence grants no right to
 Microsoft's names, logos or trademarks.
