@@ -1,6 +1,7 @@
-// The Modern layout's controller buttons (button_images/ beside CMakeLists.txt, THIRD_PARTY_NOTICES.md), embedded in
+// The controller's buttons for the prompts (button_images/ beside CMakeLists.txt, THIRD_PARTY_NOTICES.md), embedded in
 // the exe: an Xbox pad's from ButtonIcon-XboxOne-*.png (xb_*.tga), and a PlayStation pad's from ButtonIcon-PS4-*.png
-// (ps_*.tga) for when one is in use. Each dpad's plain picture, left and right together, and up and down together,
+// (ps_*.tga) for when one is in use; the game's own four layouts get the original Xbox controller's from
+// ButtonIcon-Xbox-*.png (og_*.tga). Each dpad's plain picture, left and right together, and up and down together,
 // are made from its single arms' pictures (each half from one); the PS4 Options and Share names are light grey with a
 // dark rim, so they read over the game. prompts.cpp draws them in place of the game's button icons; each is read once and trimmed to what
 // is not transparent.
@@ -35,7 +36,10 @@ enum ButtonImage { kXboxA, kXboxB, kXboxX, kXboxY, kXboxBack, kXboxStart, kXboxD
                    kXboxDpadUp, kXboxDpadDown, kXboxDpadLeft, kXboxDpadRight, kXboxDpadLeftRight, kXboxDpadUpDown,
                    kPsCross, kPsCircle, kPsSquare, kPsTriangle, kPsL1, kPsR1, kPsL2, kPsR2, kPsDpad,
                    kPsDpadUp, kPsDpadDown, kPsDpadLeft, kPsDpadRight, kPsDpadLeftRight, kPsDpadUpDown,
-                   kPsOptions, kPsShare, kButtonImageCount };
+                   kPsOptions, kPsShare,
+                   kOgA, kOgB, kOgX, kOgY, kOgBack, kOgStart, kOgDpad, kOgWhite, kOgBlack, kOgLT, kOgRT,
+                   kOgDpadUp, kOgDpadDown, kOgDpadLeft, kOgDpadRight, kOgDpadLeftRight, kOgDpadUpDown,
+                   kButtonImageCount };
 
 // straight alpha, 0xAARRGGBB, rows top to bottom
 struct ButtonPicture {
@@ -51,7 +55,10 @@ constexpr const char* kFiles[kButtonImageCount] = {
     "xb_dpad_right.tga", "xb_dpad_leftright.tga", "xb_dpad_updown.tga",
     "ps_cross.tga", "ps_circle.tga", "ps_square.tga", "ps_triangle.tga", "ps_l1.tga", "ps_r1.tga", "ps_l2.tga",
     "ps_r2.tga", "ps_dpad.tga", "ps_dpad_up.tga", "ps_dpad_down.tga", "ps_dpad_left.tga", "ps_dpad_right.tga",
-    "ps_dpad_leftright.tga", "ps_dpad_updown.tga", "ps_options.tga", "ps_share.tga"};
+    "ps_dpad_leftright.tga", "ps_dpad_updown.tga", "ps_options.tga", "ps_share.tga",
+    "og_a.tga", "og_b.tga", "og_x.tga", "og_y.tga", "og_back.tga", "og_start.tga", "og_dpad.tga", "og_white.tga",
+    "og_black.tga", "og_lt.tga", "og_rt.tga", "og_dpad_up.tga", "og_dpad_down.tga", "og_dpad_left.tga",
+    "og_dpad_right.tga", "og_dpad_leftright.tga", "og_dpad_updown.tga"};
 
 std::once_flag g_loaded;
 std::array<ButtonPicture, kButtonImageCount> g_pictures;
@@ -128,7 +135,7 @@ void Load() {
         std::vector<uint8_t> bytes;
         if (ReadBytes(i, bytes) && DecodeTga(bytes.data(), bytes.size(), g_pictures[size_t(i)])) found++;
     }
-    if (found == kButtonImageCount) LOGR("button prompts: the %d controller button pictures for the Modern layout", found);
+    if (found == kButtonImageCount) LOGR("button prompts: all %d controller button pictures", found);
     else LOGE("button prompts: only %d of the %d controller button pictures could be read", found, int(kButtonImageCount));
 }
 

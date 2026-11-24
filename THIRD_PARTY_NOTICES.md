@@ -86,6 +86,7 @@ SOFTWARE.
 
 ## Controller button pictures
 
-`button_images/` holds the Modern layout's controller button prompts (`src/game/button_images.cpp`):
-ButtonIcon-XboxOne-*.png (`xb_*.tga`) and ButtonIcon-PS4-*.png (`ps_*.tga`), stored as .tga. SOURCE AND LICENCE TO
+`button_images/` holds the controller button prompts (`src/game/button_images.cpp`): ButtonIcon-Xbox-*.png
+(`og_*.tga`, the game's own layouts), ButtonIcon-XboxOne-*.png (`xb_*.tga`) and ButtonIcon-PS4-*.png (`ps_*.tga`, the
+Modern layout), stored as .tga. SOURCE AND LICENCE TO
 BE CREDITED HERE BEFORE RELEASE.
