@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 
@@ -27,5 +28,10 @@ struct ModernPadLabel {
     float own_x = 0, own_y = 0;
     uint32_t own_flags = 0;
 };
+
+// the Modern layout's button prompts are a PlayStation pad's: one is in use, or the console's playstation 1 (the
+// switch, not saved) asked for them (src/game/prompts.cpp)
+bool PlayStationPrompts();
+extern std::atomic<bool> g_playstation_prompts;
 
 }  // namespace game

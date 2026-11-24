@@ -34,6 +34,7 @@ float app::g_zoom = 1.0f;
 #include "common/options.h"
 #include "common/paper_page.h"
 #include "common/update_check.h"
+#include "common/menu_state.h"
 
 namespace app {
 
@@ -1483,6 +1484,20 @@ void DrawModern() {
                 build();
             }
         }
+        // the Controller tab's lines are in two columns of three: left and right on a line not picked go across
+        if (p.tab == kControllerTab && p.editing < 0 && step) {
+            std::vector<int> stops;
+            for (int i = 0; i < int(page.rows.size()); i++)
+                if (ModernStop(page.rows[size_t(i)])) stops.push_back(i);
+            auto at = std::find(stops.begin(), stops.end(), p.selected);
+            if (at != stops.end()) {
+                constexpr int kColumn = 3;
+                int k = int(at - stops.begin()), across = k < kColumn ? k + kColumn : k - kColumn;
+                if (across >= 0 && across < int(stops.size())) p.selected = stops[size_t(across)], p.follow = true;
+            }
+            step = 0;
+            p.pointer = false;
+        }
         // a setting is picked with A or Enter before left and right change it, and let go with A, Enter or back
         {
             ui::modern::Row::Kind shown = page.rows[size_t(p.selected)].kind;
@@ -1613,7 +1628,17 @@ void DrawModern() {
     page.follow = p.follow;
     page.controller = p.controller;
     page.buttons_modern = game::Opt().modern_layout;
+    page.buttons_playstation = game::PlayStationPrompts();
     page.changes = ModernChanges();
+    {
+        // the settings as the menu shows them, against their defaults
+        Settings s = g_panel_pending ? g_panel_settings : Get();
+        game::Options o = g_panel_pending ? g_panel_options : game::Opt();
+        Settings ds = s;
+        game::Options d = o;
+        SetDefaults(ds, d, kEveryPart);
+        page.not_defaults = RowsDiffer(s, o, ds, d);
+    }
     page.note_title = row.kind == ModernRow::kBind ? "Key Bindings" : sel.label;
     page.note_text = row.note;
     page.note_command = row.variable;

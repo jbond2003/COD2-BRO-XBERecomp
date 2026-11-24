@@ -418,14 +418,26 @@ void Keyboard(Pad& p) {
     if (fixed_down || held.used) SetKeyboard(true);
 }
 
+// The controller takes over on a fresh push only: a button going down, or a trigger or stick going well over having
+// been near rest. A stick or trigger that does not rest at nothing (a worn pad on the desk) hovers about the line, and
+// counting it each time it went over took the input back from a moving mouse many times a second, so the menus'
+// pointer hid.
 void SeenPad(const Pad& p) {
-    constexpr int16_t kStickPushed = 16000;
-    constexpr uint8_t kAnalogPushed = 0x20;
-    auto pushed = [](int16_t v) { return v > kStickPushed || v < -kStickPushed; };
-    auto pressed = [](uint8_t a) { return a > kAnalogPushed; };
-    bool analog = std::any_of(std::begin(p.analog), std::end(p.analog), pressed);
-    bool sticks = pushed(p.lx) || pushed(p.ly) || pushed(p.rx) || pushed(p.ry);
-    if (p.buttons || analog || sticks) SetKeyboard(false);
+    constexpr int kStickPushed = 16000, kStickRest = 8000;
+    constexpr int kAnalogPushed = 0x20, kAnalogRest = 0x10;
+    static uint16_t last_buttons = 0;
+    static bool armed[8 + 4] = {true, true, true, true, true, true, true, true, true, true, true, true};
+    bool fresh = (p.buttons & ~last_buttons) != 0;
+    last_buttons = p.buttons;
+    auto check = [&](int i, int v, int pushed, int rest) {
+        v = std::abs(v);
+        if (v < rest) armed[i] = true;
+        else if (v > pushed && armed[i]) armed[i] = false, fresh = true;
+    };
+    for (int i = 0; i < 8; i++) check(i, p.analog[i], kAnalogPushed, kAnalogRest);
+    const int16_t axes[4] = {p.lx, p.ly, p.rx, p.ry};
+    for (int i = 0; i < 4; i++) check(8 + i, axes[i], kStickPushed, kStickRest);
+    if (fresh) SetKeyboard(false);
 }
 
 bool KeyboardActive() { return g_keyboard; }

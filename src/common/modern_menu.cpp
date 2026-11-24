@@ -94,13 +94,16 @@ float Cap(ImDrawList* dl, ImVec2 at, float h, const char* text, ImU32 fill, ImU3
     return w;
 }
 
+// the page's set of button pictures (paper::Button)
+int ButtonSet(const Page& page) { return page.buttons_modern ? (page.buttons_playstation ? 2 : 1) : 0; }
+
 // a controller's button as the game shows it (paper::Button), h high with its left edge at at.x and its middle on
 // at.y; returns its width, 0 when there is no picture of it. Measured only when dl is null
-float ButtonPicture(ImDrawList* dl, ImVec2 at, float h, int button, bool modern) {
+float ButtonPicture(ImDrawList* dl, ImVec2 at, float h, int button, int set) {
     ImTextureID texture{};
     ImVec2 uv0, uv1;
     float aspect = 1;
-    if (!paper::Button(button, modern, texture, uv0, uv1, aspect)) return 0;
+    if (!paper::Button(button, set, texture, uv0, uv1, aspect)) return 0;
     float w = std::floor(h * aspect);
     ImVec2 a(std::floor(at.x), std::floor(at.y - h / 2));
     if (dl) dl->AddImage(texture, a, ImVec2(a.x + w, a.y + std::floor(h)), uv0, uv1);
@@ -190,24 +193,24 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
     // the tabs under the rule, a key each end
     {
         const float y0 = 149.0f, y1 = 165.0f, gap = 2.5f;
-        // a controller's shoulder buttons are its pictures of them, wider than a key
-        const float button_h = page.buttons_modern ? 9.0f : 13.0f;
-        float picture_w = page.controller ? ButtonPicture(nullptr, ImVec2(0, 0), button_h * c.sy, paper::kButtonLB, page.buttons_modern) / c.sx : 0;
+        // a controller's triggers are its pictures of them
+        const float button_h = 13.0f;
+        float picture_w = page.controller ? ButtonPicture(nullptr, ImVec2(0, 0), button_h * c.sy, paper::kButtonLT, ButtonSet(page)) / c.sx : 0;
         const float key_w = picture_w > 0 ? std::max(12.0f, picture_w) : 12.0f;
         float left = kFrameLeft + 5, right = kFrameRight - 5;
         auto key = [&](float x0, const char* text, int button, Rect& hit) {
             hit = {c.P(x0, y0), c.P(x0 + key_w, y1)};
             if (picture_w > 0) {
                 float w = picture_w * c.sx;
-                ButtonPicture(c.dl, ImVec2(c.X(x0 + key_w / 2) - w / 2, c.Y((y0 + y1) / 2)), button_h * c.sy, button, page.buttons_modern);
+                ButtonPicture(c.dl, ImVec2(c.X(x0 + key_w / 2) - w / 2, c.Y((y0 + y1) / 2)), button_h * c.sy, button, ButtonSet(page));
                 return;
             }
             c.Fill(x0, y0 + 2, x0 + key_w, y1 - 2, Col(kCream, 0.35f));
             c.Box(x0, y0 + 2, x0 + key_w, y1 - 2, Ink(0.9f), 0.7f);
             c.Text(7.5f, x0 + key_w / 2, (y0 + y1) / 2, Ink(0.9f), text, 0.5f, key_w - 2);
         };
-        key(left, page.controller ? "LB" : "Q", paper::kButtonLB, hits.tab_prev);
-        key(right - key_w, page.controller ? "RB" : "E", paper::kButtonRB, hits.tab_next);
+        key(left, page.controller ? "LT" : "Q", paper::kButtonLT, hits.tab_prev);
+        key(right - key_w, page.controller ? "RT" : "E", paper::kButtonRT, hits.tab_next);
         float t0 = left + key_w + gap * 1.5f, t1 = right - key_w - gap * 1.5f;
         int n = std::max(1, int(page.tabs.size()));
         float tw = (t1 - t0 - gap * float(n - 1)) / float(n);
@@ -448,8 +451,10 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
     {
         const float y0 = 381.0f, y1 = 399.0f, cy = (y0 + y1) / 2;
         float dx0 = kFrameLeft + 5, dx1 = dx0 + 96;
-        c.Box(dx0, y0, dx1, y1, Ink(0.6f), 1.0f);
-        c.Text(11.0f, (dx0 + dx1) / 2, cy, Ink(0.75f), "Reset to Defaults", 0.5f, 88);
+        // lit as a picked On or Off is while there is something for it to put back
+        if (page.not_defaults) c.Fill(dx0, y0, dx1, y1, Ink(0.95f));
+        c.Box(dx0, y0, dx1, y1, Ink(page.not_defaults ? 0.95f : 0.6f), 1.0f);
+        c.Text(11.0f, (dx0 + dx1) / 2, cy, page.not_defaults ? Col(kCream) : Ink(0.75f), "Reset to Defaults", 0.5f, 88);
         hits.defaults = {c.P(dx0, y0), c.P(dx1, y1)};
         float ax1 = kFrameRight - 5, ax0 = ax1 - 90;
         bool waiting = page.changes > 0;
@@ -507,7 +512,7 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
         const Item items[] = {
             {"Enter", nullptr, "A", paper::kButtonA, IM_COL32(63, 143, 58, 255), "SELECT"},
             {"Esc", nullptr, "B", paper::kButtonB, IM_COL32(181, 56, 44, 255), "BACK"},
-            {"Q", "E", "LB", paper::kButtonLB, 0, "TABS"},
+            {"Q", "E", "LT", paper::kButtonLT, 0, "TABS"},
             {"R", nullptr, "X", paper::kButtonX, IM_COL32(47, 95, 174, 255), "DEFAULTS"},
             {"F", nullptr, "Y", paper::kButtonY, IM_COL32(201, 162, 31, 255), "APPLY"},
         };
@@ -527,14 +532,14 @@ void Draw(const Page& page, float& scroll, Hits& hits) {
                 w += (round ? h : std::max(h, m.x + h * 0.7f)) + gap;
             };
             auto button = [&](int picture, const char* t, ImU32 color) {
-                bool shoulder = picture == paper::kButtonLB || picture == paper::kButtonRB;
-                float pw = ButtonPicture(out, ImVec2(x + w, cy), shoulder ? shoulder_h : face_h, picture, page.buttons_modern);
+                bool shoulder = picture == paper::kButtonLB || picture == paper::kButtonRB;  // (triggers are the face buttons' size)
+                float pw = ButtonPicture(out, ImVec2(x + w, cy), shoulder ? shoulder_h : face_h, picture, ButtonSet(page));
                 if (pw > 0) w += pw + gap;
                 else cap(t, color ? color : cream, color ? IM_COL32_WHITE : dark, color != 0);
             };
             if (page.controller) {
                 button(it.picture, it.button, it.color);
-                if (it.picture == paper::kButtonLB) button(paper::kButtonRB, "RB", 0);
+                if (it.picture == paper::kButtonLT) button(paper::kButtonRT, "RT", 0);
             } else {
                 cap(it.key, cream, dark, false);
                 if (it.key2) cap(it.key2, cream, dark, false);

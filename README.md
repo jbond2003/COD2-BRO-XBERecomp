@@ -58,7 +58,8 @@ mouse in the menus, sharp text, and button prompts that switch between keyboard 
   to 60 for that mission is the thing to try until it is fixed.
 - The first time you play, there can be a microstutter or two at the start while the game compiles its shaders
   for your GPU. They are saved after that, so it only happens once.
-- PlayStation controllers are not supported: there are no PlayStation button prompts, and none has been tested.
+- PlayStation controllers get their own button prompts on the Modern layout (Options and Share in place of Start and
+  Back); they are untested on real hardware.
 
 See [ISSUES.md](ISSUES.md) for the problems found so far and how they were fixed.
 
@@ -84,11 +85,8 @@ regional release has its code at other addresses and is not supported.
 - [CoD2 BRO Native Loader](https://github.com/SmokeDoggy044/CoD2-BRO-Native-Loader) by SmokeDoggy044, the guide for this
   port's features and a reference for parts of it.
 - jojo8479, who drew the controller picture for the Modern layout.
-- The Modern layout's controller button prompts are the Button Images sample of XNA Game Studio, © 2007 Microsoft
-  Corporation, under the Microsoft Permissive License (Ms-PL), from the
-  [XNA Game Studio Archive](https://github.com/SimonDarksideJ/XNAGameStudio) by Simon (Darkside) Jackson (MIT License)
-  ([the sample](https://github.com/SimonDarksideJ/XNAGameStudio/tree/archive/Samples/ButtonImages)). The pictures are
-  unmodified; they and the Ms-PL are in `button_images/`, both licences in THIRD_PARTY_NOTICES.md.
+- The controller button prompts (original Xbox, Xbox One and PlayStation 4 buttons) are by Nicolae Xelu Berbece
+  (@xelubest), released under Creative Commons 0 (CC0).
 - Made with the help of [Claude](https://claude.ai).
 
 <details>

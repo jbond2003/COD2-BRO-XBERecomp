@@ -3,8 +3,9 @@
 // start and back) and four footer icons (Xbox_A/B/X/YButton.dds), all in sp/global.cod. While the keyboard and mouse
 // are in use the renderer draws keycaps and mouse pictures in their place (gpu/texture_override.h), labelled with the
 // keys that give each button in the controller layout picked in the game's options; the controller's icons come back
-// the moment a controller is used; with the Modern layout picked a controller's buttons are XNA Game Studio's
-// pictures of them instead (button_images.cpp), the other layouts keep the game's own, white and black buttons too. After
+// the moment a controller is used; with the Modern layout picked a controller's buttons are pictures of an Xbox One
+// or PlayStation pad's instead (button_images.cpp), the other layouts keep the game's own, white and black buttons
+// too. After
 // CoD2-BRO-Native-Loader's text/key_prompts.cpp (GPL-2.0-or-later, THIRD_PARTY_NOTICES.md).
 
 #include <algorithm>
@@ -33,6 +34,7 @@
 #include "common/mouse_keyboard.h"
 #include "common/menu_state.h"
 #include "common/options.h"
+#include "core/input.h"
 #include "core/log.h"
 #include "gpu/texture.h"
 #include "gpu/texture_override.h"
@@ -49,9 +51,15 @@ struct ButtonPicture {  // src/game/button_images.cpp
     uint32_t width = 0, height = 0;
     std::vector<uint32_t> argb;
 };
-enum ButtonImage { kXnaA, kXnaB, kXnaX, kXnaY, kXnaBack, kXnaStart, kXnaDpad, kXnaLB, kXnaRB, kXnaLT, kXnaRT,
-                   kXnaCount };
-const ButtonPicture* XnaButton(int which);
+enum ButtonImage { kXboxA, kXboxB, kXboxX, kXboxY, kXboxBack, kXboxStart, kXboxDpad, kXboxLB, kXboxRB, kXboxLT, kXboxRT,
+                   kXboxDpadUp, kXboxDpadDown, kXboxDpadLeft, kXboxDpadRight, kXboxDpadLeftRight, kXboxDpadUpDown,
+                   kPsCross, kPsCircle, kPsSquare, kPsTriangle, kPsL1, kPsR1, kPsL2, kPsR2, kPsDpad,
+                   kPsDpadUp, kPsDpadDown, kPsDpadLeft, kPsDpadRight, kPsDpadLeftRight, kPsDpadUpDown,
+                   kPsOptions, kPsShare,
+                   kOgA, kOgB, kOgX, kOgY, kOgBack, kOgStart, kOgDpad, kOgWhite, kOgBlack, kOgLT, kOgRT,
+                   kOgDpadUp, kOgDpadDown, kOgDpadLeft, kOgDpadRight, kOgDpadLeftRight, kOgDpadUpDown,
+                   kButtonImageCount };
+const ButtonPicture* PadButton(int which);
 // src/game/sharp_text.cpp: a game font sheet drawn again sharp, null for any other texture
 std::shared_ptr<const gpu::texture_override::Picture> SmoothSky(const gpu::TextureDesc& d, const uint8_t* guest);
 std::shared_ptr<const gpu::texture_override::Picture> SharpText(const gpu::TextureDesc& d, const uint8_t* guest,
@@ -73,8 +81,16 @@ enum Icon {
 using Labels = std::array<std::string, kIconCount>;
 // labels[kA] saying this: a controller is in use, the game's own pictures stay
 constexpr const char* kControllerSet = "@controller";
-// labels[kStart] saying this with kControllerSet: the Modern layout's controller, every icon an XNA picture
-constexpr const char* kXnaSet = "@xna";
+// labels[kStart] saying this with kControllerSet: the Modern layout's controller, every icon a picture from
+// button_images.cpp
+constexpr const char* kXboxSet = "@xbox";
+// the same with a PlayStation pad in use: its buttons' pictures
+constexpr const char* kPsSet = "@ps";
+// the same on the game's own four layouts: the original Xbox controller's pictures
+constexpr const char* kOgSet = "@og";
+bool Pictured(const Labels& l) {
+    return l[kA] == kControllerSet && (l[kStart] == kXboxSet || l[kStart] == kPsSet || l[kStart] == kOgSet);
+}
 
 constexpr const char* kPack = "D:\\sp\\global.cod";
 constexpr const char* kIconFonts[] = {"i_button_icons_xb_en", "i_button_icons_xb_fr", "i_button_icons_xb_it",
@@ -568,54 +584,50 @@ void FitPicture(Canvas& canvas, const game::ButtonPicture& p, float left, float 
         }
 }
 
-// the Modern layout's controller: each icon the XNA picture of its button; the dpad's directions are the dpad with
-// arrows on the arms pressed
-void DrawXna(Canvas& canvas, const IconTexture& t, float s) {
+// a controller: each icon the picture of its button (button_images.cpp). The Modern layout's are an Xbox One pad's or
+// with one in use a PlayStation pad's (Options and Share in Start's and Back's places); the game's own layouts', the
+// original Xbox controller's (offset: kOg* follow kXbox*'s order, but for white and black in LB's and RB's places)
+void DrawPad(Canvas& canvas, const IconTexture& t, float s, const char* set) {
+    using namespace game;
+    bool playstation = set == kPsSet, original = set == kOgSet;
     for (const Box& b : t.boxes) {
-        int which = -1;
+        auto pick = [&](int xbox, int ps) { return playstation ? ps : original ? xbox - kXboxA + kOgA : xbox; };
+        int which;
         switch (b.icon) {
-        case kA: which = game::kXnaA; break;
-        case kB: which = game::kXnaB; break;
-        case kX: which = game::kXnaX; break;
-        case kY: which = game::kXnaY; break;
-        case kRightTrigger: which = game::kXnaRT; break;
-        case kLeftTrigger: which = game::kXnaLT; break;
-        case kWhite: which = game::kXnaLB; break;  // the layout's LB and RB are the original's white and black
-        case kBlack: which = game::kXnaRB; break;
-        case kStart: which = game::kXnaStart; break;
-        case kBack: which = game::kXnaBack; break;
-        default: which = game::kXnaDpad; break;
+        case kA: which = pick(kXboxA, kPsCross); break;
+        case kB: which = pick(kXboxB, kPsCircle); break;
+        case kX: which = pick(kXboxX, kPsSquare); break;
+        case kY: which = pick(kXboxY, kPsTriangle); break;
+        case kRightTrigger: which = pick(kXboxRT, kPsR2); break;
+        case kLeftTrigger: which = pick(kXboxLT, kPsL2); break;
+        case kWhite: which = pick(kXboxLB, kPsL1); break;  // the layout's LB and RB are the original's white and black
+        case kBlack: which = pick(kXboxRB, kPsR1); break;
+        case kStart: which = pick(kXboxStart, kPsOptions); break;
+        case kBack: which = pick(kXboxBack, kPsShare); break;
+        case kDpadUp: which = pick(kXboxDpadUp, kPsDpadUp); break;
+        case kDpadDown: which = pick(kXboxDpadDown, kPsDpadDown); break;
+        case kDpadLeft: which = pick(kXboxDpadLeft, kPsDpadLeft); break;
+        case kDpadRight: which = pick(kXboxDpadRight, kPsDpadRight); break;
+        case kDpadLeftRight: which = pick(kXboxDpadLeftRight, kPsDpadLeftRight); break;
+        case kDpadUpDown: which = pick(kXboxDpadUpDown, kPsDpadUpDown); break;
+        default: which = pick(kXboxDpad, kPsDpad); break;
         }
-        const game::ButtonPicture* p = game::XnaButton(which);
+        const ButtonPicture* p = PadButton(which);
         if (!p) continue;
         float left = float(b.x) * s, top = float(b.y) * s, w = float(b.width) * s, h = float(b.height) * s;
         // a small margin, none for the wide shoulder buttons, which are short enough already
-        float pad = which == game::kXnaLB || which == game::kXnaRB ? 0.0f : std::max(0.5f, w * 0.02f);
+        float pad = which == kXboxLB || which == kXboxRB ? 0.0f : std::max(0.5f, w * 0.02f);
+        if (original) pad = 0;  // round buttons drawn to their edge, as the game's are
         FitPicture(canvas, *p, left + pad, top + pad, w - 2 * pad, h - 2 * pad);
-        if (which != game::kXnaDpad) continue;
-        float cx = left + w / 2, cy = top + h / 2, reach = std::min(w, h) * 0.27f, size = std::min(w, h) * 0.24f;
-        const Color lit{0.97f, 0.97f, 0.97f, 1.0f}, rim{0.0f, 0.0f, 0.0f, 0.6f};
-        auto arm = [&](int dx, int dy) {
-            Arrow(canvas, cx + float(dx) * reach, cy + float(dy) * reach, size * 1.3f, dx, dy, rim);
-            Arrow(canvas, cx + float(dx) * reach, cy + float(dy) * reach, size, dx, dy, lit);
-        };
-        switch (b.icon) {
-        case kDpadUp: arm(0, -1); break;
-        case kDpadDown: arm(0, 1); break;
-        case kDpadLeft: arm(-1, 0); break;
-        case kDpadRight: arm(1, 0); break;
-        case kDpadLeftRight: arm(-1, 0), arm(1, 0); break;
-        case kDpadUpDown: arm(0, -1), arm(0, 1); break;
-        default: break;  // the whole dpad
-        }
     }
 }
 
 std::shared_ptr<const Picture> Draw(const IconTexture& t, const Labels& labels, int scale) {
     Canvas canvas(t.width * uint32_t(scale), t.height * uint32_t(scale));
     float s = float(scale);
-    if (labels[kA] == kControllerSet && labels[kStart] == kXnaSet) {
-        DrawXna(canvas, t, s);
+    if (Pictured(labels)) {
+        const std::string& set = labels[kStart];
+        DrawPad(canvas, t, s, set == kPsSet ? kPsSet : set == kOgSet ? kOgSet : kXboxSet);
         return canvas.Finish();
     }
     for (const Box& b : t.boxes)
@@ -683,7 +695,7 @@ std::shared_ptr<const Picture> Provide(const gpu::TextureDesc& d, const uint8_t*
     std::lock_guard lock(g_lock);
     if (!g_labels) return nullptr;
     // a controller's pictures are the game's own but with the Modern layout
-    if ((*g_labels)[kA] == kControllerSet && (*g_labels)[kStart] != kXnaSet) return nullptr;
+    if ((*g_labels)[kA] == kControllerSet && !Pictured(*g_labels)) return nullptr;
     // drawn at the output's resolution: at least 2, at most 8 times the original
     int scale = std::clamp(int(std::ceil(render_scale - 0.01f)), 2, 8);
     auto& cached = g_cache[{found, scale}];
@@ -733,8 +745,12 @@ void Update() {
     if (!keyboard) {
         Labels pad;
         pad[kA] = kControllerSet;
-        // the Modern layout's: XNA Game Studio's pictures of a controller's buttons, if they are in the exe
-        if (game::Opt().modern_layout && game::XnaButton(game::kXnaA)) pad[kStart] = kXnaSet;
+        // the Modern layout's pictures, a PlayStation pad's with one in use
+        if (game::Opt().modern_layout && game::PadButton(game::kXboxA))
+            pad[kStart] = game::PlayStationPrompts() && game::PadButton(game::kPsCross) ? kPsSet : kXboxSet;
+        // the game's own layouts: the original Xbox controller's
+        else if (!game::Opt().modern_layout && game::PadButton(game::kOgA))
+            pad[kStart] = kOgSet;
         SetLabels(pad);
         return;
     }
@@ -805,6 +821,12 @@ void Update() {
 
 namespace game {
 
+// the console's playstation 1: a PlayStation pad's prompts whatever pad is in use (not saved), for a look without one
+std::atomic<bool> g_playstation_prompts{false};
+
+// the Modern layout's prompts are a PlayStation pad's: one is in use, or the console asked for them
+bool PlayStationPrompts() { return g_playstation_prompts.load() || input::PlayStationPadInUse(); }
+
 void InitPrompts() { gpu::texture_override::SetProvider(Provide); }
 
 // a file of a pack by its name
@@ -855,23 +877,28 @@ bool ReadFrontEndPicture(const std::string& name, std::vector<uint8_t>& rgba, ui
 }
 
 // A controller button for the settings menu's own lines (0 A, 1 B, 2 X, 3 Y, 4 LB, 5 RB), as the game shows it
-// everywhere else: the Modern layout's XNA picture, or the game's own icon (the white button is LB, the black RB).
+// everywhere else: set 0 the game's own layouts' (the original Xbox controller's pictures, else the game's own icon;
+// the white button is LB, the black RB), 1 the Modern layout's (button_images.cpp), 2 the Modern layout's with a
+// PlayStation pad.
 // Straight RGBA with a clear texel all round, so it can sit among other pictures.
-bool MenuButtonPixels(int button, bool modern, std::vector<uint8_t>& rgba, uint32_t& width, uint32_t& height) {
+bool MenuButtonPixels(int button, int set, std::vector<uint8_t>& rgba, uint32_t& width, uint32_t& height) {
     std::vector<uint32_t> argb;  // without the border
     uint32_t w = 0, h = 0;
-    if (modern) {
-        constexpr int kXna[] = {kXnaA, kXnaB, kXnaX, kXnaY, kXnaLB, kXnaRB};
-        if (button < 0 || button >= int(std::size(kXna))) return false;
-        const ButtonPicture* p = XnaButton(kXna[button]);
-        if (!p || !p->width || !p->height) return false;
+    constexpr int kXbox[] = {kXboxA, kXboxB, kXboxX, kXboxY, kXboxLB, kXboxRB, kXboxLT, kXboxRT};
+    constexpr int kPs[] = {kPsCross, kPsCircle, kPsSquare, kPsTriangle, kPsL1, kPsR1, kPsL2, kPsR2};
+    constexpr int kOg[] = {kOgA, kOgB, kOgX, kOgY, kOgWhite, kOgBlack, kOgLT, kOgRT};
+    if (button < 0 || button >= int(std::size(kXbox))) return false;
+    // set 0: the original Xbox controller's pictures, else the game's own icon
+    const ButtonPicture* p = PadButton(set == 2 ? kPs[button] : set == 1 ? kXbox[button] : kOg[button]);
+    if (set && (!p || !p->width || !p->height)) return false;
+    if (p && p->width && p->height) {
         h = 96;
         w = std::clamp(uint32_t(std::lround(float(h) * float(p->width) / float(p->height))), 16u, 320u);
         Canvas canvas(w, h);
         FitPicture(canvas, *p, 0, 0, float(w), float(h));
         argb = canvas.Finish()->argb;
     } else {
-        constexpr Icon kIcons[] = {kA, kB, kX, kY, kWhite, kBlack};
+        constexpr Icon kIcons[] = {kA, kB, kX, kY, kWhite, kBlack, kLeftTrigger, kRightTrigger};
         if (button < 0 || button >= int(std::size(kIcons))) return false;
         std::map<std::string, Entry> files = ReadDirectory();
         std::vector<uint8_t> dds, table;
