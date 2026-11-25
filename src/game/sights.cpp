@@ -8,7 +8,7 @@
 //
 // The angles: measured in the harness against the middle of its frame, then all raised by 0.11 degrees, by which a
 // Windows screenshot of the M1 Carbine showed them short (its post 11.3 of 2557 pixels right of the middle untouched,
-// 7.0 with 0.07 degrees: 61 pixels a degree). The console's sightYaw adds to the gun in hand's, to find a better one.
+// 7.0 with 0.07 degrees: 61 pixels a degree). The console's sightYaw and sightPitch add to the gun in hand's, to find better ones.
 //
 // Each gun is turned back by the angle measured for it (magnified 24 times in the harness, the front sight against
 // the middle of the frame), or by the usual one where it has not been measured, by how far the player has aimed (the
@@ -33,13 +33,16 @@ constexpr uint32_t kAimed = 0x9725D8;       // 0 from the hip to 1 down the sigh
 struct Sight {
     const char* weapon;  // the definition's name (+8)
     float yaw;           // degrees to the left
+    float pitch;         // degrees down
 };
 constexpr float kUsual = 0.21f;  // for a gun not measured
 constexpr Sight kSights[] = {
-    {"m1carbine", 0.18f},
-    {"carcano", 0.28f},
-    {"breda_lmg", 0.19f},
+    {"m1carbine", 0.18f, 0.23f},  // the post's tip was 14 of 1437 pixels over the middle in the same screenshot
+    {"carcano", 0.28f, 0},
+    {"breda_lmg", 0.19f, 0},
 };
+
+float g_pitch = 0;  // with Yaw()'s answer: the gun in hand's turn down
 
 // the turn for the weapon in hand
 float Yaw() {
@@ -50,6 +53,7 @@ float Yaw() {
     if (def == known) return yaw;
     known = def;
     yaw = 0;
+    g_pitch = 0;
     uint32_t name = def ? R32(def + 8) : 0;
     if (!name) return yaw;
     // a gun aimed through its own sights: one that aims (aimDownSight, +0x6DC) with no scope picture over the screen
@@ -61,7 +65,10 @@ float Yaw() {
     yaw = kUsual;
     const char* text = static_cast<const char*>(kernel::HostPtr(name));
     for (const Sight& s : kSights) {
-        if (strncmp(text, s.weapon, 32) == 0) yaw = s.yaw;
+        if (strncmp(text, s.weapon, 32) == 0) {
+            yaw = s.yaw;
+            g_pitch = s.pitch;
+        }
     }
     return yaw;
 }
@@ -75,5 +82,8 @@ X86_FUNC(sub_00285AF0) {
     __imp__sub_00285AF0(ctx, base);
     X86HostFp host_fp;
     float aimed = G<float>(kAimed);
-    if (aimed > 0 && game::g_sight_fix) G<float>(angles + 4) += aimed * (Yaw() + game::g_sight_yaw);
+    if (aimed > 0 && game::g_sight_fix) {
+        G<float>(angles + 4) += aimed * (Yaw() + game::g_sight_yaw);
+        G<float>(angles) += aimed * (g_pitch + game::g_sight_pitch);
+    }
 }
