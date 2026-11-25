@@ -46,6 +46,7 @@ constexpr uint32_t kViewOrigin = 0x95E240;
 constexpr uint32_t kCellLighting = 0x23E510;
 constexpr uint32_t kShadowLift = 0x8DB1A0;   // the camera's height over the eye, 100
 constexpr uint32_t kShadowWidth = 0x8DB19C;  // the picture's width in the world, 700 (a level's script can set it)
+constexpr uint32_t kAhead = 0x83F034;        // 0.45
 constexpr uint32_t kShadowDepth = 0x8DB1A4;  // how far along its look the picture is laid on the world, 500
 constexpr float kOwnDepth = 500.0f;
 constexpr uint32_t kBandBelow = 0x8DB124;   // how far under the camera a thing not animated still casts a shadow, 100
@@ -62,6 +63,7 @@ struct {
     float height = 60;  // the eye over the ground, eased
 } g_sun;
 float g_own_width = 0;  // the picture's width as the game or its level has it
+float g_laid = 0;  // how deep along its look the turned picture is laid on the world (0: the game's own 500)
 
 // Shadow Distance (Graphics): the picture's width times this
 float Farther() {
@@ -115,7 +117,8 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
     }
     if (grid != g_sun.grid) g_sun = {}, g_sun.grid = grid;
     // the width for the frames to come (this one has used it already), and the game's own depth unless leaning
-    if (g_own_width == 0) g_own_width = G<float>(kShadowWidth);
+    float used = G<float>(kShadowWidth);  // what this frame's camera was placed by
+    if (g_own_width == 0) g_own_width = used;
     float farther = Farther();
     // the picture (512 across) spread over that much more ground showed its squares: the renderer makes it larger
     gpu::g_boost_size.store(512, std::memory_order_relaxed);
@@ -153,6 +156,7 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
     // 0x24442A): right for a soldier's eye, but a tank's camera is higher over the ground than that, and nothing
     // lying on it cast a shadow. The band goes down to as far under the ground as it did from a soldier's eye.
     G<float>(kBandBelow) = std::max(100.0f, g_sun.height + 40.0f * farther);
+    g_laid = 0;
     if (!(g_sun.sun[2] < 0) || !(g_sun.lean > 0)) return;  // straight down, as the game has it
     // the way the light travels, no flatter than kLeastDrop
     float lx = g_sun.sun[0], ly = g_sun.sun[1], lz = g_sun.sun[2];
@@ -165,6 +169,18 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
     lx /= unit, ly /= unit, lz /= unit;
     float* cam = &G<float>(kShadowCamera);
     float ux = cam[4], uy = cam[5];  // the picture's up: level, by the view
+    // The game puts the camera, the picture's middle, ahead of the eye: kAhead of the width along its up and as far
+    // back along its across, which is the way the player looks. The eye is then just inside the picture's corner.
+    // A turned picture covers the ground as a slanted shape that the eye is not always in (near shadows went as the
+    // player turned), but always the circle of the width about its middle: so the middle is put less far ahead, by
+    // how far the picture is turned, and the eye is well inside that circle.
+    constexpr float kTurnedAhead = 0.4f;
+    float game_ahead = G<float>(kAhead) * 1.41421356f;
+    float fx = ux - cam[0], fy = uy - cam[1];
+    float flen = std::sqrt(fx * fx + fy * fy);
+    if (!(flen > 0.001f)) return;
+    float pull = (kTurnedAhead - game_ahead) * g_sun.lean * used / flen;
+    cam[12] += fx * pull, cam[13] += fy * pull;
     // across = up x look, up = look x across: as the game builds them for a look straight down
     float ax = uy * lz, ay = -ux * lz, az = ux * ly - uy * lx;
     float len = std::sqrt(ax * ax + ay * ay + az * az);
@@ -174,14 +190,32 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
     cam[0] = ax, cam[1] = ay, cam[2] = az, cam[3] = 0;
     cam[4] = vx, cam[5] = vy, cam[6] = vz, cam[7] = vx;
     cam[8] = lx, cam[9] = ly, cam[10] = lz, cam[11] = 0;
-    // Back along the light from the picture's place, so that its middle falls on the ground under where the game put
-    // it and not on a point as high as the eye (from a tank's camera that put the picture a tank's length aside,
-    // and shadows went missing as the view turned). It is laid on the world (nglAddShadowProjector 0x704F0) down
-    // to as far under the ground as the game's own reaches, more with Shadow Distance.
+    // The picture is laid on the world as a box from the camera along its look. Level ground under a turned
+    // picture is nearer the camera at the edge towards the sun and further at the other, by "edge" along the look: so
+    // the camera goes back along the light from the ground under the picture's middle by that much and the eye's
+    // height, with some to spare for ground that rises towards the sun, and the box is as deep again on the far side
+    // (g_laid; the game's own is 500 deep whatever the width, which with the light's slant left shadows only on a
+    // strip of ground through the picture's middle: they came and went as the player turned).
+    constexpr float kOver = 200.0f, kUnder = kOwnDepth - 160.0f;  // ground higher, and lower, than under the eye
     float lift = G<float>(kShadowLift);
-    float back = (lift + g_sun.height) / -lz;
+    float edge = 0.5f * used * (std::fabs(az) + std::fabs(vz)) / -lz;
+    float back = (lift + g_sun.height + kOver) / -lz + edge;
     cam[12] -= lx * back, cam[13] -= ly * back;
-    G<float>(kShadowDepth) = (lift + g_sun.height + (kOwnDepth - lift - 60.0f) * farther) / -lz;
+    cam[14] += kOver - lz * edge;
+    g_laid = back + edge + kUnder / -lz;
+    G<float>(kShadowDepth) = g_laid;
+}
+
+// nglAddShadowProjector: a light's number, the camera, the box (width, minus the height, the depth, the width), ...
+// R_RenderTestShadow passes 500 for the depth.
+X86_EXTERN_FUNC(__imp__sub_000704F0);
+X86_FUNC(sub_000704F0) {
+    if (R32(ctx.esp) == 0x241849 && g_laid > 0) {
+        X86HostFp host_fp;
+        uint32_t box = R32(ctx.esp + 0xC);
+        if (box) G<float>(box + 8) = g_laid;
+    }
+    __imp__sub_000704F0(ctx, base);
 }
 
 // Tanks and trucks. The game adds a vehicle to the scene (0x246F67) with "casts no shadow" (the last of
