@@ -821,16 +821,14 @@ struct PauseEntry {
     uint32_t frame = 0;  // the last frame the pause menu was up
 } g_pause;
 
-void PauseMenu(uint32_t menu) {
-    static uint32_t pc = 0, game = 0, quit = 0;
-    if (!pc) pc = GameString("PC Options");
-    if (!game) game = GameString("Game & Controller Options");
-    if (!quit) quit = GameString("Quit to Main Menu");
+// the pause menu itself: its lines, a sixth to come under them, are a little smaller and closer (the size is a
+// text widget's four floats at +0x38, +0x3C, +0x44 and +0x48). Done for the level's pause screen before it is ever
+// up (PauseLayoutAhead): laid out only once it showed, its first frame had the game's sizes and the text was seen to
+// change size the first time the menu opened.
+void PauseLayout(uint32_t menu) {
     uint32_t items = R32(menu + 4);
     int16_t count = R16s(menu + 0x26);
-    if (!pc || !game || !quit || !items) return;
-    // the pause menu itself: its lines, a sixth to come under them, are a little smaller and closer (the size is a
-    // text widget's four floats at +0x38, +0x3C, +0x44 and +0x48)
+    if (!items) return;
     if (R32(menu) == kPauseVtable && count >= 2) {
         static uint32_t laid_out = 0;
         static float top = 0, step = 0;
@@ -852,6 +850,27 @@ void PauseMenu(uint32_t menu) {
             for (uint32_t at : {0x38u, 0x3Cu, 0x44u, 0x48u}) kernel::G<float>(widget + at) = own * kPauseSmaller;
         }
     }
+}
+
+// a manager's screens (+4, their count at +0x10): the in-game one's pause screen, up or not
+void PauseLayoutAhead(uint32_t manager) {
+    uint32_t screens = R32(manager + 4), count = R32(manager + 0x10);
+    if (!screens || count > 64) return;
+    for (uint32_t i = 0; i < count; i++) {
+        uint32_t screen = R32(screens + i * 4);
+        if (screen && R32(screen) == kPauseVtable) PauseLayout(screen);
+    }
+}
+
+void PauseMenu(uint32_t menu) {
+    static uint32_t pc = 0, game = 0, quit = 0;
+    if (!pc) pc = GameString("PC Options");
+    if (!game) game = GameString("Game & Controller Options");
+    if (!quit) quit = GameString("Quit to Main Menu");
+    uint32_t items = R32(menu + 4);
+    int16_t count = R16s(menu + 0x26);
+    if (!pc || !game || !quit || !items) return;
+    PauseLayout(menu);
     for (int16_t i = 0; i < count; i++) {
         uint32_t item = R32(items + uint32_t(i) * 4), widget = item ? R32(item + 0x10) : 0;
         uint32_t text = widget && R32(widget) == kTextWidgetVtable ? R32(widget + 0x1C) : 0;
@@ -2047,6 +2066,7 @@ void MenuPointer(X86Context& ctx, uint32_t manager) {
         MainMenuLines(menu);
         AlignMainMenu(ctx, menu);
     }
+    if (manager == R32(kInGame)) PauseLayoutAhead(manager);
     if (menu && manager == R32(kInGame)) PauseMenu(menu);
     if (manager == R32(kFrontEnd) || manager == R32(kInGame)) PcScreenPoll(ctx, manager, menu);
     if (manager == R32(kFrontEnd) && menu && R32(menu) != kOptionsVtable && R32(menu) != kLayouts[0].vtable)
