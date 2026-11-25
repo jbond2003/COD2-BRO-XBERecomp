@@ -167,6 +167,29 @@ void WatchVehicles() {
         for (uint32_t k = 0; k < 3; k++) f[3 + k] = read(v + 0xE0 + k * 4);
         for (uint32_t k = 0; k < 3; k++) f[6 + k] = read(v + 0xC0 + k * 4);
         for (uint32_t k = 0; k < 6; k++) f[9 + k] = read(v + 0x138 + k * 4);
+        // A vehicle a script drives along a path has its place from the path, and a body of its own on wheels that
+        // gives it its lean. Where the path starts under the ground (Piano Lupo's lorry comes in under a hill, 150
+        // units below the grass) the wheels find no ground beneath them, the body falls out of the world and never
+        // finds the ground again: the lorry then leaned by a body 1,700 units under it, to its limits at times, and
+        // showed in and out of the ground. A body more than kLost under its vehicle is put back at the vehicle's
+        // height, wheels still, to find the ground from there.
+        constexpr float kLost = 300.0f;
+        if ((f[9] != 0.0f || f[10] != 0.0f) && f[8] < f[2] - kLost) {
+            auto write = [](uint32_t at, float value) {
+                uint32_t raw;
+                std::memcpy(&raw, &value, 4);
+                kernel::W32(at, raw);
+            };
+            write(v + 0xC8, f[2]);
+            write(v + 0xD8, f[2]);
+            for (uint32_t k = 0; k < 6; k++) {
+                if (read(v + 0x138 + k * 4) < f[2] - kLost) write(v + 0x138 + k * 4, f[2]);
+                write(v + 0x120 + k * 4, 0.0f);
+            }
+            static int told = 0;
+            if (told < 20) told++, LOGR("vehicle %u: its body was %.0f under it, put back", i, f[2] - f[8]);
+            f[8] = f[2];
+        }
         if (was.entity == entity) {
             float dx = f[0] - was.f[0], dy = f[1] - was.f[1], dz = f[2] - was.f[2];
             float moved = std::sqrt(dx * dx + dy * dy + dz * dz);
