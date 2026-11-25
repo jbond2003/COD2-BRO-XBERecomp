@@ -2,18 +2,20 @@
 //
 // Aimed down the sights the gun is put exactly at the eye and along the view (CG_CalculateWeaponPosition 0x282D10
 // leaves no offset, CG_CalculateWeaponAngles 0x285AF0 only the idle sway), so where its sights sit on the screen is
-// the view model's own pose: and on some guns that pose leaves them a little to the right of the middle of the screen,
-// where the shot goes. At the Xbox's 480 lines it is one or two pixels; at a PC's resolution it shows.
+// the view model's own pose: and that pose leaves them a little to the right of the middle of the screen,
+// where the shot goes. It is the game's own, on the console as here: an angle, the same at every resolution.
 // The console's sightFix 0 leaves them as the game has them.
 //
-// Each such gun is turned back by the angle measured for it (magnified 24 times in the harness, the front sight
-// against the middle of the frame), by how far the player has aimed (the fraction at 0x9725D8).
+// Each gun is turned back by the angle measured for it (magnified 24 times in the harness, the front sight against
+// the middle of the frame), or by the usual one where it has not been measured, by how far the player has aimed (the
+// fraction at 0x9725D8).
 
 #include <cstring>
 
 #include "common/options.h"
 #include "cpu/x86_ops.h"
 #include "kernel/kernel.h"
+#include "kernel/memory.h"
 
 namespace {
 
@@ -28,6 +30,7 @@ struct Sight {
     const char* weapon;  // the definition's name (+8)
     float yaw;           // degrees to the left
 };
+constexpr float kUsual = 0.10f;  // for a gun not measured
 constexpr Sight kSights[] = {
     {"m1carbine", 0.07f},
     {"carcano", 0.17f},
@@ -45,6 +48,13 @@ float Yaw() {
     yaw = 0;
     uint32_t name = def ? R32(def + 8) : 0;
     if (!name) return yaw;
+    // a gun aimed through its own sights: one that aims (aimDownSight, +0x6DC) with no scope picture over the screen
+    // (adsOverlayShader, +0x634). Every one of them sits to the right (the three measured: 0.07 to 0.17 degrees), so
+    // one not measured yet gets what is usual
+    uint32_t scope = R32(def + 0x634);
+    bool scoped = scope >= 0x10000 && mem::IsCommitted(scope) && kernel::G<uint8_t>(scope) != 0;
+    if (!R32(def + 0x6DC) || scoped) return yaw;
+    yaw = kUsual;
     const char* text = static_cast<const char*>(kernel::HostPtr(name));
     for (const Sight& s : kSights) {
         if (strncmp(text, s.weapon, 32) == 0) yaw = s.yaw;
