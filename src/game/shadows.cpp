@@ -208,14 +208,39 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
 
 // nglAddShadowProjector: a light's number, the camera, the box (width, minus the height, the depth, the width), ...
 // R_RenderTestShadow passes 500 for the depth.
+//
+// The projector it makes (0x140 bytes from the frame's store, [0x9025A8] brought up to 16) starts with the matrix
+// that gives a point of the world its place in the picture, four numbers: across and up (0 to 1 over the width),
+// and two that grow with the depth from the camera along its look, one by the box's depth and one from a half by
+// the box's last width. For the game's own picture, straight down from 100 units over the eye, those two are a
+// point's height under the camera: 0.32 and 0.73 on the ground a soldier stands on, the same wherever he looks.
+// For a picture turned to the sun, or a wider one, they were neither: the ground under the player came out
+// anywhere from near the camera to well past the box's end as he turned, and the shadows on it went with the
+// headings that put it far. Here the two are given back their meaning, height: what the game has on the ground
+// under the eye, changing with the height above or below it, as slowly as the picture is wider.
 X86_EXTERN_FUNC(__imp__sub_000704F0);
 X86_FUNC(sub_000704F0) {
-    if (R32(ctx.esp) == 0x241849 && g_laid > 0) {
+    bool ours = R32(ctx.esp) == 0x241849;
+    uint32_t box = ours ? R32(ctx.esp + 0xC) : 0;
+    uint32_t projector = (R32(0x9025A8) + 15) & ~15u;
+    if (box && g_laid > 0) {
         X86HostFp host_fp;
-        uint32_t box = R32(ctx.esp + 0xC);
-        if (box) G<float>(box + 8) = g_laid;
+        G<float>(box + 8) = g_laid;
     }
     __imp__sub_000704F0(ctx, base);
+    float farther = Farther();
+    if (!box || !projector || !(g_own_width > 0) || (!(g_laid > 0) && farther == 1.0f)) return;
+    X86HostFp host_fp;
+    float under = G<float>(kShadowLift) + g_sun.height;        // the game's camera over the ground
+    float ground = G<float>(kViewOrigin + 8) - g_sun.height;  // the ground under the eye
+    float by[2] = {kOwnDepth * farther, g_own_width * farther};
+    float at[2] = {under / kOwnDepth, 0.5f + under / g_own_width};
+    for (uint32_t i = 0; i < 2; i++) {
+        uint32_t column = projector + 8 + i * 4;
+        G<float>(column) = 0, G<float>(column + 0x10) = 0;
+        G<float>(column + 0x20) = -1.0f / by[i];
+        G<float>(column + 0x30) = at[i] + ground / by[i];
+    }
 }
 
 // Tanks and trucks. The game adds a vehicle to the scene (0x246F67) with "casts no shadow" (the last of
