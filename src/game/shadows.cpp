@@ -64,6 +64,7 @@ struct {
 } g_sun;
 float g_own_width = 0;  // the picture's width as the game or its level has it
 float g_laid = 0;  // how deep along its look the turned picture is laid on the world (0: the game's own 500)
+float g_down = 500;  // how deep the picture is laid when it looks straight down: to the ground and under it
 
 // Shadow Distance (Graphics): the picture's width times this
 float Farther() {
@@ -156,6 +157,11 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
     // 0x24442A): right for a soldier's eye, but a tank's camera is higher over the ground than that, and nothing
     // lying on it cast a shadow. The band goes down to as far under the ground as it did from a soldier's eye.
     G<float>(kBandBelow) = std::max(100.0f, g_sun.height + 40.0f * farther);
+    // A cutscene's camera can be several hundred units over the ground: the game's 500 from 100 over the eye then
+    // ended above the ground and nothing on it had a shadow. The picture reaches as far under the ground as it did
+    // from a soldier's eye.
+    g_down = std::max(kOwnDepth, G<float>(kShadowLift) + g_sun.height + (kOwnDepth - 160.0f));
+    G<float>(kShadowDepth) = g_down;
     g_laid = 0;
     if (!(g_sun.sun[2] < 0) || !(g_sun.lean > 0)) return;  // straight down, as the game has it
     // the way the light travels, no flatter than kLeastDrop
@@ -223,13 +229,13 @@ X86_FUNC(sub_000704F0) {
     bool ours = R32(ctx.esp) == 0x241849;
     uint32_t box = ours ? R32(ctx.esp + 0xC) : 0;
     uint32_t projector = (R32(0x9025A8) + 15) & ~15u;
-    if (box && g_laid > 0) {
+    if (box) {
         X86HostFp host_fp;
-        G<float>(box + 8) = g_laid;
+        G<float>(box + 8) = g_laid > 0 ? g_laid : g_down;
     }
     __imp__sub_000704F0(ctx, base);
     float farther = Farther();
-    if (!box || !projector || !(g_own_width > 0) || (!(g_laid > 0) && farther == 1.0f)) return;
+    if (!box || !projector || !(g_own_width > 0) || (!(g_laid > 0) && farther == 1.0f && g_down == kOwnDepth)) return;
     X86HostFp host_fp;
     float under = G<float>(kShadowLift) + g_sun.height;        // the game's camera over the ground
     float ground = G<float>(kViewOrigin + 8) - g_sun.height;  // the ground under the eye
