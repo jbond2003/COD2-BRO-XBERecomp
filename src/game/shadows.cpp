@@ -51,6 +51,7 @@ constexpr uint32_t kShadowDepth = 0x8DB1A4;  // how far along its look the pictu
 constexpr float kOwnDepth = 500.0f;
 constexpr uint32_t kBandAbove = 0x8DB120;   // and how far over it, 40
 constexpr uint32_t kBandBelow = 0x8DB124;   // how far under the camera a thing not animated still casts a shadow, 100
+constexpr uint32_t kTakeAll = 0x95F6D1;    // not 0: every piece of ground takes the picture, however far from its camera
 constexpr uint32_t kTracePoint = 0x286D00;   // CG_TracePoint: eax mask, ecx end; result, start, mins, maxs, skip
 constexpr uint32_t kClientNum = 0x9725CC;
 constexpr float kShadowReach = 700.0f;  // parts this near the camera cast a shadow though out of the view
@@ -175,7 +176,16 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
     g_down = std::max(kOwnDepth, G<float>(kShadowLift) + g_sun.height + (kOwnDepth - 160.0f));
     G<float>(kShadowDepth) = g_down;
     g_laid = 0;
-    if (!(g_sun.sun[2] < 0) || !(g_sun.lean > 0)) return;  // straight down, as the game has it
+    // A piece of ground takes the picture only when it is within the picture's width, level, of the picture's camera
+    // (0x51E0B and 0x53740: the piece's middle less the projector's place, heights left out, against its radius plus
+    // 0x8DB19C; the byte at 0x95F6D1 leaves the test out). That holds for a camera over the picture's middle. Along
+    // the sun the camera stands thousands of units back from it, and by where the player looked the ground about him
+    // was further from it than that: a vehicle's shadow went piece by piece as he turned. A turned picture is taken
+    // by every piece; outside it there is nothing in it.
+    static bool took_all = false;
+    bool turned = g_sun.sun[2] < 0 && g_sun.lean > 0;
+    if (turned != took_all) *static_cast<uint8_t*>(HostPtr(kTakeAll)) = turned, took_all = turned;
+    if (!turned) return;  // straight down, as the game has it
     // the way the light travels, no flatter than kLeastDrop
     float lx = g_sun.sun[0], ly = g_sun.sun[1], lz = g_sun.sun[2];
     if (lz > -kLeastDrop) {
