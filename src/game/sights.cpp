@@ -2,17 +2,19 @@
 //
 // Aimed down the sights the gun is put exactly at the eye and along the view (CG_CalculateWeaponPosition 0x282D10
 // leaves no offset, CG_CalculateWeaponAngles 0x285AF0 only the idle sway), so where its sights sit on the screen is
-// the view model's own pose: and that pose leaves them a little to the right of the middle of the screen,
-// where the shot goes. It is the game's own, on the console as here: an angle, the same at every resolution.
-// The console's sightFix 0 leaves them as the game has them.
+// the view model's own pose: and no gun's pose puts its front sight on the middle of the screen, where the shot
+// goes. Each gun is off by its own amount, sideways and up or down (the M1 Carbine's post a third of a degree high,
+// the MP40's as much low). It is the game's own, on the console as here: an angle, the same at every resolution and
+// field of view. The console's sightFix 0 leaves them as the game has them.
 //
-// The angles: measured in the harness against the middle of its frame, then all raised by 0.11 degrees, by which a
-// Windows screenshot of the M1 Carbine showed them short (its post 11.3 of 2557 pixels right of the middle untouched,
-// 7.0 with 0.07 degrees: 61 pixels a degree). The console's sightYaw and sightPitch add to the gun in hand's, to find better ones.
-//
-// Each gun is turned back by the angle measured for it (magnified 24 times in the harness, the front sight against
-// the middle of the frame), or by the usual one where it has not been measured, by how far the player has aimed (the
-// fraction at 0x9725D8).
+// Each gun is turned back by the angles measured for it, by how far the player has aimed (the fraction at
+// 0x9725D8). Measured in the harness: the gun aimed with its idle sway off before a plain background, magnified six
+// times, the tip of the front sight (the notch for the Carcano, which shows no blade) against the middle of the
+// frame; one degree of turn moves the sight 72 pixels across and 92 down there (measured by turning the gun a
+// degree). To each 0.06 degrees left and 0.03 up are added: by that much a 2560 x 1440 recording of the M1 Carbine
+// on Windows differed from the harness (with 0.18 and 0.23 its post stood 1.5 pixels left of the middle and 3.6 over
+// it, at 46 pixels a degree). A gun not measured gets the usual turn left alone.
+// The console's sightYaw and sightPitch add to the gun in hand's, to find better ones.
 
 #include <cstring>
 
@@ -36,12 +38,21 @@ struct Sight {
     float pitch;         // degrees down
     float blur = 0;      // where Blur Gun Sight ends, in near planes of the gun's scene (0: the usual)
 };
-constexpr float kUsual = 0.21f;  // for a gun not measured
+constexpr float kUsual = 0.09f;  // for a gun not measured: the mean of those that are
 constexpr Sight kSights[] = {
-    {"m1carbine", 0.18f, 0.23f},  // the post's tip was 14 of 1437 pixels over the middle in the same screenshot
+    // harness: 0.09 right, 0.34 high; set from the Windows recording
+    {"m1carbine", 0.15f, 0.31f},
+    {"m1garand", 0.09f, -0.04f},  // 0.03 right, 0.01 low
+    {"m1garand_medic", 0.09f, -0.04f},
+    {"m1garand_engineer", 0.09f, -0.04f},
+    {"thompson", 0.05f, -0.10f},  // 0.01 left, 0.07 low
+    {"bar", 0.11f, -0.11f},       // 0.05 right, 0.08 low
+    {"mp40", 0.14f, -0.35f},      // 0.08 right, 0.32 low (the post in its hood)
+    {"kar98", 0.19f, 0.26f},      // 0.13 right, 0.29 high
+    {"gewehr43", 0.09f, -0.15f},  // 0.03 right, 0.12 low
     // all that shows of it aimed is its rear notch, 15 to 20 near planes away, nearer than where the blur usually ends
-    {"carcano", 0.28f, 0, 15},
-    {"breda_lmg", 0.19f, 0},
+    {"carcano", 0.06f, 0, 15},    // the notch in the middle, its top on the middle line
+    {"breda_lmg", -0.05f, -0.25f},  // 0.11 left, 0.22 low
 };
 
 float g_pitch = 0;  // with Yaw()'s answer: the gun in hand's turn down
