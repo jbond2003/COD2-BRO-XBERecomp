@@ -193,7 +193,7 @@ X86_FUNC(sub_002B39E0) {
     {
         X86HostFp host_fp;
         MouseLook();
-        game::WatchVehicles();
+        game::WatchVehicles(ctx);
     }
     __imp__sub_002B39E0(ctx, base);
 }

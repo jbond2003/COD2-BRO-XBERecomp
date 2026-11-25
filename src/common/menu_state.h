@@ -7,6 +7,8 @@
 #include "gpu/texture_override.h"
 
 // what the menu mouse (src/game/menu_mouse.cpp) tells the rest
+struct X86Context;
+
 namespace game {
 
 bool MenuMouseCursorVisible();  // a menu has had the pointer in the last few frames: draw it
@@ -15,7 +17,7 @@ bool MenuHasPointer();          // ... in the last two: the mouse is not looking
 // are drawn in is shown, over the whole picture (the game's menus have black above and below them)
 void UpdateFrameBand();
 // each frame's command (CL_MouseMove): a vehicle that jumped or lies on its side goes in the log (src/game/high_fps.cpp)
-void WatchVehicles();
+void WatchVehicles(X86Context& ctx);
 // the Controller screen with the Modern configuration picked (src/game/pad_picture.cpp): its picture (null while
 // another is picked or none could be read), and a label drawn where the picture's line for it ends, for the scope
 std::shared_ptr<const gpu::texture_override::Picture> ModernPadPicture();

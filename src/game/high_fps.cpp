@@ -122,13 +122,14 @@ void ViewAngleStep(X86Context& ctx, uint8_t*) {
 // wheel heights (+0x138), before and now.
 namespace game {
 
-void WatchVehicles() {
+void WatchVehicles(X86Context& ctx) {
     constexpr uint32_t kPool = 0x95F694, kCount = 0x986000, kSize = 0x340, kSlots = 32;
     constexpr float kLean = 50.0f;
     struct Seen {
         uint32_t entity = 0;
         float f[16] = {};  // place 3, angles 3, physics place 3, wheels 6, spare
         int64_t logged_ms = 0;
+        int64_t traced_ms = 0;
     };
     static Seen seen[kSlots];
     static int lines = 0;
@@ -167,6 +168,50 @@ void WatchVehicles() {
         for (uint32_t k = 0; k < 3; k++) f[3 + k] = read(v + 0xE0 + k * 4);
         for (uint32_t k = 0; k < 3; k++) f[6 + k] = read(v + 0xC0 + k * 4);
         for (uint32_t k = 0; k < 6; k++) f[9 + k] = read(v + 0x138 + k * 4);
+        // A vehicle a script drives along a path has its place from the path, and a body of its own on wheels that
+        // gives it its lean. Where the path starts under the ground (Piano Lupo's lorry comes in under a hill, 150
+        // units below the grass) the wheels find no ground beneath them, the body falls out of the world and never
+        // finds the ground again: the lorry then leaned by a body 1,700 units under it, to its limits at times, and
+        // showed in and out of the ground. A body more than kLost under its vehicle, with ground between the two
+        // (a trace down from the vehicle to its body, a few times a second), is put on that ground, wheels still.
+        // Only then: The Desert Fox's tanks and jeeps are placed well over the ground and let down onto it, and a
+        // body merely lower than its vehicle was lifted back up there.
+        constexpr float kLost = 300.0f;
+        if ((f[9] != 0.0f || f[10] != 0.0f) && f[8] < f[2] - kLost && now - was.traced_ms > 200) {
+            was.traced_ms = now;
+            constexpr uint32_t kTracePoint = 0x286D00;
+            auto write = [](uint32_t at, float value) {
+                uint32_t raw;
+                std::memcpy(&raw, &value, 4);
+                kernel::W32(at, raw);
+            };
+            float from = f[2] + 64.0f, to = f[8];
+            X86Context kept = ctx;
+            uint32_t top = kernel::R32(ctx.esp);
+            ctx.esp -= 0x80;  // start, end, a point for mins and maxs, the result (0x40)
+            uint32_t start = ctx.esp, end = ctx.esp + 0x10, zero = ctx.esp + 0x20, result = ctx.esp + 0x30;
+            for (uint32_t k = 0; k < 2; k++) write(start + k * 4, f[k]), write(end + k * 4, f[k]);
+            write(start + 8, from), write(end + 8, to);
+            for (uint32_t k = 0; k < 3; k++) kernel::W32(zero + k * 4, 0);
+            kernel::W32(result + 0x20, 0x3F800000);
+            ctx.eax = 0x11, ctx.ecx = end;
+            kernel::CallGuest(ctx, kTracePoint, {result, start, zero, zero, entity & 0xFFF});  // not the vehicle itself
+            float part = read(result + 0x20);
+            ctx = kept;
+            kernel::W32(ctx.esp, top);
+            float ground = from + (to - from) * part;
+            if (part > 0.0f && part < 1.0f && ground > f[8] + 100.0f) {
+                write(v + 0xC8, ground);
+                write(v + 0xD8, ground);
+                for (uint32_t k = 0; k < 6; k++) {
+                    if (read(v + 0x138 + k * 4) < ground - 100.0f) write(v + 0x138 + k * 4, ground);
+                    write(v + 0x120 + k * 4, 0.0f);
+                }
+                static int told = 0;
+                if (told < 20) told++, LOGR("vehicle %u: its body was %.0f under the ground, put back on it", i, ground - f[8]);
+                f[8] = ground;
+            }
+        }
         if (was.entity == entity) {
             float dx = f[0] - was.f[0], dy = f[1] - was.f[1], dz = f[2] - was.f[2];
             float moved = std::sqrt(dx * dx + dy * dy + dz * dz);
