@@ -64,6 +64,7 @@ struct {
 } g_sun;
 float g_own_width = 0;  // the picture's width as the game or its level has it
 float g_laid = 0;  // how deep along its look the turned picture is laid on the world (0: the game's own 500)
+float g_own_lift = 0;  // the picture's camera over the eye as the game has it, 100
 float g_down = 500;  // how deep the picture is laid when it looks straight down: to the ground and under it
 
 // Shadow Distance (Graphics): the picture's width times this
@@ -160,6 +161,12 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
     // A cutscene's camera can be several hundred units over the ground: the game's 500 from 100 over the eye then
     // ended above the ground and nothing on it had a shadow. The picture reaches as far under the ground as it did
     // from a soldier's eye.
+    // The game's camera for the picture is 100 units over the eye, and what stands higher than the camera is not in
+    // the picture: a soldier on a rise above the player had no shadow. With the sun's shadows or the further ones
+    // it is 400 higher (from the next frame: this one's is placed).
+    if (g_own_lift == 0) g_own_lift = G<float>(kShadowLift);
+    constexpr float kHigher = 400.0f;
+    G<float>(kShadowLift) = g_own_lift + (game::Opt().sun_shadows || game::Opt().shadow_distance ? kHigher : 0.0f);
     g_down = std::max(kOwnDepth, G<float>(kShadowLift) + g_sun.height + (kOwnDepth - 160.0f));
     G<float>(kShadowDepth) = g_down;
     g_laid = 0;
@@ -223,7 +230,7 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
 // For a picture turned to the sun, or a wider one, they were neither: the ground under the player came out
 // anywhere from near the camera to well past the box's end as he turned, and the shadows on it went with the
 // headings that put it far. Here the two are given back their meaning, height: what the game has on the ground
-// under the eye, changing with the height above or below it, as slowly as the picture is wider.
+// under the eye, changing with the height above or below it, a quarter as fast or less.
 X86_EXTERN_FUNC(__imp__sub_000704F0);
 X86_FUNC(sub_000704F0) {
     bool ours = R32(ctx.esp) == 0x241849;
@@ -237,9 +244,10 @@ X86_FUNC(sub_000704F0) {
     float farther = Farther();
     if (!box || !projector || !(g_own_width > 0) || (!(g_laid > 0) && farther == 1.0f && g_down == kOwnDepth)) return;
     X86HostFp host_fp;
-    float under = G<float>(kShadowLift) + g_sun.height;        // the game's camera over the ground
+    float under = 160.0f;  // the game's camera over the ground a soldier stands on: 100 over an eye 60 high
     float ground = G<float>(kViewOrigin + 8) - g_sun.height;  // the ground under the eye
-    float by[2] = {kOwnDepth * farther, g_own_width * farther};
+    float slow = std::max(farther, 4.0f);  // the game's own rate lost the shadows 160 units over the player
+    float by[2] = {kOwnDepth * slow, g_own_width * slow};
     float at[2] = {under / kOwnDepth, 0.5f + under / g_own_width};
     for (uint32_t i = 0; i < 2; i++) {
         uint32_t column = projector + 8 + i * 4;
