@@ -73,4 +73,7 @@ Options& Opt();
 // any thread: the game's own options, as Opt() has them now, go into the profile and are applied at the next frame
 void ApplyGameOptions();
 
+// the console's sightFix (not saved): iron sights turned onto the aim point (src/game/sights.cpp)
+inline bool g_sight_fix = true;
+
 }  // namespace game

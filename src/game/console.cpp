@@ -159,6 +159,8 @@ const PortVariable kPortVariables[] = {
      [] { return double(Opt().brightness) / 100.0; }, [](double v) { Opt().brightness = uint32_t(v * 100.0 + 0.5); }},
     {"r_anisotropy", "Anisotropic Filtering", "0 (as the game asks), 2, 4, 8 or 16", 0, 16, 0, 1,
      PORT_NUMBER(app::Get().aniso, uint32_t)},
+    // not saved: to compare the sights with and without their correction (src/game/sights.cpp)
+    {"sightFix", "Iron sights on the aim point", "0 or 1", 0, 1, 1, 1, PORT_BOOL(g_sight_fix)},
     {"r_msaa", "MSAA", "0 (off), 2, 4 or 8", 0, 8, 0, 1, PORT_NUMBER(app::Get().msaa, uint32_t)},
     {"r_smaa", "SMAA", "0 or 1", 0, 1, 0, 1, PORT_BOOL(app::Get().smaa)},
     // both directions at once, as the PC games' one sensitivity is (it shows the horizontal one)
