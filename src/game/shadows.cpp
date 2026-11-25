@@ -49,6 +49,7 @@ constexpr uint32_t kShadowWidth = 0x8DB19C;  // the picture's width in the world
 constexpr uint32_t kAhead = 0x83F034;        // 0.45
 constexpr uint32_t kShadowDepth = 0x8DB1A4;  // how far along its look the picture is laid on the world, 500
 constexpr float kOwnDepth = 500.0f;
+constexpr uint32_t kBandAbove = 0x8DB120;   // and how far over it, 40
 constexpr uint32_t kBandBelow = 0x8DB124;   // how far under the camera a thing not animated still casts a shadow, 100
 constexpr uint32_t kTracePoint = 0x286D00;   // CG_TracePoint: eax mask, ecx end; result, start, mins, maxs, skip
 constexpr uint32_t kClientNum = 0x9725CC;
@@ -166,7 +167,11 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
     // it is 400 higher (from the next frame: this one's is placed).
     if (g_own_lift == 0) g_own_lift = G<float>(kShadowLift);
     constexpr float kHigher = 400.0f;
-    G<float>(kShadowLift) = g_own_lift + (game::Opt().sun_shadows || game::Opt().shadow_distance ? kHigher : 0.0f);
+    bool further = game::Opt().sun_shadows || game::Opt().shadow_distance;
+    G<float>(kShadowLift) = g_own_lift + (further ? kHigher : 0.0f);
+    // and the band of heights for a thing not animated (a body at rest, a wreck) goes as far up: the game's ends 40
+    // units over the eye
+    G<float>(kBandAbove) = 40.0f + (further ? kHigher : 0.0f);
     g_down = std::max(kOwnDepth, G<float>(kShadowLift) + g_sun.height + (kOwnDepth - 160.0f));
     G<float>(kShadowDepth) = g_down;
     g_laid = 0;
