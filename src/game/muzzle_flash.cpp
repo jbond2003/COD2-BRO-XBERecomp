@@ -1,9 +1,9 @@
-// The muzzle flash on the gun's muzzle. The gun in hand is drawn in a scene of its own with a narrower field of view
-// than the world's at the hip (a y scale of 2.14 against 1.90), and the flash is an effect in the world's scene at the
-// flash tag's place: so the flash showed nearer the middle of the screen than the muzzle it belongs to, in front of
-// the gun. The tag's place asked for the gun in hand (0x27F920: eax the tag's name, edi the gun's model, one argument
-// the matrix out, its origin at +0x24) is moved out from the line of sight by the two scenes' ratio, so that the
-// world's scene shows it where the gun's shows the tag. The scales are taken as the scenes are set up
+// The muzzle flash on the gun's muzzle. The gun in hand is drawn in a scene of its own, always with the same field of
+// view (a y scale of 2.14), and the flash is an effect in the world's scene, bolted to the gun's flash bone: so the
+// flash showed nearer the middle of the screen than the muzzle it belongs to, in front of the gun, and the more so
+// the wider the player's field of view (the world's y scale is 1.90 at 70 degrees and 0.93 at 110). The place of an
+// effect bolted to the gun in hand is moved out from the line of sight by the two scenes' ratio, so that the world's
+// scene shows it where the gun's shows the bone. The scales are taken as the scenes are set up
 // (nglMatrixPerspective 0x5EC20: out, x scale, y scale, near, far; the gun's near plane is 0.1, the world's 4.5).
 
 #include <cmath>
@@ -20,6 +20,11 @@ constexpr uint32_t kViewForward = 0x972BC0;
 
 float g_gun_scale = 0, g_world_scale = 0;  // the y scales of the last gun scene and world scene
 
+// Where an effect bolted to a model's bone is (0x2463C0: the model's handle and the bone on the stack, edi the place
+// out, origin first, then the three axes; al 1 when found). The handle's entry in the table at 0x981418 with nothing
+// at +0x88 is the gun in hand, placed by the view (0x284A80).
+constexpr uint32_t kHandles = 0x981418;
+
 }  // namespace
 
 X86_EXTERN_FUNC(__imp__sub_0005EC20);
@@ -33,22 +38,26 @@ X86_FUNC(sub_0005EC20) {
     __imp__sub_0005EC20(ctx, base);
 }
 
-X86_EXTERN_FUNC(__imp__sub_0027F920);
-X86_FUNC(sub_0027F920) {
-    uint32_t out = kernel::R32(ctx.esp + 4);
-    __imp__sub_0027F920(ctx, base);
-    if (!ctx.eax || !out) return;
+X86_EXTERN_FUNC(__imp__sub_002463C0);
+X86_FUNC(sub_002463C0) {
+    uint32_t handle = kernel::R32(ctx.esp + 4), out = ctx.edi;
+    __imp__sub_002463C0(ctx, base);
+    if (!(ctx.eax & 0xFF) || !out) return;
+    uint32_t slot = handle & 0xFFF;
+    if (slot >= 0x540) return;
+    uint32_t entry = kernel::R32(kHandles + slot * 8);
+    if (!entry || kernel::R32(entry + 0x88)) return;
     X86HostFp host_fp;
     if (!(g_gun_scale > 0.01f && g_world_scale > 0.01f)) return;
     float k = g_gun_scale / g_world_scale;
     if (!std::isfinite(k) || k < 0.25f || k > 4) return;
     float rel[3], along = 0;
     for (int i = 0; i < 3; i++) {
-        rel[i] = G<float>(out + 0x24 + i * 4) - G<float>(kViewOrigin + i * 4);
+        rel[i] = G<float>(out + i * 4) - G<float>(kViewOrigin + i * 4);
         along += rel[i] * G<float>(kViewForward + i * 4);
     }
     for (int i = 0; i < 3; i++) {
         float ahead = G<float>(kViewForward + i * 4) * along;
-        G<float>(out + 0x24 + i * 4) = G<float>(kViewOrigin + i * 4) + ahead + (rel[i] - ahead) * k;
+        G<float>(out + i * 4) = G<float>(kViewOrigin + i * 4) + ahead + (rel[i] - ahead) * k;
     }
 }

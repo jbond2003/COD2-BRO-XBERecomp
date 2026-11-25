@@ -52,6 +52,7 @@ void UpdateHints(X86Context& ctx);  // src/game/hints.cpp
 void RunCommands(X86Context& ctx);  // src/game/pad_layout.cpp
 void UpdatePcSettings(X86Context& ctx);  // src/game/pc_settings.cpp
 void UpdateGameOptions(X86Context& ctx);  // src/game/game_options.cpp
+float GunBlurEnd();  // src/game/sights.cpp
 }
 
 // the client frame, once a frame from the main loop, in menus and in play
@@ -65,6 +66,7 @@ X86_FUNC(sub_002F1E60) {
     if (!std::isfinite(aim)) aim = 0.0f;
     gpu::g_dof.store(game::Opt().ads_dof ? aim : 0.0f, std::memory_order_relaxed);
     gpu::g_gun_blur.store(game::Opt().gun_blur ? aim : 0.0f, std::memory_order_relaxed);
+    gpu::g_gun_reach.store(game::GunBlurEnd(), std::memory_order_relaxed);
     // no SMAA over the front end ([0x95F8F8], null in a level): it softened the menus' sharp text
     gpu::g_smaa_off.store(kernel::R32(0x95F8F8) != 0, std::memory_order_relaxed);
     game::UpdatePrompts();

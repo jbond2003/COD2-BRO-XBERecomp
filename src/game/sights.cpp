@@ -34,15 +34,18 @@ struct Sight {
     const char* weapon;  // the definition's name (+8)
     float yaw;           // degrees to the left
     float pitch;         // degrees down
+    float blur = 0;      // where Blur Gun Sight ends, in near planes of the gun's scene (0: the usual)
 };
 constexpr float kUsual = 0.21f;  // for a gun not measured
 constexpr Sight kSights[] = {
     {"m1carbine", 0.18f, 0.23f},  // the post's tip was 14 of 1437 pixels over the middle in the same screenshot
-    {"carcano", 0.28f, 0},
+    // all that shows of it aimed is its rear notch, 15 to 20 near planes away, nearer than where the blur usually ends
+    {"carcano", 0.28f, 0, 15},
     {"breda_lmg", 0.19f, 0},
 };
 
 float g_pitch = 0;  // with Yaw()'s answer: the gun in hand's turn down
+float g_blur = 0;   // and where its blur ends
 
 // the turn for the weapon in hand
 float Yaw() {
@@ -54,6 +57,7 @@ float Yaw() {
     known = def;
     yaw = 0;
     g_pitch = 0;
+    g_blur = 0;
     uint32_t name = def ? R32(def + 8) : 0;
     if (!name) return yaw;
     // a gun aimed through its own sights: one that aims (aimDownSight, +0x6DC) with no scope picture over the screen
@@ -68,12 +72,21 @@ float Yaw() {
         if (strncmp(text, s.weapon, 32) == 0) {
             yaw = s.yaw;
             g_pitch = s.pitch;
+            g_blur = s.blur;
         }
     }
     return yaw;
 }
 
 }  // namespace
+
+namespace game {
+// Where the gun in hand's blur ends for the renderer (gpu::g_gun_reach): a steady distance for each gun
+float GunBlurEnd() {
+    Yaw();
+    return g_blur;
+}
+}  // namespace game
 
 // CG_CalculateWeaponAngles: the view weapon's pitch, yaw and roll into eax
 X86_EXTERN_FUNC(__imp__sub_00285AF0);
