@@ -1,10 +1,12 @@
-// The muzzle flash on the gun's muzzle. The gun in hand is drawn in a scene of its own, always with the same field of
-// view (a y scale of 2.14), and the flash is an effect in the world's scene, bolted to the gun's flash bone: so the
-// flash showed nearer the middle of the screen than the muzzle it belongs to, in front of the gun, and the more so
-// the wider the player's field of view (the world's y scale is 1.90 at 70 degrees and 0.93 at 110). The place of an
-// effect bolted to the gun in hand is moved out from the line of sight by the two scenes' ratio, so that the world's
-// scene shows it where the gun's shows the bone. The scales are taken as the scenes are set up
-// (nglMatrixPerspective 0x5EC20: out, x scale, y scale, near, far; the gun's near plane is 0.1, the world's 4.5).
+// The muzzle flash on the gun's muzzle. The gun in hand is drawn in a scene of its own (near plane 0.5, far 128)
+// whose field of view is not the world's: at the hip it stays the game's own however wide the player's is (a y scale
+// of 1.90 against the world's 0.93 at 110 degrees), and it meets the world's only when aimed down the sights. The
+// flash is an effect in the world's scene, bolted to the gun's flash bone: so it showed nearer the middle of the
+// screen than the muzzle it belongs to, in front of the gun, and the more so the wider the field of view. The place
+// of an effect bolted to the gun in hand is moved out from the line of sight by the two scenes' ratio, so that the
+// world's scene shows it where the gun's shows the bone. The scales are taken as the scenes are set up
+// (nglMatrixPerspective 0x5EC20: out, x scale, y scale, near, far; the world's near plane is 4.5; the scenes with a
+// near plane of 0.1 are not the gun's).
 
 #include <cmath>
 
@@ -32,7 +34,7 @@ X86_FUNC(sub_0005EC20) {
     {
         X86HostFp host_fp;
         float near_plane = G<float>(ctx.esp + 16), y_scale = G<float>(ctx.esp + 12);
-        if (near_plane < 0.2f) g_gun_scale = y_scale;
+        if (near_plane > 0.3f && near_plane < 1.0f) g_gun_scale = y_scale;
         else if (near_plane > 2.0f) g_world_scale = y_scale;
     }
     __imp__sub_0005EC20(ctx, base);
