@@ -8,6 +8,7 @@
 // prologue) and none shows where the rifle is. Here the shadow's copy takes the matrix the scene's copy had.
 
 #include "cpu/x86_ops.h"
+#include "gpu/backend.h"
 #include "kernel/kernel.h"
 
 // the model's matrix just pushed for nglListAddMesh ([esp]); the part's own, bone and all, is at the frame's +0xA0,
@@ -116,6 +117,9 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
     // the width for the frames to come (this one has used it already), and the game's own depth unless leaning
     if (g_own_width == 0) g_own_width = G<float>(kShadowWidth);
     float farther = Farther();
+    // the picture (512 across) spread over that much more ground showed its squares: the renderer makes it larger
+    gpu::g_boost_size.store(512, std::memory_order_relaxed);
+    gpu::g_boost.store(farther, std::memory_order_relaxed);
     if (g_own_width > 0) G<float>(kShadowWidth) = g_own_width * farther;
     G<float>(kShadowDepth) = kOwnDepth;
     bool lit = game::Opt().sun_shadows && grid && FindSun(grid, &G<float>(kViewOrigin));
