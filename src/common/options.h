@@ -75,5 +75,7 @@ void ApplyGameOptions();
 
 // the console's sightFix (not saved): iron sights turned onto the aim point (src/game/sights.cpp)
 inline bool g_sight_fix = true;
+// the console's sightYaw (not saved): degrees more to the left for the gun in hand, to find its angle
+inline float g_sight_yaw = 0;
 
 }  // namespace game

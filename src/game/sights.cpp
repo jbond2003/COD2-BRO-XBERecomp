@@ -6,6 +6,10 @@
 // where the shot goes. It is the game's own, on the console as here: an angle, the same at every resolution.
 // The console's sightFix 0 leaves them as the game has them.
 //
+// The angles: measured in the harness against the middle of its frame, then all raised by 0.11 degrees, by which a
+// Windows screenshot of the M1 Carbine showed them short (its post 11.3 of 2557 pixels right of the middle untouched,
+// 7.0 with 0.07 degrees: 61 pixels a degree). The console's sightYaw adds to the gun in hand's, to find a better one.
+//
 // Each gun is turned back by the angle measured for it (magnified 24 times in the harness, the front sight against
 // the middle of the frame), or by the usual one where it has not been measured, by how far the player has aimed (the
 // fraction at 0x9725D8).
@@ -30,11 +34,11 @@ struct Sight {
     const char* weapon;  // the definition's name (+8)
     float yaw;           // degrees to the left
 };
-constexpr float kUsual = 0.10f;  // for a gun not measured
+constexpr float kUsual = 0.21f;  // for a gun not measured
 constexpr Sight kSights[] = {
-    {"m1carbine", 0.07f},
-    {"carcano", 0.17f},
-    {"breda_lmg", 0.08f},
+    {"m1carbine", 0.18f},
+    {"carcano", 0.28f},
+    {"breda_lmg", 0.19f},
 };
 
 // the turn for the weapon in hand
@@ -49,7 +53,7 @@ float Yaw() {
     uint32_t name = def ? R32(def + 8) : 0;
     if (!name) return yaw;
     // a gun aimed through its own sights: one that aims (aimDownSight, +0x6DC) with no scope picture over the screen
-    // (adsOverlayShader, +0x634). Every one of them sits to the right (the three measured: 0.07 to 0.17 degrees), so
+    // (adsOverlayShader, +0x634). Every one of them sits to the right (the three measured: 0.18 to 0.28 degrees), so
     // one not measured yet gets what is usual
     uint32_t scope = R32(def + 0x634);
     bool scoped = scope >= 0x10000 && mem::IsCommitted(scope) && kernel::G<uint8_t>(scope) != 0;
@@ -71,5 +75,5 @@ X86_FUNC(sub_00285AF0) {
     __imp__sub_00285AF0(ctx, base);
     X86HostFp host_fp;
     float aimed = G<float>(kAimed);
-    if (aimed > 0 && game::g_sight_fix) G<float>(angles + 4) += aimed * Yaw();
+    if (aimed > 0 && game::g_sight_fix) G<float>(angles + 4) += aimed * (Yaw() + game::g_sight_yaw);
 }
