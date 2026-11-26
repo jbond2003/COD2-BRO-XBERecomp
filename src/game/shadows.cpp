@@ -284,8 +284,8 @@ void VehicleShadow(X86Context& ctx, uint8_t*) {
 // [ebp+0x1C], its matrix [ebp+0x10], the place at +0x30). A body that has sunk into the ground or fallen through it
 // lies under the surface, and along the sun its shadow came up through the ground well away from anything (his
 // picture, The Great Crusade: a soldier's shadow alone on the sand). With ground over it, from 40 units above its
-// place up to 300, and no floor right under it (a body in a house has both), it casts none. Asked a few times a
-// second for each, by traces.
+// place up to 300, and no floor under it down to 120 below its place (a body in a house has both), it casts none.
+// Asked a few times a second for each, by traces.
 void BuriedShadow(X86Context& ctx, uint8_t*) {
     if (!game::Opt().sun_shadows && !game::Opt().shadow_distance) return;
     struct Known {
@@ -314,7 +314,7 @@ void BuriedShadow(X86Context& ctx, uint8_t*) {
         bool buried = part > 0.0f && part < 1.0f;
         if (buried) {
             // under a roof it has a floor right under it and is not buried: a body in a house keeps its shadow
-            constexpr float kFloor = 70.0f;
+            constexpr float kFloor = 160.0f;
             G<float>(start + 8) = place[2] + kOver, G<float>(end + 8) = place[2] + kOver - kFloor;
             W32(result + 0x20, 0x3F800000);
             ctx.eax = 0x11, ctx.ecx = end;
