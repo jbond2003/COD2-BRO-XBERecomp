@@ -2524,6 +2524,30 @@ X86_FUNC(sub_0031FC10) {
 
 X86_EXTERN_FUNC(__imp__sub_0030F900);
 X86_EXTERN_FUNC(__imp__sub_00328E90);
+X86_EXTERN_FUNC(__imp__sub_003145C0);
+
+// The title screen's draw (vtable 0x8297F0 slot +0x28, ecx the screen). Its picture, the squad with the logo, is one
+// 640 by 480 piece of its panel ([+0x34]: pieces, count; a piece's four corners at +0xC0, 0x14 bytes each, x first),
+// and the painting is not centred in it: the sergeant and the logo's "OF" stand some 20 and 38 units left of the
+// middle. The picture is drawn that much to the right (his ask), between the two.
+X86_FUNC(sub_003145C0) {
+    constexpr float kTitleShift = 28.0f;
+    uint32_t panel = R32(ctx.ecx) == 0x8297F0 ? R32(ctx.ecx + 0x34) : 0;
+    uint32_t pieces = panel ? R32(panel) : 0, count = panel ? R32(panel + 4) : 0;
+    for (uint32_t i = 0; pieces && i < count && i < 8; i++) {
+        uint32_t piece = R32(pieces + i * 4);
+        if (!piece || R32(piece) != 0x82A2C0) continue;
+        uint32_t corners = piece + 0xC0;
+        float y0 = 1e9f, y1 = -1e9f;
+        for (uint32_t c = 0; c < 4; c++) y0 = std::min(y0, RF(corners + c * 0x14 + 4)), y1 = std::max(y1, RF(corners + c * 0x14 + 4));
+        if (y0 > 1.0f || y1 < 479.0f) continue;  // the whole frame's picture only
+        for (uint32_t c = 0; c < 4; c++) {
+            float x = RF(corners + c * 0x14);
+            kernel::G<float>(corners + c * 0x14) = (x < 320.0f ? 0.0f : 640.0f) + kTitleShift;
+        }
+    }
+    __imp__sub_003145C0(ctx, base);
+}
 
 // the main menu's tick (edi screen, the selected line on the stack): shows "check0<n+1>", the box printed beside line
 // n. The lines are not drawn in the items' order (MainMenuLines), so a line's tick is its place's
