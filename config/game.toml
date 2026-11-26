@@ -453,3 +453,9 @@ call = "SunShadowCamera"
 [[hook]]
 at = 0x00246F67
 call = "VehicleShadow"
+
+# game/shadows.cpp: R_AddDObjSurfaces, a thing that is not animated is about to cast a shadow: not when it lies under
+# the ground
+[[hook]]
+at = 0x00244415
+call = "BuriedShadow"

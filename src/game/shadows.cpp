@@ -34,6 +34,7 @@ void RigidShadowMatrix(X86Context& ctx, uint8_t*) {
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <unordered_map>
 
 #include "common/options.h"
 
@@ -277,6 +278,61 @@ X86_FUNC(sub_000704F0) {
 // shadows falling away from the sun, or reaching further than the game's own, a vehicle casts one like a soldier.
 void VehicleShadow(X86Context& ctx, uint8_t*) {
     if (game::Opt().sun_shadows || game::Opt().shadow_distance) W32(ctx.esp + 0x14, 1);
+}
+
+// A thing that is not animated and about to cast a shadow (R_AddDObjSurfaces at 0x244415: the cast flag is the byte at
+// [ebp+0x1C], its matrix [ebp+0x10], the place at +0x30). A body that has sunk into the ground or fallen through it
+// lies under the surface, and along the sun its shadow came up through the ground well away from anything (his
+// picture, The Great Crusade: a soldier's shadow alone on the sand). With ground over it, from 40 units above its
+// place up to 300, and no floor right under it (a body in a house has both), it casts none. Asked a few times a
+// second for each, by traces.
+void BuriedShadow(X86Context& ctx, uint8_t*) {
+    if (!game::Opt().sun_shadows && !game::Opt().shadow_distance) return;
+    struct Known {
+        int64_t at_ms;
+        bool buried;
+    };
+    static std::unordered_map<uint32_t, Known> known;
+    uint32_t dobj = R32(ctx.ebp + 8), matrix = R32(ctx.ebp + 0x10);
+    if (!dobj || !matrix) return;
+    int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(g_sun.at.time_since_epoch()).count();
+    if (known.size() > 2048) known.clear();
+    Known& k = known[dobj];
+    if (k.at_ms == 0 || now - k.at_ms > 300 || now < k.at_ms) {
+        constexpr float kOver = 40.0f, kHigh = 300.0f;
+        float place[3] = {G<float>(matrix + 0x30), G<float>(matrix + 0x34), G<float>(matrix + 0x38)};
+        X86Context kept = ctx;
+        uint32_t top = R32(ctx.esp);
+        ctx.esp -= 0x80;
+        uint32_t start = ctx.esp, end = ctx.esp + 0x10, zero = ctx.esp + 0x20, result = ctx.esp + 0x30;
+        for (int i = 0; i < 3; i++) G<float>(start + i * 4) = G<float>(end + i * 4) = place[i], W32(zero + i * 4, 0);
+        G<float>(start + 8) = place[2] + kHigh, G<float>(end + 8) = place[2] + kOver;
+        W32(result + 0x20, 0x3F800000);
+        ctx.eax = 0x11, ctx.ecx = end;
+        CallGuest(ctx, kTracePoint, {result, start, zero, zero, R32(kClientNum)});
+        float part = G<float>(result + 0x20);
+        bool buried = part > 0.0f && part < 1.0f;
+        if (buried) {
+            // under a roof it has a floor right under it and is not buried: a body in a house keeps its shadow
+            constexpr float kFloor = 70.0f;
+            G<float>(start + 8) = place[2] + kOver, G<float>(end + 8) = place[2] + kOver - kFloor;
+            W32(result + 0x20, 0x3F800000);
+            ctx.eax = 0x11, ctx.ecx = end;
+            CallGuest(ctx, kTracePoint, {result, start, zero, zero, R32(kClientNum)});
+            float floor = G<float>(result + 0x20);
+            if (floor > 0.0f && floor < 1.0f) buried = false;
+        }
+        ctx = kept;
+        W32(ctx.esp, top);
+        static int told = 0;
+        if (buried && !k.buried && told < 20) {
+            told++;
+            LOGR("shadows: a thing at %.0f %.0f %.0f has ground %.0f over it, it casts none", place[0], place[1], place[2],
+                 kHigh - part * (kHigh - kOver));
+        }
+        k = {now ? now : 1, buried};
+    }
+    if (k.buried) *static_cast<uint8_t*>(HostPtr(ctx.ebp + 0x1C)) = 0;
 }
 
 // a level's script sets the picture's width (GScr slot 129)
