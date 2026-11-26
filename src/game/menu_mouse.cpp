@@ -105,18 +105,17 @@ int64_t NowMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
-// The title screen is never seen (TitleScreen). Asked at each draw and not only by the pad's poll: on Windows it was
-// still there for a second after START, flickering, while the game moved on to the next screen. So its own draw is
-// skipped (sub_003145C0), and while it is the front end's screen no widget is drawn at all.
+// The title screen (TitleScreen): drawn for its picture with the window black, the first time only
 std::atomic<int64_t> g_title_drawn_ms{0};  // last drawn on purpose, for its picture to be saved, the window black
 
 bool TitleWanted() { return NowMs() - g_title_drawn_ms.load(std::memory_order_relaxed) <= 250; }
 
-bool TitleHidden() {
+// the front end's screen is the title screen
+bool TitleUp() {
     uint32_t fe = R32(0x95F8F8), screens = fe ? R32(fe + 4) : 0;
     int32_t active = fe ? int32_t(R32(fe + 0xC)) : -1;
     uint32_t menu = screens && active >= 0 && active < 64 ? R32(screens + uint32_t(active) * 4) : 0;
-    return menu && R32(menu) == 0x8297F0 && !TitleWanted();
+    return menu && R32(menu) == 0x8297F0;
 }
 bool g_cursor = false;
 
@@ -1982,12 +1981,12 @@ void PlayMoveSound(X86Context& ctx, uint32_t menu) {
     ctx.ecx = ecx;
 }
 
-// The title screen (the squad, the logo and "Press START", vtable 0x8297F0) is not a screen any more (his ask): START
-// is pressed for it in the poll that finds it up, as a player would at once, so the game leaves it by its own way
-// and nothing of its is skipped but the drawing (TitleHidden, sub_003145C0). Its picture is the boot splash instead
-// (app::kGame.splash, a file beside the exe that the SDK shows while the game starts). That file is the player's
-// own, made once: while there is none the title screen is drawn until it has faded in, the window showing only its
-// art (game::UpdateFrameBand), and the frame's rows with its art (94 to 384) are saved as the splash.
+// The title screen (the squad, the logo and "Press START", vtable 0x8297F0) is shown as the game has it, its prompt
+// saying what the device in use does (sub_00321160): a click anywhere taps A, and A starts as START does
+// (OptionsPad). Its picture is also the boot splash (app::kGame.splash, a file beside the exe that the SDK shows while
+// the game starts). That file is the player's own, made once: while there is none the title screen is drawn until it
+// has faded in, with the window kept black (game::UpdateFrameBand), and the frame's rows with its art (94 to 384) are
+// saved as the splash.
 constexpr uint32_t kTitleVtable = 0x8297F0;
 constexpr float kTitleTop = 92.0f / 480.0f, kTitleBottom = 386.0f / 480.0f;
 constexpr uint32_t kSplashWidth = 960;
@@ -1995,8 +1994,8 @@ constexpr uint32_t kSplashWidth = 960;
 void TitleScreen() {
     enum { kNew, kFading, kSaving, kLeave };
     static int state = kNew;
-    static int64_t since = 0, tapped = 0;
-    constexpr int64_t kFadeMs = 1500, kSaveMs = 150, kFadeOutMs = 400, kTapMs = 150;
+    static int64_t since = 0;
+    constexpr int64_t kFadeMs = 1500, kSaveMs = 300;
     int64_t now = NowMs();
     if (state == kNew) {
         std::error_code ec;
@@ -2017,25 +2016,8 @@ void TitleScreen() {
         LOGR("title screen: its picture is saved as the boot splash");
         state = kSaving, since = now;
     }
-    // a moment after the save (so the saved frame is the bright one) the picture fades out, and the title is left
-    // once it is black (StartScreenFade, pc_settings.cpp): no cut to the profile screen
-    static bool fading_out = false;
-    if (state == kSaving && !fading_out && now - since >= kSaveMs) {
-        game::StartScreenFade();
-        fading_out = true;
-    }
-    if (state == kSaving && now - since >= kSaveMs + kFadeOutMs) {
-        state = kLeave;
-        // the title's fit goes with it: the profile screen comes up in the black at its own size, not the title's
-        g_title_drawn_ms.store(0, std::memory_order_relaxed);
-    }
-    if (state != kLeave) {
-        g_title_drawn_ms.store(now, std::memory_order_relaxed);
-        return;
-    }
-    if (now - tapped < kTapMs) return;
-    input::MenuTap(0x10);  // START
-    tapped = now;
+    if (state == kSaving && now - since >= kSaveMs) state = kLeave;
+    if (state != kLeave) g_title_drawn_ms.store(now, std::memory_order_relaxed);
 }
 
 void MenuPointer(X86Context& ctx, uint32_t manager) {
@@ -2319,7 +2301,8 @@ void UpdateFrameBand() {
         app::SetFrameBand(kTitleTop, kTitleBottom);
         return;
     }
-    app::SetFrameBand(band ? kBandTop : 0.0f, band ? kBandBottom : 1.0f, kBandSide, kBandStretch);
+    // the title screen keeps its shape whatever the window's: sides left out or bars, never stretched (his ask)
+    app::SetFrameBand(band ? kBandTop : 0.0f, band ? kBandBottom : 1.0f, kBandSide, TitleUp() ? 0.0f : kBandStretch);
 }
 
 bool MenuMouseCursorVisible() { return g_cursor && Frame() - g_pointer_frame <= 4; }
@@ -2336,6 +2319,7 @@ void OptionsPad(input::Pad& pad) {
     bool held_up = (pad.buttons & kUp) || pad.ly > kStick, held_down = (pad.buttons & kDown) || pad.ly < -kStick;
     bool held_a = pad.analog[0] > kPressed, held_b = pad.analog[1] > kPressed;
     GameplayPad(pad);
+    if (held_a && TitleUp() && !TitleWanted()) pad.buttons |= 0x10;  // the title screen: A starts, as START does
     if (uint32_t m = g_pcs.tap_apply) {  // the second page applied: the screen's own Apply and Exit
         if (Frame() - g_pcs.tap_frame > 120 || ActiveScreen(g_pcs.tap_layout->manager) != m) {
             g_pcs.tap_apply = 0;
@@ -2472,6 +2456,11 @@ uint32_t ClickToStart() {
     return str;
 }
 
+uint32_t PressAToStart() {
+    static uint32_t str = GameString("Press A to start");
+    return str;
+}
+
 bool StartPrompt() {
     uint32_t mode = game::Opt().button_prompts;
     return mode == 1 || (mode != 2 && input::KeyboardActive());
@@ -2516,7 +2505,7 @@ X86_FUNC(sub_00316DD0) {
     BarToTheBottom(ctx.ecx);
     PcScreenTakeBeforeDraw(ctx);
     PcScreenDrawMarks(ctx, ctx.ecx);
-    if (PcScreenHidesPicture(ctx.ecx) || HudHidden() || TitleHidden()) {
+    if (PcScreenHidesPicture(ctx.ecx) || HudHidden()) {
         ctx.esp += 4;  // its ret, skipped with it
         return;
     }
@@ -2534,7 +2523,6 @@ X86_FUNC(sub_0031FC10) {
 }
 
 X86_EXTERN_FUNC(__imp__sub_0030F900);
-X86_EXTERN_FUNC(__imp__sub_003145C0);
 X86_EXTERN_FUNC(__imp__sub_00328E90);
 
 // the main menu's tick (edi screen, the selected line on the stack): shows "check0<n+1>", the box printed beside line
@@ -2548,16 +2536,6 @@ X86_FUNC(sub_00328E90) {
     __imp__sub_00328E90(ctx, base);
 }
 
-// the title screen's draw (vtable 0x8297F0 slot +0x28, ecx the screen: its pictures, [+0x34], by 0x310010): not drawn,
-// whether it is the front end's screen or on its way out behind the next one
-X86_FUNC(sub_003145C0) {
-    if (R32(ctx.ecx) == 0x8297F0 && !TitleWanted()) {
-        ctx.esp += 4;  // its ret
-        return;
-    }
-    __imp__sub_003145C0(ctx, base);
-}
-
 // a button prompt's draw (ecx prompt, vtable 0x82A450: a button picture and words, as "Press A to select"). The
 // front end's top right one is Y and "Xbox Live" (made at 0x32A660, at 603,52 in 640x480): not drawn
 X86_FUNC(sub_0030F900) {
@@ -2567,7 +2545,7 @@ X86_FUNC(sub_0030F900) {
         return;
     }
     bool live_corner = R32(prompt) == 0x82A450 && RF(prompt + 0x2C) > 560.0f && RF(prompt + 0x30) < 80.0f;
-    if (live_corner || TitleHidden()) {
+    if (live_corner) {
         if (live_corner) g_live_frame = Frame();
         ctx.esp += 4;  // the draw's own ret, skipped with it
         return;
@@ -2615,9 +2593,9 @@ X86_FUNC(sub_00321160) {
     uint32_t drawn_text = R32(widget + 0x1C);
     uint32_t button = R32(widget + 0x54);
     bool live_corner = button && SameText(button, "ybutton") && RF(widget + 0x30) < 80;
-    // (nor "Press START" on the title screen's picture)
-    bool press_start = drawn_text && R32(kFrontEnd) && SameText(drawn_text, "Press START");
-    if (live_corner || press_start || TitleHidden() || (drawn_text && XboxLiveText(drawn_text)) || HudHidden()) {
+    // (nor "Press START" on the title screen's picture: the splash)
+    bool press_start = drawn_text && TitleWanted() && SameText(drawn_text, "Press START");
+    if (live_corner || press_start || (drawn_text && XboxLiveText(drawn_text)) || HudHidden()) {
         ctx.esp += 4;  // the draw's own ret, skipped with it
         return;
     }
@@ -2627,9 +2605,9 @@ X86_FUNC(sub_00321160) {
         ctx.esp += 4;  // the draw's own ret, skipped with it
         return;
     }
-    // the title screen's "Press START" says what the mouse does while the keyboard and mouse are in use
+    // the title screen's "Press START" says what the device in use does: a click, or A
     uint32_t text = R32(widget + 0x1C);
-    uint32_t shown = text && StartPrompt() && SameText(text, "Press START") ? ClickToStart() : 0;
+    uint32_t shown = text && SameText(text, "Press START") ? (StartPrompt() ? ClickToStart() : PressAToStart()) : 0;
     if (shown) W32(widget + 0x1C, shown);
     // the Options menu's lines look unselected while PC OPTIONS is, and PC OPTIONS is drawn right after SOUND
     const PcEntry& extra = PcEntryUp(g_exit) && (widget == g_exit.anchor || PcEntryLine(widget, g_exit)) ? g_exit : g_pc;
@@ -2639,11 +2617,25 @@ X86_FUNC(sub_00321160) {
     uint32_t swap = PausePendingSwap(widget);
     if (swap) W32(widget + 0x50, R32(swap + 0x50));
     if (dimmed) W32(widget + 0x50, extra.own_colors ? extra.idle_color : (color & 0xFFFFFF) | kIdleAlpha);
+    // and it fades slowly in and out, in the black under the art (rows 386 to 412, inside the menus' fit)
+    float own_y = RF(widget + 0x30);
+    if (shown) {
+        constexpr double kPeriodMs = 2400.0, kPi = 3.14159265358979;
+        constexpr float kLeast = 0.2f, kTitlePromptDrop = 12.0f;
+        float wave = float(0.5 + 0.5 * std::cos(double(NowMs() % int64_t(kPeriodMs)) * 2.0 * kPi / kPeriodMs));
+        uint32_t alpha = uint32_t(float(color >> 24) * (kLeast + (1.0f - kLeast) * wave));
+        W32(widget + 0x50, (color & 0xFFFFFF) | (alpha << 24));
+        kernel::G<float>(widget + 0x30) = own_y + kTitlePromptDrop;
+    }
     Foot foot = FootBegin(ctx, widget, 0x321160);
     __imp__sub_00321160(ctx, base);
     FootEnd(widget, foot);
     if (dimmed || swap) W32(widget + 0x50, color);
-    if (shown) W32(widget + 0x1C, text);
+    if (shown) {
+        W32(widget + 0x1C, text);
+        W32(widget + 0x50, color);
+        kernel::G<float>(widget + 0x30) = own_y;
+    }
     if (anchor) {
         ctx.ecx = extra.widget;
         kernel::CallGuest(ctx, 0x321160, {});
