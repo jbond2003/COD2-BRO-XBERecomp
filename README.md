@@ -40,7 +40,7 @@ Direct3D 12, and adds a few things of its own:
   bindings) and cheats.
 - More lines in the game's Gameplay menu, and in the pause menu's options: controller aim assist, tutorial hints,
   and hiding the HUD.
-- The title screen's prompt follows your device ("Click anywhere to start" or "Press A to start") and fades in and
+- The title screen's prompt follows your device ("Click anywhere to start", or "Press", the A button's picture, "to start") and fades in and
   out; its picture is also the splash shown while the game loads (made from your own game the first time you start it).
 - A Modern controller layout beside the game's four.
 - Typing your profile name on the keyboard, on a QWERTY typewriter.

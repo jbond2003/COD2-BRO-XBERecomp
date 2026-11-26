@@ -2471,6 +2471,72 @@ bool StartPrompt() {
 X86_EXTERN_FUNC(__imp__sub_00321160);
 X86_EXTERN_FUNC(__imp__sub_00316DD0);
 
+// The title screen's prompt for a controller: "Press", the A button's picture and "to start". A plain text has no
+// pictures in it. The button prompts draw theirs as letters of font 2 (0x320CE0: '"' is A, and src/game/prompts.cpp
+// gives that letter the picture of the buttons in use), at that font's own size, in white, their middle on the line's.
+// So the text (ecx, placed and coloured for this frame) is drawn three times: the words each side, and the letter.
+// False when the parts cannot be measured: nothing is drawn.
+bool TitlePadPrompt(X86Context& ctx, uint32_t widget) {
+    static uint32_t press = GameString("Press"), to_start = GameString("to start");
+    static uint32_t whole = GameString("Press to start"), button = GameString("\"");
+    constexpr uint32_t kButtonFont = 2;
+    constexpr float kLeastGap = 3.0f, kMostGap = 10.0f;
+    if (!press || !to_start || !whole || !button) return false;
+    uint32_t text = R32(widget + 0x1C), font = R32(widget + 0x18), color = R32(widget + 0x50);
+    float x = RF(widget + 0x2C), y = RF(widget + 0x30), sx = RF(widget + 0x38), sy = RF(widget + 0x3C);
+    uint8_t align = R8(widget + 0x5C);
+    auto size = [&](uint32_t str, float& w, float& h) {
+        W32(widget + 0x1C, str);
+        w = WidgetMethod(ctx, kWidgetWidth, widget), h = WidgetMethod(ctx, kWidgetHeight, widget);
+        return std::isfinite(w) && std::isfinite(h) && w > 0 && h > 0;
+    };
+    auto as_button = [&](bool on) {
+        W32(widget + 0x18, on ? kButtonFont : font);
+        kernel::G<float>(widget + 0x38) = on ? 1.0f : sx;
+        kernel::G<float>(widget + 0x3C) = on ? 1.0f : sy;
+        W32(widget + 0x50, on ? color | 0xFFFFFF : color);
+    };
+    float w_press = 0, w_start = 0, w_whole = 0, w_button = 0, h = 0, h_button = 0, h_other = 0;
+    bool ok = size(press, w_press, h) && size(to_start, w_start, h_other) && size(whole, w_whole, h_other);
+    as_button(true);
+    ok = ok && size(button, w_button, h_button);
+    as_button(false);
+    if (ok) {
+        float gap = std::clamp(w_whole - w_press - w_start, kLeastGap, kMostGap);
+        float total = w_press + gap + w_button + gap + w_start;
+        float left = x - ((align & 0x20) ? total : (align & 0x10) ? 0.0f : total / 2);
+        // a part's place for the widget's own alignment, its left edge at `at`
+        auto place = [&](float at, float w) { return at + ((align & 0x20) ? w : (align & 0x10) ? 0.0f : w / 2); };
+        auto draw = [&](uint32_t str, float at, float w, float py) {
+            W32(widget + 0x1C, str);
+            kernel::G<float>(widget + 0x2C) = place(at, w);
+            kernel::G<float>(widget + 0x30) = py;
+            ctx.ecx = widget;
+            bool was = g_foot_draw;
+            g_foot_draw = true;  // straight to the game's draw
+            kernel::CallGuest(ctx, 0x321160, {});
+            g_foot_draw = was;
+        };
+        draw(press, left, w_press, y);
+        draw(to_start, left + w_press + gap + w_button + gap, w_start, y);
+        float lift = (align & 0x80) ? (h_button - h) / 2 : (align & 0x40) ? (h - h_button) / 2 : 0.0f;
+        as_button(true);
+        draw(button, left + w_press + gap, w_button, y + lift);
+        as_button(false);
+        static bool told = false;
+        if (!told) {
+            told = true;
+            LOGR("title screen: the start prompt has the button's picture (text %.0f by %.0f, button %.0f by %.0f)",
+                 double(w_whole), double(h), double(w_button), double(h_button));
+        }
+    }
+    W32(widget + 0x1C, text);
+    kernel::G<float>(widget + 0x2C) = x;
+    kernel::G<float>(widget + 0x30) = y;
+    ctx.ecx = widget;
+    return ok;
+}
+
 // Hide the HUD (the Gameplay menu): in a level with no menu up, the HUD's pictures and texts are not drawn. (The
 // crosshair is left out in src/game/pc_settings.cpp; a mission's title card and the subtitles stay.)
 bool HudHidden() {
@@ -2627,9 +2693,14 @@ X86_FUNC(sub_00321160) {
         W32(widget + 0x50, (color & 0xFFFFFF) | (alpha << 24));
         kernel::G<float>(widget + 0x30) = own_y + kTitlePromptDrop;
     }
-    Foot foot = FootBegin(ctx, widget, 0x321160);
-    __imp__sub_00321160(ctx, base);
-    FootEnd(widget, foot);
+    // (on a controller the button's picture stands for its letter)
+    if (shown && shown == PressAToStart() && TitlePadPrompt(ctx, widget)) {
+        ctx.esp += 4;  // the draw's own ret, skipped with it
+    } else {
+        Foot foot = FootBegin(ctx, widget, 0x321160);
+        __imp__sub_00321160(ctx, base);
+        FootEnd(widget, foot);
+    }
     if (dimmed || swap) W32(widget + 0x50, color);
     if (shown) {
         W32(widget + 0x1C, text);

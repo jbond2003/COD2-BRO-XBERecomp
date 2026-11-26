@@ -26,7 +26,7 @@ constexpr float kWorldFar = 500.0f;  // a scene that sees less far is not the wo
 constexpr float kGunFar = 32.0f;     // nor is one that sees less far than this the gun's
 constexpr float kGunRadius = 3.0f;   // the gun and the hands are shaded from this near: a finger is about one unit thick
 constexpr float kRadius = 28.0f;      // how far a surface is shaded from: the game's units are about an inch
-constexpr float kStrength = 1.61f;    // 1.4 and 15% more (his asks): times the shade the shaders work out; grass and other thin things are left unshaded by the shader (Thin)
+constexpr float kStrength = 1.69f;    // 1.4, 15% more and 5% more (his asks): times the shade the shaders work out; grass and other thin things are left unshaded by the shader (Thin)
 
 }  // namespace
 
