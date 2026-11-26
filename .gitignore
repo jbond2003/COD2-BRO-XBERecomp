@@ -27,3 +27,6 @@ settings.toml
 
 # Local temporary folder
 .local
+
+# a player's own helper script
+/update.bat
