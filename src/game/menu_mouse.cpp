@@ -2621,7 +2621,7 @@ X86_FUNC(sub_00321160) {
     float own_y = RF(widget + 0x30);
     if (shown) {
         constexpr double kPeriodMs = 2400.0, kPi = 3.14159265358979;
-        constexpr float kLeast = 0.2f, kTitlePromptDrop = 12.0f;
+        constexpr float kLeast = 0.2f, kTitlePromptDrop = 8.0f;  // on the version stamp's line
         float wave = float(0.5 + 0.5 * std::cos(double(NowMs() % int64_t(kPeriodMs)) * 2.0 * kPi / kPeriodMs));
         uint32_t alpha = uint32_t(float(color >> 24) * (kLeast + (1.0f - kLeast) * wave));
         W32(widget + 0x50, (color & 0xFFFFFF) | (alpha << 24));
