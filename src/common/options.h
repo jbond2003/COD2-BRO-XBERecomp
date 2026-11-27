@@ -78,5 +78,8 @@ inline bool g_sight_fix = true;
 // the console's sightYaw (not saved): degrees more to the left for the gun in hand, to find its angle
 inline float g_sight_yaw = 0;
 inline float g_sight_pitch = 0;  // sightPitch: degrees more down
+// the console's r_shadowCache (not saved): the level's part of the shadow picture is kept between frames
+// (src/game/shadows.cpp), 0 to draw all of it every frame
+inline bool g_shadow_cache = true;
 
 }  // namespace game

@@ -72,6 +72,26 @@ float g_own_lift = 0;  // the picture's camera over the eye as the game has it, 
 float g_down = 500;  // how deep the picture is laid when it looks straight down: to the ground and under it
 bool g_turned = false;  // this frame's picture looks along the sun
 
+// The picture's camera held between frames (SunShadowCamera): where it is along its look, across and up, how wide
+// and deep its box, and the number the renderer keeps the level's part of its picture by.
+struct {
+    bool set = false;
+    float look[3] = {}, across[3] = {}, up[3] = {};
+    float at[3] = {};  // its place along across, up and look
+    float width = 0, laid = 0;
+    int id = 0;
+    std::chrono::steady_clock::time_point since;
+} g_held;
+int g_ids = 0;                    // the last number given
+gpu::SunKeep g_keep = gpu::kSunWhole;  // what this frame's draws into the picture are
+bool g_still_last = false;        // the frame before drew the level's part
+uint32_t g_lost_seen = 0;         // gpu::g_sun_static_lost as last read
+float g_want[3] = {};             // where this frame's camera would be were it not held
+uint32_t g_frame = 0;             // counted by the frame's world (0x246FA0)
+uint32_t g_read_frame = 0;        // the frame the renderer's picture was last said to be read in (SunDepth)
+bool g_read_set = false;
+bool g_level_adding = false;      // LevelInPicture is adding the level's meshes
+
 // Shadow Distance (Graphics): the picture's width times this
 float Farther() {
     uint32_t d = game::Opt().shadow_distance;
@@ -122,7 +142,8 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
         ctx = kept;
         W32(ctx.esp, top);
     }
-    if (grid != g_sun.grid) g_sun = {}, g_sun.grid = grid;
+    if (grid != g_sun.grid) g_sun = {}, g_sun.grid = grid, g_held.set = false;
+    g_keep = gpu::kSunWhole;
     // the width for the frames to come (this one has used it already), and the game's own depth unless leaning
     float used = G<float>(kShadowWidth);  // what this frame's camera was placed by
     if (g_own_width == 0) g_own_width = used;
@@ -138,6 +159,7 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
     float passed = std::clamp(std::chrono::duration<float>(now - g_sun.at).count(), 0.0f, 0.1f);
     g_sun.at = now;
     g_sun.lean += std::clamp((lit ? 1.0f : 0.0f) - g_sun.lean, -passed * 1.5f, passed * 1.5f);
+    if (g_sun.lean > 0.9999f) g_sun.lean = 1.0f;
     // How high the eye is over the ground (a soldier's 60 units, a tank's camera a few hundred, more over a slope):
     // a trace straight down from it, eased so that a wall's top passing under the eye does not make the shadows jump.
     {
@@ -201,6 +223,12 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
     lx /= unit, ly /= unit, lz /= unit;
     float* cam = &G<float>(kShadowCamera);
     float ux = cam[4], uy = cam[5];  // the picture's up: level, by the view
+    // The level's part of the picture (its houses, trees, walls: LevelInPicture) is some hundreds of draws and does
+    // not move. With the picture's depth kept by the renderer, the camera is held where it is while the player stays
+    // near (below), the level's part is drawn once for it and the renderer keeps that between frames. For that the
+    // picture must not turn with the view: its up is level along the light instead.
+    bool keep = game::g_shadow_cache && lit && g_sun.lean >= 1.0f && g_read_set && g_read_frame + 1 == g_frame &&
+                gpu::g_sun_depth_ok.load(std::memory_order_relaxed);
     // The game puts the camera, the picture's middle, ahead of the eye: kAhead of the width along its up and as far
     // back along its across, which is the way the player looks. The eye is then just inside the picture's corner.
     // A turned picture covers the ground as a slanted shape that the eye is not always in (near shadows went as the
@@ -213,15 +241,17 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
     if (!(flen > 0.001f)) return;
     float pull = (kTurnedAhead - game_ahead) * g_sun.lean * used / flen;
     cam[12] += fx * pull, cam[13] += fy * pull;
+    if (keep) {
+        float flat = std::sqrt(lx * lx + ly * ly);
+        ux = 0, uy = 1;
+        if (flat > 0.01f) ux = lx / flat, uy = ly / flat;
+    }
     // across = up x look, up = look x across: as the game builds them for a look straight down
     float ax = uy * lz, ay = -ux * lz, az = ux * ly - uy * lx;
     float len = std::sqrt(ax * ax + ay * ay + az * az);
     if (!(len > 0.001f)) return;
     ax /= len, ay /= len, az /= len;
     float vx = ly * az - lz * ay, vy = lz * ax - lx * az, vz = lx * ay - ly * ax;
-    cam[0] = ax, cam[1] = ay, cam[2] = az, cam[3] = 0;
-    cam[4] = vx, cam[5] = vy, cam[6] = vz, cam[7] = vx;
-    cam[8] = lx, cam[9] = ly, cam[10] = lz, cam[11] = 0;
     // The picture is laid on the world as a box from the camera along its look. Level ground under a turned
     // picture is nearer the camera at the edge towards the sun and further at the other, by "edge" along the look: so
     // the camera goes back along the light from the ground under the picture's middle by that much and the eye's
@@ -235,6 +265,58 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
     cam[12] -= lx * back, cam[13] -= ly * back;
     cam[14] += kOver - lz * edge;
     g_laid = back + edge + kUnder / -lz;
+    for (int i = 0; i < 3; i++) g_want[i] = cam[12 + i];
+    float look[3] = {lx, ly, lz}, across[3] = {ax, ay, az}, up[3] = {vx, vy, vz};
+    if (!keep) {
+        g_held.set = false;
+        g_still_last = false;
+    } else {
+        // The held camera does for this frame while it looks the same way over the same width, the place the camera
+        // would have now is within kHeldSlack of the width from it across and up (the shadows end that much inside
+        // the picture, SunDepth, so the square they end at follows the player though the picture stays), and the box
+        // that would be laid now is inside the held one along the look. Else, and once in kHeldLongest whatever (so
+        // nothing a level changes in itself stays wrong in the kept part for longer), the camera is put where it
+        // would be now, on whole texels of the picture so that the level's shadows do not shift by a part of one, and
+        // this frame draws the level's part for it: only that, the frame's world reading the picture the last frame
+        // left (SunDepth). No two such frames in a row, so what moves is in the picture at least every other frame.
+        constexpr float kHeldSlack = 0.06f, kHeldDeep = 250.0f, kHeldStep = 64.0f;
+        constexpr auto kHeldLongest = std::chrono::seconds(1);
+        auto along = [&](const float* axis) { return cam[12] * axis[0] + cam[13] * axis[1] + cam[14] * axis[2]; };
+        bool same = g_held.set && g_held.width == used &&
+                    g_held.look[0] * lx + g_held.look[1] * ly + g_held.look[2] * lz > 0.999999f;
+        float at[3] = {along(same ? g_held.across : across), along(same ? g_held.up : up),
+                       along(same ? g_held.look : look)};
+        float slack = kHeldSlack * used;
+        bool inside = same && std::fabs(at[0] - g_held.at[0]) <= slack && std::fabs(at[1] - g_held.at[1]) <= slack &&
+                      at[2] >= g_held.at[2] && at[2] + g_laid <= g_held.at[2] + g_held.laid;
+        uint32_t lost = gpu::g_sun_static_lost.load(std::memory_order_relaxed);
+        bool gone = lost != g_lost_seen;  // the renderer no longer has the kept part
+        g_lost_seen = lost;
+        bool due = !inside || now - g_held.since > kHeldLongest;
+        bool still = !same || gone || (due && !g_still_last);
+        if (still) {
+            float step = used / kHeldStep;  // 64 texels of a picture 4096 across, whole texels of a smaller one
+            g_held.set = true;
+            g_held.width = used;
+            for (int i = 0; i < 3; i++) g_held.look[i] = look[i], g_held.across[i] = across[i], g_held.up[i] = up[i];
+            g_held.at[0] = std::round(at[0] / step) * step;
+            g_held.at[1] = std::round(at[1] / step) * step;
+            g_held.at[2] = std::floor((at[2] - kHeldDeep) / kHeldStep) * kHeldStep;
+            g_held.laid = std::ceil((at[2] + g_laid + kHeldDeep - g_held.at[2]) / kHeldStep) * kHeldStep;
+            g_held.id = ++g_ids;
+            g_held.since = now;
+        }
+        g_still_last = still;
+        g_keep = still ? gpu::kSunStill : gpu::kSunMoving;
+        for (int i = 0; i < 3; i++) {
+            look[i] = g_held.look[i], across[i] = g_held.across[i], up[i] = g_held.up[i];
+            cam[12 + i] = across[i] * g_held.at[0] + up[i] * g_held.at[1] + look[i] * g_held.at[2];
+        }
+        g_laid = g_held.laid;
+    }
+    cam[0] = across[0], cam[1] = across[1], cam[2] = across[2], cam[3] = 0;
+    cam[4] = up[0], cam[5] = up[1], cam[6] = up[2], cam[7] = up[0];
+    cam[8] = look[0], cam[9] = look[1], cam[10] = look[2], cam[11] = 0;
     G<float>(kShadowDepth) = g_laid;
 }
 
@@ -270,11 +352,13 @@ constexpr float kSunWeight = 0.3f;   // what the world's shaders weigh the pictu
 constexpr float kSunBias = 1.5f;     // units a surface may lie behind what the picture holds and still be lit
 constexpr float kSunSlope = 4.0f;    // the steepest a surface is taken to slant away from the sun, depth per unit
 
-// this frame's picture from a point of the world: u, v and depth, rows of four (x, y, z, 1), for the shade
-// (SunForOcclusion); g_sun_rows_set while they are this frame's
+// The picture the renderer has for the world to read, from a point of the world: u, v and depth, rows of four
+// (x, y, z, 1), with its depth's scale and its width. This frame's own, but in a frame that draws only the level's part
+// (gpu::kSunStill) the last frame's, whose camera may have been another. g_sun_rows_set while SunShadows was sent
+// this frame (SunForOcclusion).
 static float g_sun_rows[12];
 static bool g_sun_rows_set = false;
-static float g_sun_p10 = 0;
+static float g_sun_p10 = 0, g_sun_width = 0;
 // the renderer was asked for this frame's picture by its depth (SunDepth): the level's meshes may go in it
 static bool g_sun_sent = false;
 
@@ -304,27 +388,51 @@ void SunDepth(uint32_t projector) {
             int i1 = (i + 1) % 3, i2 = (i + 2) % 3, j1 = (j + 1) % 3, j2 = (j + 2) % 3;
             inv[j][i] = (r[i1][j1] * r[i2][j2] - r[i1][j2] * r[i2][j1]) / det;
         }
-    // depth = g . p + g0 = g . R^-1 (t - r0) + g0
-    double g[3] = {cam[8] * p10, cam[9] * p10, cam[10] * p10};
-    double g0 = -(cam[12] * cam[8] + cam[13] * cam[9] + cam[14] * cam[10]) * p10 + p14;
-    float from[4];
-    double k0 = g0;
-    for (int j = 0; j < 3; j++) {
-        double k = g[0] * inv[0][j] + g[1] * inv[1][j] + g[2] * inv[2][j];
-        from[j] = float(k);
-        k0 -= k * r0[j];
+    // a row of the world, w . p + w0, from the stage's coordinates: w . R^-1 (t - r0) + w0
+    auto staged = [&](const float* w, float* out) {
+        double k0 = w[3];
+        for (int j = 0; j < 3; j++) {
+            double k = w[0] * inv[0][j] + w[1] * inv[1][j] + w[2] * inv[2][j];
+            out[j] = float(k);
+            k0 -= k * r0[j];
+        }
+        out[3] = float(k0);
+    };
+    d3d::SunPicture sun;
+    sun.keep = g_keep;
+    sun.id = g_held.id;
+    if (g_keep == gpu::kSunStill && g_read_set) {
+        // the world reads the picture the last frame left, by that frame's rows
+        staged(g_sun_rows, sun.across);
+        staged(g_sun_rows + 4, sun.up);
+    } else {
+        // this frame's camera: u and v are the projector's own, depth along the camera's look
+        for (int j = 0; j < 2; j++) {
+            for (int i = 0; i < 4; i++) g_sun_rows[j * 4 + i] = m[i * 4 + j];
+        }
+        for (int i = 0; i < 3; i++) g_sun_rows[8 + i] = float(cam[8 + i] * p10);
+        g_sun_rows[11] = float(-(double(cam[12]) * cam[8] + double(cam[13]) * cam[9] + double(cam[14]) * cam[10]) * p10 + p14);
+        g_sun_p10 = p10;
+        g_sun_width = G<float>(kShadowWidth);
     }
-    from[3] = float(k0);
+    staged(g_sun_rows + 8, sun.from);
+    sun.gain = 1.0f / kSunWeight;
+    sun.shade = kSunShade;
+    sun.bias = kSunBias * g_sun_p10;
+    sun.slope = kSunSlope * g_sun_width * g_sun_p10;
+    // The shadows end at the square the picture would cover with its camera where it would be now (g_want), not at the
+    // held picture's own edge, and kHeldEdge of the width inside it, which the held picture always covers.
+    constexpr float kHeldEdge = 0.07f;
     for (int j = 0; j < 2; j++) {
-        for (int i = 0; i < 4; i++) g_sun_rows[j * 4 + i] = m[i * 4 + j];
+        const float* w = g_sun_rows + j * 4;
+        sun.fade[j] = 0.5f - (w[0] * g_want[0] + w[1] * g_want[1] + w[2] * g_want[2] + w[3]);
     }
-    for (int i = 0; i < 3; i++) g_sun_rows[8 + i] = float(g[i]);
-    g_sun_rows[11] = float(g0);
+    sun.fade[2] = g_keep == gpu::kSunWhole ? 0.0f : kHeldEdge;
+    d3d::SunShadows(sun);
     g_sun_rows_set = true;
-    g_sun_p10 = p10;
-    float width = G<float>(kShadowWidth);
-    d3d::SunShadows(from, 1.0f / kSunWeight, kSunShade, kSunBias * p10, kSunSlope * width * p10);
     g_sun_sent = true;
+    g_read_set = true;
+    g_read_frame = g_frame;
 }
 
 // The shade where surfaces meet (ambient_occlusion.cpp) takes away ambient light, which in the sun is a small part of
@@ -528,6 +636,13 @@ X86_FUNC(sub_00014610) {
 
 X86_FUNC(sub_00068850) {
     uint32_t back = R32(ctx.esp), mesh = R32(ctx.esp + 4), matrix = R32(ctx.esp + 8);
+    // A frame that draws only the level's part of the shadow picture, for the renderer to keep (SunShadowCamera):
+    // nothing that moves goes in the picture's scene, or it would stay in the kept part where it stood.
+    if (g_keep == gpu::kSunStill && !g_level_adding && R32(0x95F6CC) && R32(0x90259C) == R32(0x95F6CC)) {
+        ctx.eax = 0;
+        ctx.esp += 4;  // the return
+        return;
+    }
     __imp__sub_00068850(ctx, base);
     if ((back != 0x244668 && back != 0x24539E) || int32_t(ctx.eax) > 0 || !mesh || !matrix) return;
     if (!game::Opt().sun_shadows) return;
@@ -546,6 +661,8 @@ X86_FUNC(sub_00068850) {
 // a picture of silhouettes the ground would shadow all it is laid on. The scene's own test keeps out what lies
 // outside the picture. A mesh with a part whose material has no texture is left out: the picture's draw binds it
 // (0x4D74E) and stops the game without one.
+// Not every frame: while the picture's camera is held (SunShadowCamera) the renderer keeps the level's part from the
+// frame that drew it, and the frames between put only what moves in the picture.
 namespace {
 constexpr uint32_t kShadowScene = 0x95F6CC, kShadowsOn = 0x95E700, kPlainShadows = 0x95F6B4;
 constexpr uint32_t kSelectScene = 0x5E750, kAddMesh = 0x68850, kWorld = 0x95E608;
@@ -597,7 +714,13 @@ X86_FUNC(sub_00246FA0) {
     __imp__sub_00246FA0(ctx, base);
     if (!frame) return;
     // only in a frame whose picture the renderer was told to read by its depth, and once it has said that works
+    // and not in one that draws what moves over the level's part the renderer kept
     bool sent = g_sun_sent;
     g_sun_sent = false;
-    if (sent && gpu::g_sun_depth_ok.load(std::memory_order_relaxed)) LevelInPicture(ctx);
+    g_frame++;
+    if (sent && g_keep != gpu::kSunMoving && gpu::g_sun_depth_ok.load(std::memory_order_relaxed)) {
+        g_level_adding = true;
+        LevelInPicture(ctx);
+        g_level_adding = false;
+    }
 }
