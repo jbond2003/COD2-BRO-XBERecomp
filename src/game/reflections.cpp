@@ -17,6 +17,12 @@
 // last put in a texture), the sky's what the mission's dome averages (src/game/sky.cpp), the sun the one the shadows
 // fall away from (src/game/shadows.cpp). Far off and in the fog the game's own sheet shows.
 //
+// And it answers what falls in it. The game's splashes are effects of its own (apsEffect, files *.bpe:
+// impact_smg_water, grenade_water, artillery_water and the like), made by one function of the game's (the hook at
+// 0x23C1DE, the effect just made: ebx its definition, the name at +0x6C, [esp+0x24] its matrix, the place its fourth
+// row). The places of the last few are sent with the frame and the renderer spreads rings from each, with froth
+// where a grenade or a shell went in.
+//
 // The renderer needs the frame's view before the water is drawn: the hook is in nglRenderSceneTree (0x74330) ahead of
 // the scene's solid list (the call at 0x743F6; src/game/ambient_occlusion.cpp's comes after it). A scene: +0x10 its
 // camera to screen matrix, +0x150 its world to camera matrix (row vectors, the world's up its third row), +0x300 1
@@ -26,6 +32,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cctype>
 #include <cstring>
 #include <filesystem>
 #include <mutex>
@@ -63,6 +70,33 @@ constexpr float kRoughSea = 1.0f, kRoughMoving = 0.75f, kRoughStill = 0.45f;
 constexpr float kGlint = 0.9f;       // the sun's glint: this much of the sky's brightness, at most kMostGlint
 constexpr float kMostGlint = 0.6f;
 constexpr float kEase = 2.0f;        // the colours go to another water's or sky's at this rate a second
+// what fell in the water: how long each kind's rings last, seconds (as the renderer's shader has them: a bullet, a
+// grenade, a shell)
+constexpr float kRingLife[4] = {0, 2.5f, 4.0f, 7.0f};
+
+struct Splash {
+    float at[3] = {};
+    int kind = 0;     // 0 none
+    double born = 0;  // Seconds()
+};
+Splash g_splashes[d3d::kWaterSplashes];  // the game's thread alone
+
+double Seconds() {
+    static const auto start = std::chrono::steady_clock::now();
+    return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+}
+
+// What kind of splash an effect of that name is: 0 none (the bow waves and drips that run on and on are not), 1 a
+// bullet's, 2 a grenade's, 3 a shell's or a bomb's; -1 a water effect this does not know.
+int SplashKind(const char* name) {
+    auto has = [name](const char* part) { return std::strstr(name, part) != nullptr; };
+    if (!has("water")) return 0;
+    if (has("drip") || has("bow") || has("surf") || has("wheel") || has("fall")) return 0;
+    if (has("artillery") || has("mortar") || has("bomb") || has("stuka") || has("explo") || has("flak") || has("mine")) return 3;
+    if (has("grenade")) return 2;
+    if (has("impact")) return 1;
+    return -1;
+}
 
 struct Water {
     uint32_t width = 0, height = 0;
@@ -225,7 +259,32 @@ bool NewWater(const float* fog, d3d::Water& out) {
     float bright = 0.3f * now[4] + 0.59f * now[5] + 0.11f * now[6];
     out.glint = SunForWater(out.sun) ? std::min(bright * kGlint, kMostGlint) : 0.0f;
     if (!(out.glint > 0)) out.sun[0] = out.sun[1] = 0, out.sun[2] = 1;
+    // what fell in it and has not died away
+    double seconds = Seconds();
+    for (int i = 0; i < d3d::kWaterSplashes; i++) {
+        Splash& s = g_splashes[i];
+        float age = float(seconds - s.born);
+        if (s.kind && !(age >= 0 && age < kRingLife[s.kind])) s.kind = 0;
+        for (int k = 0; k < 3; k++) out.splash[i][k] = s.at[k];
+        out.splash[i][3] = s.kind ? age + 16.0f * float(s.kind) : 0.0f;
+    }
     return true;
+}
+
+// the game's thread: a splash at a place of the world. It takes the place of the one nearest its end.
+void AddSplash(const float* at, int kind) {
+    double seconds = Seconds();
+    int slot = 0;
+    float most = -1;
+    for (int i = 0; i < d3d::kWaterSplashes; i++) {
+        const Splash& s = g_splashes[i];
+        float spent = s.kind ? float(seconds - s.born) / kRingLife[s.kind] : 2.0f;
+        if (spent > most) most = spent, slot = i;
+    }
+    Splash& s = g_splashes[slot];
+    for (int k = 0; k < 3; k++) s.at[k] = at[k];
+    s.kind = kind;
+    s.born = seconds;
 }
 
 }  // namespace
@@ -251,8 +310,7 @@ void WaterReflections(X86Context&, uint8_t*) {
     if (sent) return;
     sent = true;
     // the ripples' clock: counted round 64 seconds, which each ripple's turns divide
-    static const auto start = std::chrono::steady_clock::now();
-    double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+    double seconds = game::Seconds();
     // new water, once a picture of the mission's water is known; until then (and where none is) the mirror alone
     d3d::Water whole{};
     float fog[3];
@@ -261,4 +319,36 @@ void WaterReflections(X86Context&, uint8_t*) {
     bool is_new = water >= 2 && game::NewWater(fogged ? fog : nullptr, whole);
     d3d::Reflections(&G<float>(scene + 0x10), &G<float>(scene + 0x150), game::kStrength, float(std::fmod(seconds, 64.0)),
                      is_new ? &whole : nullptr);
+}
+
+// The game has made an effect: ebx its definition, [esp+0x24] the matrix it is placed by. New water keeps the place
+// of one that is a splash.
+void WaterSplash(X86Context& ctx, uint8_t*) {
+    using namespace kernel;
+    if (game::Opt().water < 2) return;
+    uint32_t def = ctx.ebx, matrix = R32(ctx.esp + 0x24);
+    if (!def || !matrix) return;
+    char name[48];
+    size_t n = 0;
+    for (; n + 1 < sizeof(name); n++) {
+        char c = char(G<uint8_t>(def + 0x6C + uint32_t(n)));
+        if (!c) break;
+        name[n] = char(std::tolower(static_cast<unsigned char>(c)));
+    }
+    name[n] = 0;
+    int kind = game::SplashKind(name);
+    if (kind < 0) {
+        // told once each, so that a log names the splashes this does not know yet
+        static std::vector<std::string> told;
+        if (told.size() < 24 && std::find(told.begin(), told.end(), name) == told.end()) {
+            told.emplace_back(name);
+            LOGR("water: the effect %s is not taken for a splash", name);
+        }
+        return;
+    }
+    if (!kind) return;
+    X86HostFp host_fp;
+    float at[3];
+    for (uint32_t k = 0; k < 3; k++) at[k] = G<float>(matrix + 0x30 + k * 4);
+    game::AddSplash(at, kind);
 }

@@ -435,6 +435,12 @@ call = "MirrorEndText"
 at = 0x000743E4
 call = "WaterReflections"
 
+# the game has made an effect (the function round 0x23C1DE, both ways into apsEffect's making at 0x95670): new
+# water spreads rings from the ones that are splashes (src/game/reflections.cpp)
+[[hook]]
+at = 0x0023C1DE
+call = "WaterSplash"
+
 # src/game/ambient_occlusion.cpp: nglRenderSceneTree, a scene's opaque list just drawn and its translucent list
 # (smoke, glass, the glow) not yet
 [[hook]]
