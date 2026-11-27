@@ -275,10 +275,13 @@ constexpr float kSunSlope = 4.0f;    // the steepest a surface is taken to slant
 static float g_sun_rows[12];
 static bool g_sun_rows_set = false;
 static float g_sun_p10 = 0;
+// the renderer was asked for this frame's picture by its depth (SunDepth): the level's meshes may go in it
+static bool g_sun_sent = false;
 
 // projector: the record nglAddShadowProjector made, its matrix (rows x, y, z, 1) at the start
 void SunDepth(uint32_t projector) {
     g_sun_rows_set = false;
+    g_sun_sent = false;
     if (!g_turned || !game::Opt().sun_shadows) return;
     uint32_t scene = R32(0x95F6CC);
     if (!scene) return;
@@ -321,6 +324,7 @@ void SunDepth(uint32_t projector) {
     g_sun_p10 = p10;
     float width = G<float>(kShadowWidth);
     d3d::SunShadows(from, 1.0f / kSunWeight, kSunShade, kSunBias * p10, kSunSlope * width * p10);
+    g_sun_sent = true;
 }
 
 // The shade where surfaces meet (ambient_occlusion.cpp) takes away ambient light, which in the sun is a small part of
@@ -591,5 +595,9 @@ X86_EXTERN_FUNC(__imp__sub_00246FA0);
 X86_FUNC(sub_00246FA0) {
     bool frame = R32(ctx.esp) == 0x247576;
     __imp__sub_00246FA0(ctx, base);
-    if (frame && g_turned && game::Opt().sun_shadows && gpu::g_sun_depth_ok.load(std::memory_order_relaxed)) LevelInPicture(ctx);
+    if (!frame) return;
+    // only in a frame whose picture the renderer was told to read by its depth, and once it has said that works
+    bool sent = g_sun_sent;
+    g_sun_sent = false;
+    if (sent && gpu::g_sun_depth_ok.load(std::memory_order_relaxed)) LevelInPicture(ctx);
 }
