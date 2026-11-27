@@ -163,7 +163,10 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
     gpu::g_boost.store(farther, std::memory_order_relaxed);
     if (g_own_width > 0) G<float>(kShadowWidth) = g_own_width * farther;
     G<float>(kShadowDepth) = kOwnDepth;
-    bool lit = game::Opt().sun_shadows && grid && FindSun(grid, &G<float>(kViewOrigin));
+    // (new water wants the sun too, for its glint: SunForWater)
+    bool wanted = game::Opt().sun_shadows || game::Opt().water >= 2;
+    bool found = wanted && grid && FindSun(grid, &G<float>(kViewOrigin));
+    bool lit = game::Opt().sun_shadows && found;
     // Out of the sun (indoors, or the setting off) the shadows ease back to straight down, and out again in it.
     auto now = std::chrono::steady_clock::now();
     float passed = std::clamp(std::chrono::duration<float>(now - g_sun.at).count(), 0.0f, 0.1f);
@@ -477,6 +480,13 @@ constexpr float kSunKeep = 0.3f;
 constexpr float kSunShadeBias = 6.0f;  // units: the view's depth read back is rougher than the world's own
 
 namespace game {
+// the way to the level's sun, the one last found (src/game/reflections.cpp: its glint in the water); false before any
+bool SunForWater(float way[3]) {
+    if (!(g_sun.sun[2] < 0)) return false;
+    for (int k = 0; k < 3; k++) way[k] = -g_sun.sun[k];
+    return true;
+}
+
 void SunForOcclusion(uint32_t scene) {
     if (!g_sun_rows_set || !scene || !gpu::g_sun_depth_ok.load(std::memory_order_relaxed)) return;
     g_sun_rows_set = false;

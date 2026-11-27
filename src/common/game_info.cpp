@@ -273,7 +273,7 @@ const app::GameInfo app::kGame = {
                 {"ambient_occlusion", nullptr, &game::Opt().ambient_occlusion},
                 {"ads_depth_of_field", &game::Opt().ads_dof, nullptr},
                 {"blur_gun_sight", &game::Opt().gun_blur, nullptr},
-                {"water_reflections", &game::Opt().water_reflections, nullptr},
+                {"water", nullptr, &game::Opt().water},
                 {"sun_shadows", &game::Opt().sun_shadows, nullptr},
                 {"shadow_distance", nullptr, &game::Opt().shadow_distance},
                 {"cutscene_bars", &game::Opt().cutscene_bars, nullptr},

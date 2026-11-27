@@ -46,7 +46,7 @@ struct Options {
     uint32_t shadow_distance = 0;  // how far round the camera shadows are cast: 0 the game's own, 1 three times, 2 six times
     bool sun_shadows = false;    // shadows fall away from the sun (src/game/shadows.cpp)
     bool gun_blur = false;       // the gun nearest the eye goes out of focus while aiming (src/game/fov.cpp)
-    bool water_reflections = false;  // the sea, rivers and ponds mirror what stands over them (src/game/reflections.cpp)
+    uint32_t water = 0;          // the sea, rivers and ponds: 0 the game's own, 1 it mirrors what stands over it, 2 the port's own water (src/game/reflections.cpp)
     bool keep_bodies = false;    // dead soldiers stay where they fell (src/game/bodies.cpp)
     bool cutscene_bars = true;   // the black bars the level scripts put over their cutscenes (src/game/bodies.cpp)
     bool aim_assist = true;     // the game's sticky aim on a controller (never on the keyboard and mouse)

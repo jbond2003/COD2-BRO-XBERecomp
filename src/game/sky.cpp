@@ -8,6 +8,7 @@
 // lines, in 8 bits a colour with a dither, so the blocks and the steps go. Nothing is added to the pictures.
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <memory>
@@ -45,6 +46,8 @@ struct Sky {
 std::vector<Sky> g_skies;
 std::once_flag g_read;
 std::mutex g_lock;
+// what the dome last put in a texture averages (the mission's sky), red, green and blue in a byte each, bit 24 set
+std::atomic<uint32_t> g_tone{0};
 
 uint32_t U32(const std::vector<uint8_t>& d, size_t at) {
     uint32_t v = 0;
@@ -213,6 +216,15 @@ std::shared_ptr<const Picture> SmoothSky(const gpu::TextureDesc& d, const uint8_
             std::memcmp(guest, s.level0.data(), s.level0.size()) != 0)
             continue;
         std::lock_guard lock(g_lock);
+        if (s.dome) {
+            std::vector<float> texels = Decode(s);
+            double sum[3] = {};
+            for (size_t i = 0; i + 3 < texels.size(); i += 4) sum[0] += texels[i], sum[1] += texels[i + 1], sum[2] += texels[i + 2];
+            double count = double(texels.size() / 4);
+            uint32_t tone = 1u << 24;
+            for (int k = 0; k < 3; k++) tone |= uint32_t(std::clamp(sum[k] / count, 0.0, 1.0) * 255.0 + 0.5) << (8 * k);
+            g_tone.store(tone, std::memory_order_relaxed);
+        }
         if (!s.smooth) {
             s.smooth = Enlarge(s);
             LOGR("sky: %s drawn smooth, %ux%u from %ux%u", s.name.c_str(), s.smooth->width, s.smooth->height, s.width,
@@ -221,6 +233,14 @@ std::shared_ptr<const Picture> SmoothSky(const gpu::TextureDesc& d, const uint8_
         return s.smooth;
     }
     return nullptr;
+}
+
+// the colour of the sky last drawn (its dome's average), false before any
+bool SkyTone(float tone[3]) {
+    uint32_t t = g_tone.load(std::memory_order_relaxed);
+    if (!(t >> 24)) return false;
+    for (int k = 0; k < 3; k++) tone[k] = float((t >> (8 * k)) & 255) / 255.0f;
+    return true;
 }
 
 }  // namespace game
