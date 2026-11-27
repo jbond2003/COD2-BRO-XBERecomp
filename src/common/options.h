@@ -81,5 +81,8 @@ inline float g_sight_pitch = 0;  // sightPitch: degrees more down
 // the console's r_shadowCache (not saved): the level's part of the shadow picture is kept between frames
 // (src/game/shadows.cpp), 0 to draw all of it every frame
 inline bool g_shadow_cache = true;
+// the console's r_shadowLodDistance (not saved): further than this from the eye a soldier's or a vehicle's shadow is
+// cast by its simplest model, as the game's own shadows all are; 0 for the model drawn at any distance
+inline float g_shadow_lod_distance = 1000.0f;
 
 }  // namespace game

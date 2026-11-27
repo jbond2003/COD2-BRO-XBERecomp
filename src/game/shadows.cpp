@@ -74,14 +74,24 @@ bool g_turned = false;  // this frame's picture looks along the sun
 
 // The picture's camera held between frames (SunShadowCamera): where it is along its look, across and up, how wide
 // and deep its box, and the number the renderer keeps the level's part of its picture by.
-struct {
+struct Held {
     bool set = false;
     float look[3] = {}, across[3] = {}, up[3] = {};
     float at[3] = {};  // its place along across, up and look
     float width = 0, laid = 0;
     int id = 0;
-    std::chrono::steady_clock::time_point since;
-} g_held;
+    std::chrono::steady_clock::time_point since;  // when its part of the level was begun
+};
+Held g_held;                      // the one whose part the renderer has whole
+Held g_next;                      // the one whose part is being drawn, a share a frame, while g_building
+bool g_building = false;
+// where the level's meshes go on in the next share (LevelInPicture), and how many of their pieces this frame may add
+// (0: all that are left); the pieces the last whole part came to
+struct {
+    uint32_t world = 0, cell = 0, mesh = 0, pieces = 0, meshes = 0;
+} g_share;
+uint32_t g_share_most = 0;
+uint32_t g_level_pieces = 400;
 int g_ids = 0;                    // the last number given
 gpu::SunKeep g_keep = gpu::kSunWhole;  // what this frame's draws into the picture are
 bool g_still_last = false;        // the frame before drew the level's part
@@ -269,50 +279,73 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
     float look[3] = {lx, ly, lz}, across[3] = {ax, ay, az}, up[3] = {vx, vy, vz};
     if (!keep) {
         g_held.set = false;
+        g_building = false;
         g_still_last = false;
     } else {
         // The held camera does for this frame while it looks the same way over the same width, the place the camera
         // would have now is within kHeldSlack of the width from it across and up (the shadows end that much inside
         // the picture, SunDepth, so the square they end at follows the player though the picture stays), and the box
-        // that would be laid now is inside the held one along the look. Else, and once in kHeldLongest whatever (so
-        // nothing a level changes in itself stays wrong in the kept part for longer), the camera is put where it
-        // would be now, on whole texels of the picture so that the level's shadows do not shift by a part of one, and
-        // this frame draws the level's part for it: only that, the frame's world reading the picture the last frame
-        // left (SunDepth). No two such frames in a row, so what moves is in the picture at least every other frame.
-        constexpr float kHeldSlack = 0.06f, kHeldDeep = 250.0f, kHeldStep = 64.0f;
+        // that would be laid now is inside the held one along the look.
+        // Well before that (kHeldSoon, kHeldDeepSoon), and once in kHeldLongest whatever (so nothing a level changes
+        // in itself stays wrong in the kept part for longer), the next one is begun: a camera where it would be now,
+        // on whole texels of the picture so that the level's shadows do not shift by a part of one, and the level's
+        // part drawn for it a share a frame (g_share_most: more shares at a higher frame rate, the rest at once if
+        // the held one stops doing first), so no one frame carries all of it. A frame that draws a share draws only
+        // that, with the next camera, its world reading the picture the last frame left (SunDepth); the frames
+        // between go on with the held camera and its part, and never two shares in a row, so what moves is in the
+        // picture at least every other frame. When the part is whole the next camera is the held one.
+        // With no held camera to go on with (the first, another sun or width, the renderer lost its part) the whole
+        // part is one frame's.
+        constexpr float kHeldSlack = 0.06f, kHeldSoon = 0.035f, kHeldDeep = 250.0f, kHeldDeepSoon = 100.0f;
+        constexpr float kHeldStep = 64.0f;
         constexpr auto kHeldLongest = std::chrono::seconds(1);
         auto along = [&](const float* axis) { return cam[12] * axis[0] + cam[13] * axis[1] + cam[14] * axis[2]; };
         bool same = g_held.set && g_held.width == used &&
                     g_held.look[0] * lx + g_held.look[1] * ly + g_held.look[2] * lz > 0.999999f;
         float at[3] = {along(same ? g_held.across : across), along(same ? g_held.up : up),
                        along(same ? g_held.look : look)};
-        float slack = kHeldSlack * used;
-        bool inside = same && std::fabs(at[0] - g_held.at[0]) <= slack && std::fabs(at[1] - g_held.at[1]) <= slack &&
-                      at[2] >= g_held.at[2] && at[2] + g_laid <= g_held.at[2] + g_held.laid;
+        auto within = [&](float side, float deep) {
+            return same && std::fabs(at[0] - g_held.at[0]) <= side * used && std::fabs(at[1] - g_held.at[1]) <= side * used &&
+                   at[2] >= g_held.at[2] + deep && at[2] + g_laid <= g_held.at[2] + g_held.laid - deep;
+        };
+        bool inside = within(kHeldSlack, 0), well = within(kHeldSoon, kHeldDeepSoon);
         uint32_t lost = gpu::g_sun_static_lost.load(std::memory_order_relaxed);
         bool gone = lost != g_lost_seen;  // the renderer no longer has the kept part
         g_lost_seen = lost;
-        bool due = !inside || now - g_held.since > kHeldLongest;
-        bool still = !same || gone || (due && !g_still_last);
-        if (still) {
+        bool whole = !same || gone;
+        if (whole) g_building = false;
+        if (!g_building && (whole || !well || now - g_held.since > kHeldLongest)) {
             float step = used / kHeldStep;  // 64 texels of a picture 4096 across, whole texels of a smaller one
-            g_held.set = true;
-            g_held.width = used;
-            for (int i = 0; i < 3; i++) g_held.look[i] = look[i], g_held.across[i] = across[i], g_held.up[i] = up[i];
-            g_held.at[0] = std::round(at[0] / step) * step;
-            g_held.at[1] = std::round(at[1] / step) * step;
-            g_held.at[2] = std::floor((at[2] - kHeldDeep) / kHeldStep) * kHeldStep;
-            g_held.laid = std::ceil((at[2] + g_laid + kHeldDeep - g_held.at[2]) / kHeldStep) * kHeldStep;
-            g_held.id = ++g_ids;
-            g_held.since = now;
+            g_next.set = true;
+            g_next.width = used;
+            for (int i = 0; i < 3; i++) {
+                g_next.look[i] = same ? g_held.look[i] : look[i];
+                g_next.across[i] = same ? g_held.across[i] : across[i];
+                g_next.up[i] = same ? g_held.up[i] : up[i];
+            }
+            g_next.at[0] = std::round(at[0] / step) * step;
+            g_next.at[1] = std::round(at[1] / step) * step;
+            g_next.at[2] = std::floor((at[2] - kHeldDeep) / kHeldStep) * kHeldStep;
+            g_next.laid = std::ceil((at[2] + g_laid + kHeldDeep - g_next.at[2]) / kHeldStep) * kHeldStep;
+            g_next.id = ++g_ids;
+            g_next.since = now;
+            g_building = true;
+            g_share = {};
+        }
+        bool still = g_building && (whole || !g_still_last);
+        if (still) {
+            // a share for each frame of a fifteenth of a second, six at most
+            uint32_t shares = uint32_t(std::clamp(1.0f / (15.0f * std::max(passed, 0.001f)), 1.0f, 6.0f));
+            g_share_most = whole || !inside || shares < 2 ? 0 : std::max(32u, g_level_pieces / shares + 1);
         }
         g_still_last = still;
         g_keep = still ? gpu::kSunStill : gpu::kSunMoving;
+        const Held& h = still ? g_next : g_held;
         for (int i = 0; i < 3; i++) {
-            look[i] = g_held.look[i], across[i] = g_held.across[i], up[i] = g_held.up[i];
-            cam[12 + i] = across[i] * g_held.at[0] + up[i] * g_held.at[1] + look[i] * g_held.at[2];
+            look[i] = h.look[i], across[i] = h.across[i], up[i] = h.up[i];
+            cam[12 + i] = across[i] * h.at[0] + up[i] * h.at[1] + look[i] * h.at[2];
         }
-        g_laid = g_held.laid;
+        g_laid = h.laid;
     }
     cam[0] = across[0], cam[1] = across[1], cam[2] = across[2], cam[3] = 0;
     cam[4] = up[0], cam[5] = up[1], cam[6] = up[2], cam[7] = up[0];
@@ -400,7 +433,7 @@ void SunDepth(uint32_t projector) {
     };
     d3d::SunPicture sun;
     sun.keep = g_keep;
-    sun.id = g_held.id;
+    sun.id = g_keep == gpu::kSunStill ? g_next.id : g_held.id;
     if (g_keep == gpu::kSunStill && g_read_set) {
         // the world reads the picture the last frame left, by that frame's rows
         staged(g_sun_rows, sun.across);
@@ -612,9 +645,23 @@ X86_EXTERN_FUNC(__imp__sub_00029520);
 X86_EXTERN_FUNC(__imp__sub_00014610);
 X86_EXTERN_FUNC(__imp__sub_00068850);
 
+// Past g_shadow_lod_distance from the eye the copy is the game's own again: a soldier's shadow that far off is a few
+// pixels of the screen, and its fewer triangles pass for it. The model being added is R_AddDObjSurfaces' third
+// argument, its matrix ([ebp+0x10], the place at +0x30).
+static bool NearCaster(const X86Context& ctx) {
+    float reach = game::g_shadow_lod_distance;
+    uint32_t matrix = R32(ctx.ebp + 0x10);
+    if (!(reach > 0) || !matrix) return true;
+    X86HostFp host_fp;
+    const float* at = &G<float>(matrix + 0x30);
+    const float* eye = &G<float>(kViewOrigin);
+    float x = at[0] - eye[0], y = at[1] - eye[1], z = at[2] - eye[2];
+    return x * x + y * y + z * z < reach * reach;
+}
+
 X86_FUNC(sub_00029520) {
     uint32_t dobj = ctx.edx;
-    if (game::Opt().sun_shadows && R32(ctx.esp) == 0x2447E7 && dobj) {
+    if (game::Opt().sun_shadows && R32(ctx.esp) == 0x2447E7 && dobj && NearCaster(ctx)) {
         int32_t forced = int32_t(R32(dobj + 0x94)), least = int32_t(R32(dobj + 0x98)), lod = int32_t(R32(dobj + 0x90));
         int32_t drawn = forced >= 0 ? forced : least >= 0 ? least : lod;
         if (drawn >= 0 && drawn < 5) {
@@ -627,7 +674,7 @@ X86_FUNC(sub_00029520) {
 }
 
 X86_FUNC(sub_00014610) {
-    if (game::Opt().sun_shadows && R32(ctx.esp) == 0x245523 && ctx.eax == 4) {
+    if (game::Opt().sun_shadows && R32(ctx.esp) == 0x245523 && ctx.eax == 4 && NearCaster(ctx)) {
         ctx.esp += 4;  // not forced: the copy is of the level being drawn
         return;
     }
@@ -667,14 +714,17 @@ namespace {
 constexpr uint32_t kShadowScene = 0x95F6CC, kShadowsOn = 0x95E700, kPlainShadows = 0x95F6B4;
 constexpr uint32_t kSelectScene = 0x5E750, kAddMesh = 0x68850, kWorld = 0x95E608;
 
-void LevelInPicture(X86Context& ctx) {
+// most: the pieces (a mesh's parts, a draw each) this call may add, going on from where the last one stopped
+// (g_share), 0 for all that are left. True when the last of the level's meshes has been seen.
+bool LevelInPicture(X86Context& ctx, uint32_t most) {
     uint32_t on = R32(kShadowsOn), scene = R32(kShadowScene);
-    if (!on || !R32(on + 0x20) || G<uint8_t>(kPlainShadows) || !scene) return;
+    if (!on || !R32(on + 0x20) || G<uint8_t>(kPlainShadows) || !scene) return false;
     uint32_t world = R32(kWorld);
     world = world ? R32(world + 0x100) : 0;
-    if (!world) return;
+    if (!world) return false;
     uint32_t count = R32(world + 0x18), cells = R32(world + 0x1C);
-    if (!cells || count > 0x4000) return;
+    if (!cells || count > 0x4000) return false;
+    if (g_share.world != world) g_share = {}, g_share.world = world;
     X86Context kept = ctx;
     ctx.esp = (ctx.esp - 0x100) & ~15u;
     uint32_t matrix = ctx.esp + 0x40;
@@ -687,10 +737,17 @@ void LevelInPicture(X86Context& ctx) {
     }
     uint32_t before = CallGuest(ctx, kSelectScene, {scene});
     uint32_t added = 0;
-    for (uint32_t i = 0; i < count; i++) {
+    bool done = true;
+    for (uint32_t i = g_share.cell; i < count && done; i++) {
         uint32_t cell = cells + i * 0x50, n = R32(cell + 0x40), list = R32(cell + 0x44);
+        uint32_t first = i == g_share.cell ? g_share.mesh : 0;
         if (!list || n > 0x1000) continue;
-        for (uint32_t m = 0; m < n; m++) {
+        for (uint32_t m = first; m < n; m++) {
+            if (most && added >= most) {
+                g_share.cell = i, g_share.mesh = m;  // the next share starts here
+                done = false;
+                break;
+            }
             uint32_t mesh = R32(list + m * 4), sections = mesh ? R32(mesh + 8) : 0, parts = mesh ? R32(mesh + 0xC) : 0;
             if (!mesh || !parts || sections > 256) continue;
             bool bare = false;
@@ -698,13 +755,19 @@ void LevelInPicture(X86Context& ctx) {
                 uint32_t section = R32(parts + s * 8 + 4), material = section ? R32(section + 4) : 0;
                 bare = !material || !R32(material + 0x1C);
             }
-            if (!bare && int32_t(CallGuest(ctx, kAddMesh, {mesh, matrix, 0, 0})) > 0) added++;
+            if (!bare && int32_t(CallGuest(ctx, kAddMesh, {mesh, matrix, 0, 0})) > 0) added += sections, g_share.meshes++;
         }
     }
     CallGuest(ctx, kSelectScene, {before});
     ctx = kept;
+    g_share.pieces += added;
+    if (!done) return false;
     static bool told = false;
-    if (added && !told) told = true, LOGR("shadows: the level's meshes are in the shadow picture (%u of them here)", added);
+    if (g_share.meshes && !told) {
+        told = true;
+        LOGR("shadows: the level's meshes are in the shadow picture (%u of them here)", g_share.meshes);
+    }
+    return true;
 }
 }  // namespace
 
@@ -719,8 +782,22 @@ X86_FUNC(sub_00246FA0) {
     g_sun_sent = false;
     g_frame++;
     if (sent && g_keep != gpu::kSunMoving && gpu::g_sun_depth_ok.load(std::memory_order_relaxed)) {
+        bool share = g_keep == gpu::kSunStill;
+        if (!share) g_share = {};  // all of it, from the first
+        uint32_t world = g_share.world;
         g_level_adding = true;
-        LevelInPicture(ctx);
+        bool done = LevelInPicture(ctx, share ? g_share_most : 0);
         g_level_adding = false;
+        if (!share) return;
+        if (world && world != g_share.world) {
+            // another level's meshes under a part half drawn: begun again, whole
+            g_building = false;
+            g_held.set = false;
+        } else if (done) {
+            // the part is whole: its camera is the held one from the next frame
+            g_level_pieces = std::max(g_share.pieces, 1u);
+            g_held = g_next;
+            g_building = false;
+        }
     }
 }
