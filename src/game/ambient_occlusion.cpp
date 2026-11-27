@@ -18,6 +18,10 @@
 #include "kernel/kernel.h"
 #include "xdk/d3d8.h"
 
+namespace game {
+void SunForOcclusion(uint32_t scene);  // shadows.cpp: lighter in the sun
+}
+
 namespace {
 
 constexpr uint32_t kScene = 0x90259C;
@@ -64,5 +68,6 @@ void AmbientOcclusion(X86Context&, uint8_t*) {
             for (int i = 0; i < 3; i++) colour[i] = G<float>(scene + 0x3A0 + uint32_t(i) * 4);
         }
     }
+    game::SunForOcclusion(scene);
     d3d::Occlusion(&G<float>(scene + 0x10), mode == 2, kRadius, kStrength, fog, colour);
 }

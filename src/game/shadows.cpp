@@ -37,6 +37,7 @@ void RigidShadowMatrix(X86Context& ctx, uint8_t*) {
 #include <unordered_map>
 
 #include "common/options.h"
+#include "xdk/d3d8.h"
 
 namespace {
 
@@ -69,6 +70,7 @@ float g_own_width = 0;  // the picture's width as the game or its level has it
 float g_laid = 0;  // how deep along its look the turned picture is laid on the world (0: the game's own 500)
 float g_own_lift = 0;  // the picture's camera over the eye as the game has it, 100
 float g_down = 500;  // how deep the picture is laid when it looks straight down: to the ground and under it
+bool g_turned = false;  // this frame's picture looks along the sun
 
 // Shadow Distance (Graphics): the picture's width times this
 float Farther() {
@@ -185,6 +187,7 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
     // by every piece; outside it there is nothing in it.
     static bool took_all = false;
     bool turned = g_sun.sun[2] < 0 && g_sun.lean > 0;
+    g_turned = turned;
     if (turned != took_all) *static_cast<uint8_t*>(HostPtr(kTakeAll)) = turned, took_all = turned;
     if (!turned) return;  // straight down, as the game has it
     // the way the light travels, no flatter than kLeastDrop
@@ -247,6 +250,123 @@ void SunShadowCamera(X86Context& ctx, uint8_t*) {
 // anywhere from near the camera to well past the box's end as he turned, and the shadows on it went with the
 // headings that put it far. Here the two are given back their meaning, height: what the game has on the ground
 // under the eye, changing with the height above or below it, a quarter as fast or less.
+// Shadows from everything in the picture, the level's own houses, trees, walls and fences with what stands among them.
+//
+// The picture holds silhouettes: whatever is in it shadows whatever it is laid on, so the ground itself could never
+// be in it. With the picture's depth kept as well (d3d::SunShadows, the renderer's), a point of the world is in shadow
+// only where the picture holds something nearer the sun than it, and the level's meshes go in the picture with the
+// soldiers and vehicles (LevelInPicture below). The world reads the picture through the projector's matrix: across,
+// up and the height column (the projector's first three outputs, which hold the place of a point in the picture and
+// its height), and the depth along the picture's camera is worked out from those three here, for the renderer.
+//
+// What the picture's depth adds to a surface is darkened by no more than down to the level's own shade: its baked light
+// (the stage before the picture's, in both of the world's shaders) is about 0.9 in the sun and 0.2 in shade (measured:
+// Piano Lupo), so what is shade already is not darkened again (the baked shadows of the same houses and trees lie
+// where the new ones do), and a shadow on sunlit ground is about as dark as the level's own. The world's shaders take
+// the picture's alpha times 0.3 on level ground (less on a slope, none on a wall: the game's weighting by the
+// normal), so it is handed over times 1 / 0.3.
+constexpr float kSunShade = 0.35f;   // baked light this low counts as shade
+constexpr float kSunWeight = 0.3f;   // what the world's shaders weigh the picture by on level ground (c-81.x)
+constexpr float kSunBias = 1.5f;     // units a surface may lie behind what the picture holds and still be lit
+constexpr float kSunSlope = 4.0f;    // the steepest a surface is taken to slant away from the sun, depth per unit
+
+// this frame's picture from a point of the world: u, v and depth, rows of four (x, y, z, 1), for the shade
+// (SunForOcclusion); g_sun_rows_set while they are this frame's
+static float g_sun_rows[12];
+static bool g_sun_rows_set = false;
+static float g_sun_p10 = 0;
+
+// projector: the record nglAddShadowProjector made, its matrix (rows x, y, z, 1) at the start
+void SunDepth(uint32_t projector) {
+    g_sun_rows_set = false;
+    if (!g_turned || !game::Opt().sun_shadows) return;
+    uint32_t scene = R32(0x95F6CC);
+    if (!scene) return;
+    X86HostFp host_fp;
+    const float* m = &G<float>(projector);
+    const float* cam = &G<float>(kShadowCamera);
+    float p10 = G<float>(scene + 0x10 + 10 * 4), p14 = G<float>(scene + 0x10 + 14 * 4);  // the picture's own depth
+    // the stage's u, v, s from a point: t = R p + r0, R[j][i] = m[i][j]
+    double r[3][3], r0[3];
+    for (int j = 0; j < 3; j++) {
+        for (int i = 0; i < 3; i++) r[j][i] = m[i * 4 + j];
+        r0[j] = m[12 + j];
+    }
+    double det = r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1]) - r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0]) +
+                 r[0][2] * (r[1][0] * r[2][1] - r[1][1] * r[2][0]);
+    if (!(std::fabs(det) > 1e-30) || !(p10 > 0)) return;
+    double inv[3][3];
+    for (int i = 0; i < 3; i++)
+        for (int j = 0; j < 3; j++) {
+            int i1 = (i + 1) % 3, i2 = (i + 2) % 3, j1 = (j + 1) % 3, j2 = (j + 2) % 3;
+            inv[j][i] = (r[i1][j1] * r[i2][j2] - r[i1][j2] * r[i2][j1]) / det;
+        }
+    // depth = g . p + g0 = g . R^-1 (t - r0) + g0
+    double g[3] = {cam[8] * p10, cam[9] * p10, cam[10] * p10};
+    double g0 = -(cam[12] * cam[8] + cam[13] * cam[9] + cam[14] * cam[10]) * p10 + p14;
+    float from[4];
+    double k0 = g0;
+    for (int j = 0; j < 3; j++) {
+        double k = g[0] * inv[0][j] + g[1] * inv[1][j] + g[2] * inv[2][j];
+        from[j] = float(k);
+        k0 -= k * r0[j];
+    }
+    from[3] = float(k0);
+    for (int j = 0; j < 2; j++) {
+        for (int i = 0; i < 4; i++) g_sun_rows[j * 4 + i] = m[i * 4 + j];
+    }
+    for (int i = 0; i < 3; i++) g_sun_rows[8 + i] = float(g[i]);
+    g_sun_rows[11] = float(g0);
+    g_sun_rows_set = true;
+    g_sun_p10 = p10;
+    float width = G<float>(kShadowWidth);
+    d3d::SunShadows(from, 1.0f / kSunWeight, kSunShade, kSunBias * p10, kSunSlope * width * p10);
+}
+
+// The shade where surfaces meet (ambient_occlusion.cpp) takes away ambient light, which in the sun is a small part of
+// what lights a surface: under a soldier standing in the sun it made a dark clump that his shadow, cast aside by the
+// sun, did not match. The renderer tells sun from shade by the picture's depth, given where the scene's view lies in
+// the picture: the view's matrix (the scene's +0x150, rows x, y, z, place: view = (point, 1) times it) undone and the
+// picture's rows applied. In the sun kSunKeep of the shade is left.
+constexpr float kSunKeep = 0.3f;
+constexpr float kSunShadeBias = 6.0f;  // units: the view's depth read back is rougher than the world's own
+
+namespace game {
+void SunForOcclusion(uint32_t scene) {
+    if (!g_sun_rows_set || !scene || !gpu::g_sun_depth_ok.load(std::memory_order_relaxed)) return;
+    g_sun_rows_set = false;
+    X86HostFp host_fp;
+    const float* vm = &G<float>(scene + 0x150);
+    double a[3][3], t[3];
+    for (int r = 0; r < 3; r++) {
+        for (int c = 0; c < 3; c++) a[r][c] = vm[r * 4 + c];
+        t[r] = vm[12 + r];
+    }
+    double det = a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1]) - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0]) +
+                 a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]);
+    if (!(std::fabs(det) > 1e-12)) return;
+    double inv[3][3];
+    for (int i = 0; i < 3; i++)
+        for (int j = 0; j < 3; j++) {
+            int i1 = (i + 1) % 3, i2 = (i + 2) % 3, j1 = (j + 1) % 3, j2 = (j + 2) % 3;
+            inv[j][i] = (a[i1][j1] * a[i2][j2] - a[i1][j2] * a[i2][j1]) / det;
+        }
+    // point = (view - t) inv, so a row w . point + w0 is k . view + (w0 - k . t) with k[c] = sum over r of inv[c][r] w[r]
+    float rows[12];
+    for (int j = 0; j < 3; j++) {
+        const float* w = &g_sun_rows[j * 4];
+        double off = w[3];
+        for (int c = 0; c < 3; c++) {
+            double k = inv[c][0] * w[0] + inv[c][1] * w[1] + inv[c][2] * w[2];
+            rows[j * 4 + c] = float(k);
+            off -= k * t[c];
+        }
+        rows[j * 4 + 3] = float(off);
+    }
+    d3d::SunOcclusion(rows, kSunKeep, kSunShadeBias * g_sun_p10);
+}
+}  // namespace game
+
 X86_EXTERN_FUNC(__imp__sub_000704F0);
 X86_FUNC(sub_000704F0) {
     bool ours = R32(ctx.esp) == 0x241849;
@@ -271,6 +391,7 @@ X86_FUNC(sub_000704F0) {
         G<float>(column + 0x20) = -1.0f / by[i];
         G<float>(column + 0x30) = at[i] + ground / by[i];
     }
+    SunDepth(projector);
 }
 
 // Tanks and trucks. The game adds a vehicle to the scene (0x246F67) with "casts no shadow" (the last of
@@ -412,4 +533,63 @@ X86_FUNC(sub_00068850) {
     float x = at[0] - eye[0], y = at[1] - eye[1], z = at[2] - eye[2];
     float reach = kShadowReach * Farther();
     if (x * x + y * y + z * z < reach * reach) ctx.eax = 1;
+}
+
+// The level's meshes in the shadow picture (see SunDepth): each of the world's cells, its meshes as 0x23FEE0 adds them
+// to the view (the world's matrix from the constants it builds it from), added to the picture's scene ([0x95F6CC],
+// chosen around them as R_AddDObjSurfaces does for a model's copy), right after the frame's own world (0x246FA0 called
+// at 0x247571, after R_RenderTestShadow made this frame's scene). Only while the renderer keeps the picture's depth: in
+// a picture of silhouettes the ground would shadow all it is laid on. The scene's own test keeps out what lies
+// outside the picture. A mesh with a part whose material has no texture is left out: the picture's draw binds it
+// (0x4D74E) and stops the game without one.
+namespace {
+constexpr uint32_t kShadowScene = 0x95F6CC, kShadowsOn = 0x95E700, kPlainShadows = 0x95F6B4;
+constexpr uint32_t kSelectScene = 0x5E750, kAddMesh = 0x68850, kWorld = 0x95E608;
+
+void LevelInPicture(X86Context& ctx) {
+    uint32_t on = R32(kShadowsOn), scene = R32(kShadowScene);
+    if (!on || !R32(on + 0x20) || G<uint8_t>(kPlainShadows) || !scene) return;
+    uint32_t world = R32(kWorld);
+    world = world ? R32(world + 0x100) : 0;
+    if (!world) return;
+    uint32_t count = R32(world + 0x18), cells = R32(world + 0x1C);
+    if (!cells || count > 0x4000) return;
+    X86Context kept = ctx;
+    ctx.esp = (ctx.esp - 0x100) & ~15u;
+    uint32_t matrix = ctx.esp + 0x40;
+    {
+        X86HostFp host_fp;
+        float scale = G<float>(0x82E140);
+        for (uint32_t r = 0; r < 3; r++)
+            for (uint32_t c = 0; c < 4; c++) G<float>(matrix + r * 16 + c * 4) = G<float>(0x82E160 + r * 16 + c * 4) * scale;
+        for (uint32_t c = 0; c < 4; c++) W32(matrix + 48 + c * 4, R32(0x82E290 + c * 4));
+    }
+    uint32_t before = CallGuest(ctx, kSelectScene, {scene});
+    uint32_t added = 0;
+    for (uint32_t i = 0; i < count; i++) {
+        uint32_t cell = cells + i * 0x50, n = R32(cell + 0x40), list = R32(cell + 0x44);
+        if (!list || n > 0x1000) continue;
+        for (uint32_t m = 0; m < n; m++) {
+            uint32_t mesh = R32(list + m * 4), sections = mesh ? R32(mesh + 8) : 0, parts = mesh ? R32(mesh + 0xC) : 0;
+            if (!mesh || !parts || sections > 256) continue;
+            bool bare = false;
+            for (uint32_t s = 0; s < sections && !bare; s++) {
+                uint32_t section = R32(parts + s * 8 + 4), material = section ? R32(section + 4) : 0;
+                bare = !material || !R32(material + 0x1C);
+            }
+            if (!bare && int32_t(CallGuest(ctx, kAddMesh, {mesh, matrix, 0, 0})) > 0) added++;
+        }
+    }
+    CallGuest(ctx, kSelectScene, {before});
+    ctx = kept;
+    static bool told = false;
+    if (added && !told) told = true, LOGR("shadows: the level's meshes are in the shadow picture (%u of them here)", added);
+}
+}  // namespace
+
+X86_EXTERN_FUNC(__imp__sub_00246FA0);
+X86_FUNC(sub_00246FA0) {
+    bool frame = R32(ctx.esp) == 0x247576;
+    __imp__sub_00246FA0(ctx, base);
+    if (frame && g_turned && game::Opt().sun_shadows && gpu::g_sun_depth_ok.load(std::memory_order_relaxed)) LevelInPicture(ctx);
 }
