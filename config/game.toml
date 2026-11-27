@@ -430,6 +430,11 @@ call = "MirrorBeginText"
 at = 0x0007A380
 call = "MirrorEndText"
 
+# src/game/reflections.cpp: nglRenderSceneTree, a scene's opaque list about to be drawn (its arguments being pushed)
+[[hook]]
+at = 0x000743E4
+call = "WaterReflections"
+
 # src/game/ambient_occlusion.cpp: nglRenderSceneTree, a scene's opaque list just drawn and its translucent list
 # (smoke, glass, the glow) not yet
 [[hook]]

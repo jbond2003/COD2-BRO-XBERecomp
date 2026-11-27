@@ -187,6 +187,7 @@ const PortVariable kPortVariables[] = {
     {"r_dof", "Depth of Field When Aiming", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().ads_dof)},
     {"r_blurGunSight", "Blur Gun Sight", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().gun_blur)},
     {"r_sunShadows", "Sun Shadows", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().sun_shadows)},
+    {"r_waterReflections", "Water Reflections", "0 or 1", 0, 1, 0, 1, PORT_BOOL(Opt().water_reflections)},
     // not saved: to compare the frame rate with and without the level's shadows kept between frames
     {"r_shadowCache", "Shadows: the level's part kept between frames", "0 or 1", 0, 1, 1, 1,
      PORT_BOOL(g_shadow_cache)},

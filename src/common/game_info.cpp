@@ -29,6 +29,7 @@ namespace game {
 
 void RemapToLayout(const input::Pad& from, input::Pad& to);  // src/game/mouse_look.cpp
 void InitPrompts();  // src/game/prompts.cpp
+void InitReflections();  // src/game/reflections.cpp
 void OptionsPad(input::Pad& pad);  // src/game/menu_mouse.cpp: PC OPTIONS in the Options menu
 void ModernPad(input::Pad& pad);  // src/game/pad_layout.cpp: B to crouch, held to go prone
 
@@ -232,6 +233,7 @@ void Save(void* table) {
 void Init() {
     input::LoadBindings();
     InitPrompts();
+    InitReflections();
     // the frame rate is one of the menu's (30, 60, 120, 144, 240 or 0 for no limit) or any other the console's
     // com_maxfps set, 5 to 999. (The game takes each frame's time from the clock, Com_Frame 0x2A70C0, as the engine
     // it comes from does: nothing of it counts frames. Movies keep their own 30: src/game/movies.cpp.)
@@ -271,6 +273,7 @@ const app::GameInfo app::kGame = {
                 {"ambient_occlusion", nullptr, &game::Opt().ambient_occlusion},
                 {"ads_depth_of_field", &game::Opt().ads_dof, nullptr},
                 {"blur_gun_sight", &game::Opt().gun_blur, nullptr},
+                {"water_reflections", &game::Opt().water_reflections, nullptr},
                 {"sun_shadows", &game::Opt().sun_shadows, nullptr},
                 {"shadow_distance", nullptr, &game::Opt().shadow_distance},
                 {"cutscene_bars", &game::Opt().cutscene_bars, nullptr},

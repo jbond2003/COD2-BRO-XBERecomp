@@ -114,7 +114,7 @@ const std::vector<Mode>& Modes() {
 enum RowId { kSection, kDisplayMode, kResolution, kRenderResolution, kFov, kMaxFps, kVsync, kFpsCounter, kAniso,
              kTextureReplacement, kTextureDumping, kDumpFormat, kMouseX, kMouseY, kInvertY, kInvertX, kQwerty, kPrompts,
              kBrightness, kAimAssist, kHints, kHideHud, kViewDistance, kKeepBodies, kCutsceneBars, kLeanToggle,
-             kMusicVolume, kMenuMusicVolume, kEffectsVolume, kVoiceVolume, kMsaa, kSmaa, kAmbientOcclusion, kAdsDof, kGunBlur, kAimToggle, kPreset, kShadows,
+             kMusicVolume, kMenuMusicVolume, kEffectsVolume, kVoiceVolume, kMsaa, kSmaa, kAmbientOcclusion, kAdsDof, kGunBlur, kAimToggle, kPreset, kShadows, kReflections,
              // the game's own options (options.h's GameOption, src/game/game_options.cpp)
              kGSubtitles, kGCrosshair, kGTags, kGTank, kGAdsToggle, kGInvert, kGVibration, kGVolume, kGLayout,
              kGSensX, kGSensY };
@@ -306,13 +306,15 @@ std::string RowText(RowId id, int step, Settings& s) {
             // smoothing by SMAA. The settings themselves say which it is: any of them changed by hand shows Custom.
             // A step goes to the other one.
             game::Options& o = O();
-            bool original = !o.ads_dof && !o.gun_blur && !o.sun_shadows && !o.shadow_distance && !o.ambient_occlusion && !o.keep_bodies &&
+            // (Water Reflections is in neither yet: Original turns it off, Remastered leaves it as it is)
+            bool original = !o.ads_dof && !o.gun_blur && !o.sun_shadows && !o.shadow_distance && !o.ambient_occlusion && !o.keep_bodies && !o.water_reflections &&
                             DetailLevel(o.view_distance) == 0 && s.aniso == 0 && s.msaa == 0 && !s.smaa;
             bool remastered = o.ads_dof && o.gun_blur && o.sun_shadows && o.shadow_distance == 2 && o.ambient_occlusion == 2 && o.keep_bodies &&
                               DetailLevel(o.view_distance) == 2 && s.aniso == 16 && s.msaa == 0 && s.smaa;
             if (step) {
                 bool to = original ? true : remastered ? false : step > 0;  // to Remastered
                 o.ads_dof = o.gun_blur = o.sun_shadows = o.keep_bodies = s.smaa = to;
+                if (!to) o.water_reflections = false;
                 o.ambient_occlusion = to ? 2 : 0;
                 o.shadow_distance = to ? 2 : 0;
                 o.view_distance = to ? 8 : 1;
@@ -332,6 +334,9 @@ std::string RowText(RowId id, int step, Settings& s) {
         case kGunBlur:
             if (step) O().gun_blur = !O().gun_blur;
             return OnOff(O().gun_blur);
+        case kReflections:
+            if (step) O().water_reflections = !O().water_reflections;
+            return OnOff(O().water_reflections);
         case kShadows: {
             // Low is the game's own: a blot straight down under each soldier, near the camera. High: shadows fall
             // away from the sun, vehicles cast them too, and they reach six times as far (src/game/shadows.cpp).
@@ -475,6 +480,7 @@ void SetDefaults(Settings& s, game::Options& o, int parts) {
         o.ambient_occlusion = 0;
         o.ads_dof = false;
         o.gun_blur = false;
+        o.water_reflections = false;
         o.sun_shadows = false;
         o.shadow_distance = 0;
         s.custom_textures = d.custom_textures;
@@ -535,6 +541,7 @@ void CopyRows(Settings& s, game::Options& o, const Settings& from, const game::O
     o.ambient_occlusion = from_o.ambient_occlusion;
     o.ads_dof = from_o.ads_dof;
     o.gun_blur = from_o.gun_blur;
+    o.water_reflections = from_o.water_reflections;
     o.sun_shadows = from_o.sun_shadows;
     o.shadow_distance = from_o.shadow_distance;
     o.cutscene_bars = from_o.cutscene_bars;
@@ -556,7 +563,7 @@ bool RowsDiffer(const Settings& a, const game::Options& c, const Settings& b, co
            c.qwerty_typewriter != d.qwerty_typewriter || c.button_prompts != d.button_prompts ||
            c.brightness != d.brightness || c.aim_assist != d.aim_assist || c.hints != d.hints ||
            c.hide_hud != d.hide_hud || c.lean_toggle != d.lean_toggle || c.game_options != d.game_options || c.look_sensitivity_x != d.look_sensitivity_x ||
-           c.look_sensitivity_y != d.look_sensitivity_y || c.modern_layout != d.modern_layout || c.aim_toggle != d.aim_toggle || c.view_distance != d.view_distance || c.keep_bodies != d.keep_bodies || c.ambient_occlusion != d.ambient_occlusion || c.ads_dof != d.ads_dof || c.gun_blur != d.gun_blur || c.sun_shadows != d.sun_shadows || c.shadow_distance != d.shadow_distance ||
+           c.look_sensitivity_y != d.look_sensitivity_y || c.modern_layout != d.modern_layout || c.aim_toggle != d.aim_toggle || c.view_distance != d.view_distance || c.keep_bodies != d.keep_bodies || c.ambient_occlusion != d.ambient_occlusion || c.ads_dof != d.ads_dof || c.gun_blur != d.gun_blur || c.water_reflections != d.water_reflections || c.sun_shadows != d.sun_shadows || c.shadow_distance != d.shadow_distance ||
            c.cutscene_bars != d.cutscene_bars || c.music_volume != d.music_volume ||
            c.menu_music_volume != d.menu_music_volume || c.effects_volume != d.effects_volume ||
            c.voice_volume != d.voice_volume;
@@ -951,6 +958,7 @@ constexpr TabRow kTabRows[] = {
     {kGraphicsTab, kAdsDof, "Depth of Field When Aiming", "While you aim down the sights, what is in the sight picture stays sharp and everything around it goes out of focus.", "r_dof"},
     {kGraphicsTab, kGunBlur, "Blur Gun Sight", "While you aim down the sights, the part of the gun nearest your eye goes softly out of focus.", "r_blurGunSight"},
     {kGraphicsTab, kShadows, "Shadows", "Low is the game's own: a dark patch straight down under each soldier. High: shadows fall away from the sun, tanks and trucks cast them too, and they reach six times as far.", "r_sunShadows"},
+    {kGraphicsTab, kReflections, "Water Reflections", "The sea, rivers and ponds mirror the sky, the shore and what stands over them, with ripples.", "r_waterReflections"},
     {kGraphicsTab, kViewDistance, "Level of Detail", "How far away soldiers and objects keep their detailed models.", "cg_viewDistance"},
     {kGraphicsTab, kKeepBodies, "Bodies Stay", "The fallen stay where they fell and are not cleared away.", "cg_bodiesStay"},
     {kGraphicsTab, kSection, "Textures", "", ""},

@@ -836,15 +836,21 @@ bool ReadPackFile(const char* pack, const std::string& name, std::vector<uint8_t
     return it != files.end() && ReadAny(pack, it->second.offset, it->second.size, out);
 }
 
-// every file of a pack whose name starts as given
-std::vector<std::pair<std::string, std::vector<uint8_t>>> ReadPackFiles(const char* pack, const std::string& start) {
+// every file of a pack whose name starts in one of the ways given
+std::vector<std::pair<std::string, std::vector<uint8_t>>> ReadPackFiles(const char* pack,
+                                                                        const std::vector<std::string>& starts) {
     std::vector<std::pair<std::string, std::vector<uint8_t>>> out;
     for (const auto& [name, entry] : ReadDirectory(pack)) {
+        bool wanted = false;
+        for (const std::string& start : starts) wanted = wanted || name.compare(0, start.size(), start) == 0;
         std::vector<uint8_t> data;
-        if (name.compare(0, start.size(), start) == 0 && ReadAny(pack, entry.offset, entry.size, data))
-            out.emplace_back(name, std::move(data));
+        if (wanted && ReadAny(pack, entry.offset, entry.size, data)) out.emplace_back(name, std::move(data));
     }
     return out;
+}
+
+std::vector<std::pair<std::string, std::vector<uint8_t>>> ReadPackFiles(const char* pack, const std::string& start) {
+    return ReadPackFiles(pack, std::vector<std::string>{start});
 }
 
 // a game file, also before boot
