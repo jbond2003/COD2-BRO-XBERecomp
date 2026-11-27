@@ -280,6 +280,25 @@ void VehicleShadow(X86Context& ctx, uint8_t*) {
     if (game::Opt().sun_shadows || game::Opt().shadow_distance) W32(ctx.esp + 0x14, 1);
 }
 
+// A thing its level's maker marked as casting no shadow (the map's entity has the key for it: 0x2EE284 sets bit 2 of
+// the byte at +0xED, and 0x245BDA passes "casts no shadow" for it). With the shadows falling away from the sun, or
+// reaching further than the game's own, it casts one like anything else: R_AddDObjSurfaces about to be called for a
+// thing that is not a vehicle (0x245BFD), its arguments pushed.
+//
+// What else has no shadow cannot be given one by the picture of silhouettes the game's shadows are:
+// - the level itself, houses, trees, fences and walls with it: each cell's meshes (0x23FEE0), the ground among them,
+//   which the picture is laid on. Their shadows are in the level's own lighting.
+// - the grass (0x46560) and the sky (0x2474E7)
+// - the models of effects, fire and the like (a cell's list at +0x34, 0x2438B0): the picture's scene draws a part by
+//   the texture at its material's +0x1C (0x4D74E) and some of these have none (tried: the game stops at 0x6A765)
+// - the player, who has no body, and the gun in hand, which is drawn in a scene of its own
+void MarkedShadow(X86Context& ctx, uint8_t*) {
+    if (!(game::Opt().sun_shadows || game::Opt().shadow_distance) || R32(ctx.esp + 0x14)) return;
+    W32(ctx.esp + 0x14, 1);
+    static bool told = false;
+    if (!told) told = true, LOGR("shadows: a thing its level marks as casting none casts one");
+}
+
 // A thing that is not animated and about to cast a shadow (R_AddDObjSurfaces at 0x244415: the cast flag is the byte at
 // [ebp+0x1C], its matrix [ebp+0x10], the place at +0x30). A body that has sunk into the ground or fallen through it
 // lies under the surface, and along the sun its shadow came up through the ground well away from anything (his

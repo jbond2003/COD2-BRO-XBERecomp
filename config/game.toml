@@ -454,6 +454,12 @@ call = "SunShadowCamera"
 at = 0x00246F67
 call = "VehicleShadow"
 
+# game/shadows.cpp: a thing that is not a vehicle about to be added to the scene (R_AddDObjSurfaces), its arguments
+# pushed: one its level marks as casting no shadow
+[[hook]]
+at = 0x00245BFD
+call = "MarkedShadow"
+
 # game/shadows.cpp: R_AddDObjSurfaces, a thing that is not animated is about to cast a shadow: not when it lies under
 # the ground
 [[hook]]
