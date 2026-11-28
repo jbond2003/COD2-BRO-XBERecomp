@@ -20,8 +20,10 @@
 // And it answers what falls in it. The game's splashes are effects of its own (apsEffect, files *.bpe:
 // impact_smg_water, grenade_water, artillery_water and the like), made by one function of the game's (the hook at
 // 0x23C1DE, the effect just made: ebx its definition, the name at +0x6C, [esp+0x24] its matrix, the place its fourth
-// row). The places of the last few are sent with the frame and the renderer spreads rings from each, with froth
-// where a grenade or a shell went in.
+// row). The places of the last few are sent with the frame, each with its kind, and the renderer draws what the water
+// does under the game's splash: it is pushed down, waves run out from it, the water is churned white where the game's
+// column rose and the spray speckles it as it falls back. How wide and how long is by the kind, from the size and the
+// times of the game's own effect (kLife below; the renderer's shader has the rest).
 //
 // The renderer needs the frame's view before the water is drawn: the hook is in nglRenderSceneTree (0x74330) ahead of
 // the scene's solid list (the call at 0x743F6; src/game/ambient_occlusion.cpp's comes after it). A scene: +0x10 its
@@ -70,9 +72,14 @@ constexpr float kRoughSea = 1.0f, kRoughMoving = 0.75f, kRoughStill = 0.45f;
 constexpr float kGlint = 0.9f;       // the sun's glint: this much of the sky's brightness, at most kMostGlint
 constexpr float kMostGlint = 0.6f;
 constexpr float kEase = 2.0f;        // the colours go to another water's or sky's at this rate a second
-// what fell in the water: how long each kind's rings last, seconds (as the renderer's shader has them: a bullet, a
-// grenade, a shell)
-constexpr float kRingLife[4] = {0, 2.5f, 4.0f, 7.0f};
+// What fell in the water, by the game's effect. The kinds: 1 a rifle's or a submachine gun's round
+// (impact_smg_water: spray 50 units high for half a second), 2 a heavy machine gun's (impact_hmg_water: twice that),
+// 3 a cannon's (impact_umg_water: a column), 4 a small thing fallen in (water_splash_small: a body, a crate; 50 units
+// across), 5 a large one (water_splash_large: 100 across), 6 a grenade (grenade_water: a column 75 high, a ring that
+// spreads for 2 s), 7 a tank's shell (tank_water: 300 high), 8 an artillery shell or a bomb (artillery_water: a column
+// hundreds of units high, mist for 4 s). How long the water shows each, seconds: the renderer's shader has the same.
+constexpr int kKinds = 9;
+constexpr float kLife[kKinds] = {0, 3.0f, 3.5f, 4.5f, 4.5f, 5.5f, 5.0f, 6.5f, 10.0f};
 
 struct Splash {
     float at[3] = {};
@@ -86,15 +93,17 @@ double Seconds() {
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 }
 
-// What kind of splash an effect of that name is: 0 none (the bow waves and drips that run on and on are not), 1 a
-// bullet's, 2 a grenade's, 3 a shell's or a bomb's; -1 a water effect this does not know.
+// What kind of splash an effect of that name is (kLife's kinds): 0 none (the bow waves and drips that run on and on
+// are not), -1 a water effect this does not know.
 int SplashKind(const char* name) {
     auto has = [name](const char* part) { return std::strstr(name, part) != nullptr; };
     if (!has("water")) return 0;
-    if (has("drip") || has("bow") || has("surf") || has("wheel") || has("fall")) return 0;
-    if (has("artillery") || has("mortar") || has("bomb") || has("stuka") || has("explo") || has("flak") || has("mine")) return 3;
-    if (has("grenade")) return 2;
-    if (has("impact")) return 1;
+    if (has("drip") || has("bow") || has("surf") || has("wheel") || has("waterfall") || has("wake")) return 0;
+    if (has("artillery") || has("mortar") || has("bomb") || has("stuka") || has("explo") || has("flak") || has("mine")) return 8;
+    if (has("tank") || has("rocket") || has("bazooka") || has("panzer")) return 7;
+    if (has("grenade")) return 6;
+    if (has("impact")) return has("umg") ? 3 : has("hmg") ? 2 : 1;
+    if (has("splash")) return has("small") ? 4 : 5;
     return -1;
 }
 
@@ -264,7 +273,7 @@ bool NewWater(const float* fog, d3d::Water& out) {
     for (int i = 0; i < d3d::kWaterSplashes; i++) {
         Splash& s = g_splashes[i];
         float age = float(seconds - s.born);
-        if (s.kind && !(age >= 0 && age < kRingLife[s.kind])) s.kind = 0;
+        if (s.kind && !(age >= 0 && age < kLife[s.kind])) s.kind = 0;
         for (int k = 0; k < 3; k++) out.splash[i][k] = s.at[k];
         out.splash[i][3] = s.kind ? age + 16.0f * float(s.kind) : 0.0f;
     }
@@ -278,7 +287,8 @@ void AddSplash(const float* at, int kind) {
     float most = -1;
     for (int i = 0; i < d3d::kWaterSplashes; i++) {
         const Splash& s = g_splashes[i];
-        float spent = s.kind ? float(seconds - s.born) / kRingLife[s.kind] : 2.0f;
+        // (a round's before a shell's: a burst of fire into the water does not push the large ones out)
+        float spent = s.kind ? float(seconds - s.born) / kLife[s.kind] + (s.kind <= 3 ? 0.5f : 0.0f) : 2.0f;
         if (spent > most) most = spent, slot = i;
     }
     Splash& s = g_splashes[slot];
@@ -346,7 +356,7 @@ void WaterSplash(X86Context& ctx, uint8_t*) {
         }
         return;
     }
-    if (!kind) return;
+    if (!kind || kind >= game::kKinds) return;
     X86HostFp host_fp;
     float at[3];
     for (uint32_t k = 0; k < 3; k++) at[k] = G<float>(matrix + 0x30 + k * 4);
