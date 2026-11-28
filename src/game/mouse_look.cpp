@@ -174,6 +174,16 @@ int PadTarget(size_t i) {
     return -1;
 }
 
+// two controls (kPadControls' order) bound to one command in the layout in use, as the Modern layout's two shoulder
+// buttons both throw a grenade: a hint may draw either, so a key's cap goes on both
+bool PadSameBinding(size_t a, size_t b) {
+    if (a >= std::size(kPadControls) || b >= std::size(kPadControls)) return false;
+    char first[64], second[64];
+    Binding(kPadControls[a].key_code, first);
+    Binding(kPadControls[b].key_code, second);
+    return first[0] && std::strcmp(first, second) == 0;
+}
+
 }  // namespace game
 
 X86_EXTERN_FUNC(__imp__sub_002B39E0);
@@ -183,7 +193,7 @@ X86_FUNC(sub_002B39E0) {
     {
         X86HostFp host_fp;
         MouseLook();
-        game::WatchVehicles();
+        game::WatchVehicles(ctx);
     }
     __imp__sub_002B39E0(ctx, base);
 }

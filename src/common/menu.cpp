@@ -1,4 +1,4 @@
-// the settings panel on F10, after BLACK-XBERecomp's
+// the settings menu on F10 (drawn by modern_menu.cpp) and the PC Options pages
 #include "common/menu.h"
 
 float app::g_zoom = 1.0f;
@@ -7,6 +7,7 @@ float app::g_zoom = 1.0f;
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <iterator>
 #include <map>
@@ -27,10 +28,13 @@ float app::g_zoom = 1.0f;
 #include "app/app.h"
 #include "common/menu.h"
 #include "common/cheats.h"
+#include "common/console.h"
+#include "common/modern_menu.h"
 #include "common/mouse_keyboard.h"
 #include "common/options.h"
 #include "common/paper_page.h"
 #include "common/update_check.h"
+#include "common/menu_state.h"
 
 namespace app {
 
@@ -39,29 +43,16 @@ namespace {
 std::atomic<bool> g_open{false};
 std::atomic<bool> g_bindings_only{false};  // opened from PC Options: the key bindings alone
 
-// brass over dark olive, after the game's own menus
-constexpr ImVec4 kPanelBg{0.04f, 0.05f, 0.07f, 0.94f};
-constexpr ImVec4 kBorder{0.66f, 0.48f, 0.24f, 0.85f};
-constexpr ImVec4 kText{0.92f, 0.89f, 0.82f, 1.0f};
-constexpr ImVec4 kHighlight{0.30f, 0.20f, 0.09f, 1.0f};
-constexpr ImVec4 kHeading{0.93f, 0.66f, 0.26f, 1.0f};
-constexpr ImVec4 kDim{0.62f, 0.60f, 0.55f, 1.0f};
-constexpr ImVec4 kFrame{0.10f, 0.11f, 0.14f, 1.0f};
-constexpr ImVec4 kButton{0.16f, 0.13f, 0.09f, 1.0f};
-constexpr ImVec4 kButtonHovered{0.42f, 0.29f, 0.12f, 1.0f};
-constexpr ImVec4 kLine{0.93f, 0.66f, 0.26f, 0.35f};
-constexpr std::pair<ImGuiCol, ImVec4> kPanelColors[] = {
-    {ImGuiCol_WindowBg, kPanelBg}, {ImGuiCol_Border, kBorder}, {ImGuiCol_Text, kText},
-    {ImGuiCol_Header, kHighlight}, {ImGuiCol_HeaderHovered, kHighlight}, {ImGuiCol_HeaderActive, kHighlight},
-    {ImGuiCol_Button, kButton}, {ImGuiCol_ButtonHovered, kButtonHovered}, {ImGuiCol_ButtonActive, kButtonHovered},
-    {ImGuiCol_FrameBg, kFrame}, {ImGuiCol_ScrollbarGrab, kHighlight}, {ImGuiCol_ScrollbarGrabHovered, kButtonHovered},
-    {ImGuiCol_ScrollbarGrabActive, kHeading}, {ImGuiCol_Separator, kLine}, {ImGuiCol_NavHighlight, kHeading},
-};
+constexpr ImVec4 kHeading{0.93f, 0.66f, 0.26f, 1.0f};  // the FPS counter's brass
 
 constexpr uint32_t kAnisoValues[] = {0, 2, 4, 8, 16};
 const char* const kAnisoNames[] = {"GAME DEFAULT", "2x", "4x", "8x", "16x"};
-constexpr uint32_t kViewDistances[] = {1, 2, 4, 8};
-const char* const kViewDistanceNames[] = {"GAME DEFAULT", "2x", "4x", "8x"};
+constexpr uint32_t kMsaaValues[] = {0, 2, 4, 8};
+const char* const kMsaaNames[] = {"OFF", "2x", "4x", "8x"};
+// Times the game's own distances for models' detail. v0.1.1 offered 1, 2, 4, 8: DetailLevel places those.
+constexpr uint32_t kViewDistances[] = {1, 4, 8};
+const char* const kViewDistanceNames[] = {"LOW (ORIGINAL)", "MEDIUM", "HIGH"};
+constexpr int DetailLevel(uint32_t times) { return times <= 1 ? 0 : times <= 5 ? 1 : 2; }
 const char* const kDumpFormatNames[] = {"PNG", "DDS"};
 // 30 keeps the game's own limiter
 constexpr uint32_t kFpsCaps[] = {30, 60, 120, 144, 240, 0};  // 0: no limit
@@ -122,7 +113,16 @@ const std::vector<Mode>& Modes() {
 
 enum RowId { kSection, kDisplayMode, kResolution, kRenderResolution, kFov, kMaxFps, kVsync, kFpsCounter, kAniso,
              kTextureReplacement, kTextureDumping, kDumpFormat, kMouseX, kMouseY, kInvertY, kInvertX, kQwerty, kPrompts,
-             kBrightness, kAimAssist, kHints, kHideHud, kViewDistance };
+             kBrightness, kAimAssist, kHints, kHideHud, kViewDistance, kKeepBodies, kCutsceneBars, kLeanToggle,
+             kMusicVolume, kMenuMusicVolume, kEffectsVolume, kVoiceVolume, kMsaa, kSmaa, kAmbientOcclusion, kAdsDof, kGunBlur, kAimToggle, kPreset, kShadows, kReflections,
+             // the game's own options (options.h's GameOption, src/game/game_options.cpp)
+             kGSubtitles, kGCrosshair, kGTags, kGTank, kGAdsToggle, kGInvert, kGVibration, kGVolume, kGLayout,
+             kGSensX, kGSensY };
+// a row of the game's own options: its place in Options::game_options, or -1
+int GameOptionOf(RowId id) {
+    return id >= kGSubtitles && id <= kGLayout ? int(id) - int(kGSubtitles) : -1;
+}
+const char* const kLayoutNames[] = {"A", "B", "C", "D", "MODERN"};
 
 struct Row {
     RowId id;
@@ -138,9 +138,11 @@ constexpr Row kRows[] = {
     {kVsync, "VSYNC"},
     {kFpsCounter, "FPS COUNTER"},
     {kBrightness, "BRIGHTNESS"},
+    {kCutsceneBars, "CUTSCENE BLACK BARS"},
     {kSection, "GRAPHICS"},
     {kAniso, "ANISOTROPIC FILTERING"},
-    {kViewDistance, "VIEW DISTANCE"},
+    {kViewDistance, "LEVEL OF DETAIL"},
+    {kKeepBodies, "BODIES STAY"},
     {kSection, "TEXTURES"},
     {kTextureReplacement, "TEXTURE REPLACEMENT"},
     {kTextureDumping, "TEXTURE DUMPING"},
@@ -157,6 +159,7 @@ constexpr Row kRows[] = {
     {kAimAssist, "CONTROLLER AIM ASSIST"},
     {kHints, "TUTORIAL HINTS"},
     {kHideHud, "HIDE THE HUD"},
+    {kLeanToggle, "LEANING"},
 };
 
 bool DisplayRow(RowId id) { return id == kDisplayMode || id == kResolution; }
@@ -188,6 +191,11 @@ std::string RowText(RowId id, int step, Settings& s) {
         case kResolution: {
             const std::vector<Mode>& modes = Modes();
             Mode desktop = Desktop();
+            // a borderless window is the desktop's size: nothing to pick (the size kept is for the other modes)
+            if (s.display_mode == DisplayMode::Borderless) {
+                std::snprintf(text, sizeof(text), "%u x %u", desktop.width, desktop.height);
+                break;
+            }
             Mode m = s.width && s.height ? Mode{s.width, s.height} : desktop;
             int i = 0;
             for (size_t k = 0; k < modes.size(); k++)
@@ -199,11 +207,11 @@ std::string RowText(RowId id, int step, Settings& s) {
                 s.width = native ? 0 : m.width;
                 s.height = native ? 0 : m.height;
             }
-            std::snprintf(text, sizeof(text), "%ux%u", m.width, m.height);
+            std::snprintf(text, sizeof(text), "%u x %u", m.width, m.height);
             break;
         }
         case kRenderResolution: {
-            if (step) s.render_percent = uint32_t(StepRange(int(s.render_percent), 20, 200, 5, step));
+            if (step) s.render_percent = uint32_t(StepRange(int(s.render_percent), 20, 200, 1, step));
             Mode out = Output();
             std::snprintf(text, sizeof(text), "%u%% (%ux%u)", s.render_percent, out.width * s.render_percent / 100,
                           out.height * s.render_percent / 100);
@@ -214,6 +222,7 @@ std::string RowText(RowId id, int step, Settings& s) {
             uint32_t at = s.fps_cap ? std::max<uint32_t>(s.fps_cap, 16) : 0;
             uint32_t cap = kFpsCaps[StepTable(kFpsCaps, at, step)];
             if (step) s.fps_cap = cap;
+            else cap = s.fps_cap;  // a rate of the console's com_maxfps is shown as it is
             std::snprintf(text, sizeof(text), cap == 30 ? "30 (ORIGINAL)" : cap ? "%u" : "UNLIMITED", cap);
             break;
         }
@@ -232,7 +241,7 @@ std::string RowText(RowId id, int step, Settings& s) {
             return OnOff(O().fps_counter);
         case kBrightness: {
             uint32_t& b = O().brightness;
-            if (step) b = uint32_t(StepRange(int(b), 50, 200, 10, step));
+            if (step) b = uint32_t(StepRange(int(b), 50, 200, 1, step));
             std::snprintf(text, sizeof(text), b == 100 ? "%u (DEFAULT)" : "%u", b);
             break;
         }
@@ -245,11 +254,135 @@ std::string RowText(RowId id, int step, Settings& s) {
         case kHideHud:
             if (step) O().hide_hud = !O().hide_hud;
             return OnOff(O().hide_hud);
+        case kGSubtitles:
+        case kGCrosshair:
+        case kGTags:
+        case kGTank:
+        case kGInvert:
+        case kGVibration:
+        case kGAdsToggle: {
+            int i = GameOptionOf(id);
+            bool on = O().GameOption(i) != 0;
+            if (step) on = !on, O().game_options[size_t(i)] = on;
+            if (id == kGAdsToggle) return on ? "TOGGLE" : "HOLD";
+            return OnOff(on);
+        }
+        case kGVolume: {
+            // a percent; the game's own is a half of it
+            int v = O().MasterPercent();
+            if (step) {
+                v = StepRange(v, 0, 100, 1, step);
+                O().master_volume = v;
+                O().game_options[game::kGoVolume] = (v + 1) / 2;
+            }
+            std::snprintf(text, sizeof(text), "%d", v);
+            break;
+        }
+        case kGSensX:
+        case kGSensY: {
+            int32_t& kept = id == kGSensX ? O().look_sensitivity_x : O().look_sensitivity_y;
+            int v = kept < 0 ? game::kLookSensitivityDefault : kept;
+            if (step) v = StepRange(v, 0, game::kLookSensitivityMax, 1, step), kept = v;
+            std::snprintf(text, sizeof(text), "%d", v);
+            break;
+        }
+        case kGLayout: {
+            int at = O().modern_layout ? 4 : std::clamp(O().GameOption(game::kGoLayout), 0, 3);
+            if (step) {
+                at = (at + (step > 0 ? 1 : 4)) % 5;
+                O().modern_layout = at == 4;
+                if (at < 4) O().game_options[game::kGoLayout] = at;
+            }
+            return kLayoutNames[at];
+        }
+        case kAimToggle:
+            if (step) O().aim_toggle = !O().aim_toggle;
+            return O().aim_toggle ? "TOGGLE" : "HOLD";
+        case kLeanToggle:
+            if (step) O().lean_toggle = !O().lean_toggle;
+            return O().lean_toggle ? "TOGGLE" : "HOLD (ORIGINAL)";
+        case kPreset: {
+            // Original: the game as it shipped, every addition of the port's on this tab off. Remastered: them on,
+            // smoothing by SMAA. The settings themselves say which it is: any of them changed by hand shows Custom.
+            // A step goes to the other one.
+            game::Options& o = O();
+            // (Water is in neither yet: Original turns it back to the game's, Remastered leaves it as it is)
+            bool original = !o.ads_dof && !o.gun_blur && !o.sun_shadows && !o.shadow_distance && !o.ambient_occlusion && !o.keep_bodies && !o.water &&
+                            DetailLevel(o.view_distance) == 0 && s.aniso == 0 && s.msaa == 0 && !s.smaa;
+            bool remastered = o.ads_dof && o.gun_blur && o.sun_shadows && o.shadow_distance == 2 && o.ambient_occlusion == 2 && o.keep_bodies &&
+                              DetailLevel(o.view_distance) == 2 && s.aniso == 16 && s.msaa == 0 && s.smaa;
+            if (step) {
+                bool to = original ? true : remastered ? false : step > 0;  // to Remastered
+                o.ads_dof = o.gun_blur = o.sun_shadows = o.keep_bodies = s.smaa = to;
+                if (!to) o.water = 0;
+                o.ambient_occlusion = to ? 2 : 0;
+                o.shadow_distance = to ? 2 : 0;
+                o.view_distance = to ? 8 : 1;
+                s.aniso = to ? 16 : 0;
+                s.msaa = 0;
+                return to ? "REMASTERED" : "ORIGINAL";
+            }
+            return original ? "ORIGINAL" : remastered ? "REMASTERED" : "CUSTOM";
+        }
+        case kAmbientOcclusion: {
+            static const char* const kNames[] = {"OFF", "SSAO", "GTAO"};
+            uint32_t& v = O().ambient_occlusion;
+            if (v > 2) v = 0;
+            if (step) v = (v + (step > 0 ? 1 : 2)) % 3;
+            return kNames[v];
+        }
+        case kGunBlur:
+            if (step) O().gun_blur = !O().gun_blur;
+            return OnOff(O().gun_blur);
+        case kReflections: {
+            // the game's own water; the same with a mirror laid over it; or the port's water in its place
+            static const char* const kNames[] = {"ORIGINAL", "REFLECTIONS", "NEW"};
+            uint32_t& v = O().water;
+            if (v > 2) v = 0;
+            if (step) v = (v + (step > 0 ? 1 : 2)) % 3;
+            return kNames[v];
+        }
+        case kShadows: {
+            // Low is the game's own: a blot straight down under each soldier, near the camera. High: shadows fall
+            // away from the sun, vehicles cast them too, and they reach six times as far (src/game/shadows.cpp).
+            // Something in between (set by console, or kept from before this row) shows Custom and steps to High.
+            game::Options& o = O();
+            bool high = o.sun_shadows && o.shadow_distance == 2, low = !o.sun_shadows && !o.shadow_distance;
+            if (step) {
+                high = !high;
+                low = !high;
+                o.sun_shadows = high;
+                o.shadow_distance = high ? 2 : 0;
+            }
+            return high ? "HIGH" : low ? "LOW (ORIGINAL)" : "CUSTOM";
+        }
+        case kAdsDof:
+            if (step) O().ads_dof = !O().ads_dof;
+            return OnOff(O().ads_dof);
+        case kKeepBodies:
+            if (step) O().keep_bodies = !O().keep_bodies;
+            return OnOff(O().keep_bodies);
+        case kCutsceneBars:
+            if (step) O().cutscene_bars = !O().cutscene_bars;
+            return OnOff(O().cutscene_bars);
         case kAniso:
             std::snprintf(text, sizeof(text), "%s", kAnisoNames[StepTable(kAnisoValues, s.aniso, step)]);
             break;
+        case kMsaa:
+            std::snprintf(text, sizeof(text), "%s", kMsaaNames[StepTable(kMsaaValues, s.msaa, step)]);
+            break;
+        case kSmaa:
+            if (step) s.smaa = !s.smaa;
+            return OnOff(s.smaa);
         case kViewDistance:
-            std::snprintf(text, sizeof(text), "%s", kViewDistanceNames[StepTable(kViewDistances, O().view_distance, step)]);
+        {
+            int level = DetailLevel(O().view_distance);
+            if (step) {
+                level = StepIndex(level, step, int(std::size(kViewDistances)));
+                O().view_distance = kViewDistances[level];
+            }
+            std::snprintf(text, sizeof(text), "%s", kViewDistanceNames[level]);
+        }
             break;
         case kTextureReplacement:
             if (step) s.custom_textures = !s.custom_textures;
@@ -264,8 +397,9 @@ std::string RowText(RowId id, int step, Settings& s) {
         case kMouseX:
         case kMouseY: {
             float& v = id == kMouseX ? O().mouse_sensitivity : O().mouse_vertical_sensitivity;
-            if (step) v = float(StepRange(int(v * 10.0f + 0.5f), 1, 50, 1, step)) / 10.0f;
-            std::snprintf(text, sizeof(text), v == 1.0f ? "%.1f (DEFAULT)" : "%.1f", v);
+            // shown as a percent of the game's own (m_sensitivity 1.0 is 100)
+            if (step) v = float(StepRange(int(v * 100.0f + 0.5f), 10, 500, 1, step)) / 100.0f;
+            std::snprintf(text, sizeof(text), v == 1.0f ? "%d (DEFAULT)" : "%d", int(v * 100.0f + 0.5f));
             break;
         }
         case kInvertY:
@@ -274,6 +408,16 @@ std::string RowText(RowId id, int step, Settings& s) {
         case kInvertX:
             if (step) O().invert_mouse_x = !O().invert_mouse_x;
             return OnOff(O().invert_mouse_x);
+        case kMusicVolume:
+        case kMenuMusicVolume:
+        case kEffectsVolume:
+        case kVoiceVolume: {
+            uint32_t& v = id == kMusicVolume ? O().music_volume : id == kMenuMusicVolume ? O().menu_music_volume :
+                          id == kEffectsVolume ? O().effects_volume : O().voice_volume;
+            if (step) v = uint32_t(StepRange(int(v), 0, 100, 1, step));
+            std::snprintf(text, sizeof(text), "%u", v);
+            break;
+        }
         case kQwerty:
             if (step) O().qwerty_typewriter = !O().qwerty_typewriter;
             return O().qwerty_typewriter ? "QWERTY" : "ABC (ORIGINAL)";
@@ -290,58 +434,6 @@ std::string RowText(RowId id, int step, Settings& s) {
     return text;
 }
 
-void Section(const char* title) {
-    float em = ImGui::GetFontSize();
-    ImGui::Dummy(ImVec2(0, em * 0.5f));
-    ImGui::PushStyleColor(ImGuiCol_Text, kHeading);
-    ImGui::TextUnformatted(title);
-    ImGui::PopStyleColor();
-    ImGui::Separator();
-    ImGui::Dummy(ImVec2(0, em * 0.2f));
-}
-
-constexpr float kValueEms = 12.0f;  // the value column's width
-
-// label left, an arrow each side of the value right; the row is the only nav stop. Returns -1, 0 or 1
-int OptionRow(const char* label, const char* value) {
-    const ImGuiStyle& style = ImGui::GetStyle();
-    float em = ImGui::GetFontSize();
-    float row_w = ImGui::GetContentRegionAvail().x;
-    float row_h = ImGui::GetFrameHeight();
-    float value_w = em * kValueEms;
-    float block_w = row_h * 2 + value_w + style.ItemSpacing.x * 2;
-    float x = ImGui::GetCursorPosX();
-    float y = ImGui::GetCursorPosY();
-    ImGui::PushID(label);
-    int step = 0;
-    ImGui::Selectable("##row", false, ImGuiSelectableFlags_AllowOverlap, ImVec2(row_w, row_h));
-    if (ImGui::IsItemFocused()) {
-        ImGui::GetWindowDrawList()->AddRectFilled(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
-                                                  ImGui::GetColorU32(ImGuiCol_Header));
-        if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) step = -1;
-        if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) step = 1;
-    }
-    ImGui::SetCursorPos(ImVec2(x + style.ItemInnerSpacing.x, y));
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(label);
-    ImGui::PushItemFlag(ImGuiItemFlags_NoNav | ImGuiItemFlags_ButtonRepeat, true);
-    float block_x = x + row_w - block_w;
-    ImGui::SetCursorPos(ImVec2(block_x, y));
-    if (ImGui::ArrowButton("##dec", ImGuiDir_Left)) step = -1;
-    float value_x = block_x + row_h + style.ItemSpacing.x;
-    float pad = (value_w - ImGui::CalcTextSize(value).x) * 0.5f;
-    ImGui::SetCursorPos(ImVec2(value_x + std::max(pad, 0.0f), y));
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(value);
-    ImGui::SetCursorPos(ImVec2(value_x + value_w + style.ItemSpacing.x, y));
-    if (ImGui::ArrowButton("##inc", ImGuiDir_Right)) step = 1;
-    ImGui::PopItemFlag();
-    ImGui::PopID();
-    ImGui::SetCursorPos(ImVec2(x, y));
-    ImGui::Dummy(ImVec2(row_w, row_h));
-    return step;
-}
-
 void Apply() {
     if (!g_held_set) return;
     Settings& s = Get();
@@ -354,7 +446,8 @@ void Apply() {
 }
 
 // the settings as they come into s and o, a part of them (a PC Options page resets its own) or all
-constexpr int kDisplayPart = 1, kGraphicsPart = 2, kMousePart = 4, kKeysPart = 8, kGameplayPart = 16, kEveryPart = 31;
+constexpr int kDisplayPart = 1, kGraphicsPart = 2, kMousePart = 4, kKeysPart = 8, kGameplayPart = 16, kAudioPart = 32,
+              kEveryPart = 63;
 void SetDefaults(Settings& s, game::Options& o, int parts) {
     Settings d;
     if (parts & kDisplayPart) {
@@ -367,20 +460,43 @@ void SetDefaults(Settings& s, game::Options& o, int parts) {
         o.fps_counter = false;
         o.fov = game::kDefaultFov;
         o.brightness = 100;
+        o.cutscene_bars = true;
     }
     if (parts & kGameplayPart) {
         o.aim_assist = true;
         o.hints = true;
         o.hide_hud = false;
+        o.lean_toggle = false;
+        for (int i : {game::kGoSubtitles, game::kGoCrosshair, game::kGoTags, game::kGoTank}) o.game_options[size_t(i)] = game::kGameOptionDefaults[i];
+        o.aim_toggle = false;
+    }
+    if (parts & kAudioPart) {
+        o.music_volume = 100;
+        o.menu_music_volume = 100;
+        o.effects_volume = 100;
+        o.voice_volume = 100;
     }
     if (parts & kGraphicsPart) {
         s.aniso = d.aniso;
+        s.msaa = 0;
+        s.smaa = false;
         o.view_distance = 1;
+        o.keep_bodies = false;
+        o.ambient_occlusion = 0;
+        o.ads_dof = false;
+        o.gun_blur = false;
+        o.water = 0;
+        o.sun_shadows = false;
+        o.shadow_distance = 0;
         s.custom_textures = d.custom_textures;
         s.dump_textures = d.dump_textures;
         s.texture_dump_format = d.texture_dump_format;
     }
     if (parts & kMousePart) {
+        // the controller's lines are on the same tab
+        for (int i : {game::kGoInvert, game::kGoVibration, game::kGoAdsToggle}) o.game_options[size_t(i)] = game::kGameOptionDefaults[i];
+        o.look_sensitivity_x = o.look_sensitivity_y = game::kLookSensitivityDefault;
+        o.modern_layout = true;
         o.mouse_sensitivity = 1.0f;
         o.mouse_vertical_sensitivity = 1.0f;
         o.invert_mouse = false;
@@ -401,6 +517,8 @@ void CopyRows(Settings& s, game::Options& o, const Settings& from, const game::O
     s.fps_cap = from.fps_cap;
     s.vsync = from.vsync;
     s.aniso = from.aniso;
+    s.msaa = from.msaa;
+    s.smaa = from.smaa;
     s.custom_textures = from.custom_textures;
     s.dump_textures = from.dump_textures;
     s.texture_dump_format = from.texture_dump_format;
@@ -416,20 +534,44 @@ void CopyRows(Settings& s, game::Options& o, const Settings& from, const game::O
     o.aim_assist = from_o.aim_assist;
     o.hints = from_o.hints;
     o.hide_hud = from_o.hide_hud;
+    o.lean_toggle = from_o.lean_toggle;
+    o.game_options = from_o.game_options;
+    o.master_volume = from_o.master_volume;
+    o.look_sensitivity_x = from_o.look_sensitivity_x;
+    o.look_sensitivity_y = from_o.look_sensitivity_y;
+    o.modern_layout = from_o.modern_layout;
+    o.aim_toggle = from_o.aim_toggle;
     o.view_distance = from_o.view_distance;
+    o.keep_bodies = from_o.keep_bodies;
+    o.ambient_occlusion = from_o.ambient_occlusion;
+    o.ads_dof = from_o.ads_dof;
+    o.gun_blur = from_o.gun_blur;
+    o.water = from_o.water;
+    o.sun_shadows = from_o.sun_shadows;
+    o.shadow_distance = from_o.shadow_distance;
+    o.cutscene_bars = from_o.cutscene_bars;
+    o.music_volume = from_o.music_volume;
+    o.menu_music_volume = from_o.menu_music_volume;
+    o.effects_volume = from_o.effects_volume;
+    o.voice_volume = from_o.voice_volume;
 }
 
 // one set of the rows' values differs from another
 bool RowsDiffer(const Settings& a, const game::Options& c, const Settings& b, const game::Options& d) {
     return a.display_mode != b.display_mode || a.width != b.width || a.height != b.height ||
            a.render_percent != b.render_percent || a.fps_cap != b.fps_cap || a.vsync != b.vsync || a.aniso != b.aniso ||
+           a.msaa != b.msaa || a.smaa != b.smaa ||
            a.custom_textures != b.custom_textures || a.dump_textures != b.dump_textures ||
            a.texture_dump_format != b.texture_dump_format || c.fps_counter != d.fps_counter || c.fov != d.fov ||
            c.mouse_sensitivity != d.mouse_sensitivity || c.mouse_vertical_sensitivity != d.mouse_vertical_sensitivity ||
            c.invert_mouse != d.invert_mouse || c.invert_mouse_x != d.invert_mouse_x ||
            c.qwerty_typewriter != d.qwerty_typewriter || c.button_prompts != d.button_prompts ||
            c.brightness != d.brightness || c.aim_assist != d.aim_assist || c.hints != d.hints ||
-           c.hide_hud != d.hide_hud || c.view_distance != d.view_distance;
+           c.hide_hud != d.hide_hud || c.lean_toggle != d.lean_toggle || c.game_options != d.game_options || c.look_sensitivity_x != d.look_sensitivity_x ||
+           c.look_sensitivity_y != d.look_sensitivity_y || c.modern_layout != d.modern_layout || c.aim_toggle != d.aim_toggle || c.view_distance != d.view_distance || c.keep_bodies != d.keep_bodies || c.ambient_occlusion != d.ambient_occlusion || c.ads_dof != d.ads_dof || c.gun_blur != d.gun_blur || c.water != d.water || c.sun_shadows != d.sun_shadows || c.shadow_distance != d.shadow_distance ||
+           c.cutscene_bars != d.cutscene_bars || c.music_volume != d.music_volume ||
+           c.menu_music_volume != d.menu_music_volume || c.effects_volume != d.effects_volume ||
+           c.voice_volume != d.voice_volume;
 }
 
 // The F10 panel's changes, every row's, are held until its Apply (his ask: nothing changes before Apply, as in PC
@@ -497,23 +639,13 @@ void ApplyPanel() {
     CopyRows(s, game::Opt(), g_panel_settings, g_panel_options);
     if (display) ApplyDisplay();
     Save();
+    game::ApplyGameOptions();  // the game's own, into its profile at the next frame
 }
 
 // the F10 panel's Defaults: held like any other change, until Apply
 void Defaults() {
     HoldPanel();
     SetDefaults(g_panel_settings, g_panel_options, kEveryPart);
-}
-
-void DrawRows() {
-    for (const Row& r : kRows) {
-        if (r.id == kSection) {
-            Section(r.label);
-            continue;
-        }
-        int step = OptionRow(r.label, PanelText(r.id, 0).c_str());
-        if (step) PanelText(r.id, step);
-    }
 }
 
 // a binding box waiting for a key: the action and slot, the keys let go of first
@@ -523,34 +655,6 @@ struct Capture {
     bool released = false;
 };
 Capture g_capture;
-
-// one action: its label, then a box for each of its two keys. A click waits for a key, right click clears
-void BindingRow(size_t action, const char* label) {
-    const ImGuiStyle& style = ImGui::GetStyle();
-    float em = ImGui::GetFontSize();
-    float row_w = ImGui::GetContentRegionAvail().x;
-    float box_w = em * 7.5f;
-    ImGui::PushID(int(action));
-    ImGui::AlignTextToFramePadding();
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + style.ItemInnerSpacing.x);
-    ImGui::TextUnformatted(label);
-    for (int slot = 0; slot < 2; slot++) {
-        ImGui::SameLine(row_w - box_w * float(2 - slot) - style.ItemSpacing.x * float(1 - slot));
-        bool waiting = g_capture.action == int(action) && g_capture.slot == slot;
-        std::string key = waiting ? "PRESS A KEY" : input::Binding(action, slot);
-        if (key.empty()) key = "-";
-        ImGui::PushID(slot);
-        if (waiting) ImGui::PushStyleColor(ImGuiCol_Button, kHighlight);
-        if (ImGui::Button(key.c_str(), ImVec2(box_w, 0)) && !waiting) g_capture = {int(action), slot, false};
-        if (waiting) ImGui::PopStyleColor();
-        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-            if (waiting) g_capture = {};
-            input::Bind(action, 0, slot);
-        }
-        ImGui::PopID();
-    }
-    ImGui::PopID();
-}
 
 // the key a waiting box takes: none until every key is up, then the first one down; Escape and Backspace (the
 // menus' back keys) cancel
@@ -566,133 +670,13 @@ void UpdateCapture() {
     g_capture = {};
 }
 
-void DrawBindings() {
-    Section("CONTROLS");
-    ImGui::PushStyleColor(ImGuiCol_Text, kDim);
-    ImGui::TextWrapped("The keys do the same whichever controller layout is picked in the game's options. In menus "
-                       "the arrows, Enter and Backspace move, pick and go back. Click a box and press a key, right "
-                       "click to clear it.");
-    ImGui::PopStyleColor();
-    size_t count = 0;
-    input::Actions(&count);
-    for (size_t i = 0; i < count; i++) BindingRow(i, input::Label(i));
-    float em = ImGui::GetFontSize();
-    ImGui::Dummy(ImVec2(0, em * 0.3f));
-    if (ImGui::Button("Reset controls", ImVec2(em * 10, 0))) {
-        g_capture = {};
-        input::ResetBindings();
-    }
-}
-
-// Cheats (src/game/cheats.cpp): a small box for the code, and with the right one typed the engine's own cheats
-void DrawCheats() {
-    namespace cheats = game::cheats;
-    float em = ImGui::GetFontSize();
-    Section("CHEATS");
-    if (!cheats::Unlocked()) {
-        static char code[16] = "";
-        ImGui::PushStyleColor(ImGuiCol_Text, kDim);
-        ImGui::TextUnformatted("Enter password");
-        ImGui::PopStyleColor();
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(em * 8);
-        ImGui::InputText("##cheatcode", code, sizeof(code), ImGuiInputTextFlags_Password);
-        if (cheats::TryUnlock(code)) code[0] = 0;
-        return;
-    }
-    ImGui::PushStyleColor(ImGuiCol_Text, kDim);
-    ImGui::TextWrapped("Cheats are on until the game is closed. They can break missions: use them at your own risk.");
-    ImGui::PopStyleColor();
-    static constexpr struct {
-        cheats::Toggle toggle;
-        const char* label;
-    } kToggleRows[] = {{cheats::kGod, "God mode"},
-                     {cheats::kNoTarget, "Enemies ignore you"},
-                     {cheats::kLowGravity, "Low gravity (you only)"},
-                     {cheats::kFastRun, "Run fast"},
-                     {cheats::kBackwards, "sdrawkcaB"}};
-    // ticked here, in force on Apply like the settings above
-    HeldCheats& held = g_held_cheats;
-    for (const auto& row : kToggleRows) {
-        bool on = held.pending ? held.on[row.toggle] : cheats::On(row.toggle);
-        if (ImGui::Checkbox(row.label, &on)) {
-            HoldCheats();
-            held.on[row.toggle] = on;
-        }
-    }
-    bool ammo = held.pending ? held.ammo : cheats::UnlimitedAmmo();
-    if (ImGui::Checkbox("Unlimited ammo", &ammo)) {
-        HoldCheats();
-        held.ammo = ammo;
-    }
-    bool heal = held.pending && held.heal;
-    if (ImGui::Checkbox("Full health (once, on Apply)", &heal)) {
-        HoldCheats();
-        held.heal = heal;
-    }
-}
-
-void DrawFooter(float em) {
-    ImGui::Separator();
-    ImGui::PushStyleColor(ImGuiCol_Text, kDim);
-    bool only = g_bindings_only.load(std::memory_order_relaxed);
-    ImGui::TextUnformatted(PanelChanged() ? "Changes take effect on Apply" :
-                           only ? "Escape or Back returns to PC Options" : "F10 or Escape closes");
-    ImGui::PopStyleColor();
-    float bw = em * 8;
-    float pad = ImGui::GetContentRegionAvail().x - bw * 3 - ImGui::GetStyle().ItemSpacing.x * 2;
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(pad, 0.0f));
-    if (ImGui::Button("Back", ImVec2(bw, 0))) ToggleMenu();
-    if (only) return;
-    ImGui::SameLine();
-    if (ImGui::Button("Defaults", ImVec2(bw, 0))) Defaults();
-    ImGui::SameLine();
-    bool changed = PanelChanged();
-    ImGui::BeginDisabled(!changed);
-    if (ImGui::Button("Apply", ImVec2(bw, 0))) ApplyPanel();
-    ImGui::EndDisabled();
-}
-
-void DrawPanel() {
-    const ImGuiViewport* vp = ImGui::GetMainViewport();
-    float em = ImGui::GetFontSize();
-    ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(em * 44, std::min(em * 32, vp->Size.y * 0.92f)), ImGuiCond_Always);
-    for (const auto& [col, color] : kPanelColors) ImGui::PushStyleColor(col, color);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 2.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(em * 1.6f, em * 1.2f));
-    constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse |
-                                        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoTitleBar;
-    if (ImGui::Begin("##settings", nullptr, kFlags)) {
-        bool only = g_bindings_only.load(std::memory_order_relaxed);
-        const char* title = only ? "KEY BINDINGS" : "SETTINGS";
-        float title_pad = (ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(title).x) * 0.5f;
-        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(title_pad, 0.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text, kHeading);
-        ImGui::TextUnformatted(title);
-        ImGui::PopStyleColor();
-        float footer = ImGui::GetTextLineHeightWithSpacing() + ImGui::GetFrameHeightWithSpacing() + em;
-        ImGui::BeginChild("##rows", ImVec2(0, -footer), ImGuiChildFlags_NavFlattened);
-        if (!only) DrawRows();
-        DrawBindings();
-        if (!only) DrawCheats();
-        ImGui::EndChild();
-        DrawFooter(em);
-    }
-    ImGui::End();
-    ImGui::PopStyleVar(4);
-    ImGui::PopStyleColor(int(std::size(kPanelColors)));
-}
-
 // ---- the PC Options page: the same settings on one of the game's own paper option pages (paper_page.h) ----
 
 std::atomic<bool> g_paper{false};
 std::atomic<uint32_t> g_paper_pad{0};  // the controller as kPad* bits, from the game thread's poll
 
 constexpr uint32_t kPadUp = 1, kPadDown = 2, kPadLeft = 4, kPadRight = 8, kPadA = 0x100, kPadB = 0x200,
-                   kPadX = 0x400;
+                   kPadX = 0x400, kPadY = 0x800, kPadPrev = 0x1000, kPadNext = 0x2000;
 
 struct PaperState {
     int selected = -1;  // a line index
@@ -712,8 +696,26 @@ struct PaperRow {
 };
 
 // the page's words in the game's own case: "Field of view", "On"; short names stay capitals
+// a name with a capital on every word ("Lean Left"), for the settings menu's key list
+std::string TitleCase(const std::string& text) {
+    static constexpr const char* kKeep[] = {"HUD", "FPS", "FOV", "D-PAD"};
+    std::string out;
+    size_t i = 0;
+    while (i < text.size()) {
+        size_t j = i;
+        while (j < text.size() && text[j] != ' ' && text[j] != '/') j++;
+        std::string word = text.substr(i, j - i);
+        if (std::none_of(std::begin(kKeep), std::end(kKeep), [&](const char* k) { return word == k; }))
+            for (size_t k = 1; k < word.size(); k++) word[k] = char(std::tolower(static_cast<unsigned char>(word[k])));
+        out += word;
+        if (j < text.size()) out += text[j];
+        i = j + 1;
+    }
+    return out;
+}
+
 std::string Sentence(const std::string& text) {
-    static constexpr const char* kKeep[] = {"PNG", "DDS", "QWERTY", "ABC", "FPS", "FOV", "D-PAD"};
+    static constexpr const char* kKeep[] = {"PNG", "DDS", "QWERTY", "ABC", "FPS", "FOV", "D-PAD", "SSAO", "GTAO"};
     std::string out;
     size_t i = 0;
     while (i < text.size()) {
@@ -727,11 +729,14 @@ std::string Sentence(const std::string& text) {
         if (j < text.size()) out += text[j];
         i = j + 1;
     }
-    for (char& c : out)
+    // (a number first: a size, "1920 x 1080", keeps its small x)
+    for (char& c : out) {
+        if (std::isdigit(static_cast<unsigned char>(c))) break;
         if (std::isalpha(static_cast<unsigned char>(c))) {
             c = char(std::toupper(static_cast<unsigned char>(c)));
             break;
         }
+    }
     return out;
 }
 
@@ -921,17 +926,769 @@ void DrawPaper() {
     p.follow = false;
 }
 
-// top right, over the game
+// ---- the settings menu on F10: the settings by tab on the game's sheet (modern_menu.h) ----
+
+constexpr int kDisplayTab = 0, kGraphicsTab = 1, kGameplayTab = 2, kAudioTab = 3, kControlsTab = 4,
+              kControllerTab = 5, kCheatsTab = 6, kTabs = 7;
+const char* const kTabNames[kTabs] = {"Display", "Graphics", "Gameplay", "Audio", "Controls", "Controller", "Cheats"};
+
+// a tab's settings: kSection is a heading. The note is what the slip at the right says, the variable the console's
+// name for the same setting (src/game/console.cpp)
+struct TabRow {
+    int tab;
+    RowId id;
+    const char* label;
+    const char* note;
+    const char* variable;
+};
+constexpr TabRow kTabRows[] = {
+    {kDisplayTab, kSection, "Screen", "", ""},
+    {kDisplayTab, kDisplayMode, "Display Mode", "Fullscreen, a borderless window the size of the desktop, or a window.", ""},
+    {kDisplayTab, kResolution, "Resolution", "The size of the game's window or screen mode.", ""},
+    {kDisplayTab, kVsync, "VSync", "Each frame waits for the monitor. No tearing, a little more delay on the mouse.", "r_swapInterval"},
+    {kDisplayTab, kMaxFps, "Max Frame Rate", "The most frames a second.", "com_maxfps"},
+    {kDisplayTab, kSection, "Picture", "", ""},
+    {kDisplayTab, kFov, "Field of View", "How wide you see. Higher shows more of the battlefield and makes things look further away.", "cg_fov"},
+    {kDisplayTab, kBrightness, "Brightness", "Lightens or darkens the whole picture.", "r_gamma"},
+    {kDisplayTab, kCutsceneBars, "Cutscene Black Bars", "The black bars the game puts over its cutscenes.", "cg_cutsceneBars"},
+    {kDisplayTab, kFpsCounter, "FPS Counter", "The frame rate, at the top right of the screen.", "cg_drawFPS"},
+    {kGraphicsTab, kSection, "Preset", "", ""},
+    {kGraphicsTab, kPreset, "Graphics Preset", "Original is the game as it shipped. Remastered turns on SMAA, Ambient Occlusion (GTAO), Shadows at High, Depth of Field When Aiming, Blur Gun Sight and Bodies Stay, with Level of Detail at High and Anisotropic Filtering at 16x. Change any of these yourself and it reads Custom.", ""},
+    {kGraphicsTab, kSection, "Quality", "", ""},
+    {kGraphicsTab, kRenderResolution, "Render Resolution", "The size the game is drawn at, as a share of the window. Over 100 is sharper and costs frame rate, under it is the other way.", "r_renderScale"},
+    {kGraphicsTab, kAniso, "Anisotropic Filtering", "Keeps the ground and walls sharp at a shallow angle.", "r_anisotropy"},
+    {kGraphicsTab, kMsaa, "MSAA", "Smooths the jagged edges of soldiers, buildings and the ground. Higher is smoother and costs frame rate.", "r_msaa"},
+    {kGraphicsTab, kSmaa, "SMAA", "Smooths jagged edges across the whole picture without making it blurry. Can be used with MSAA.", "r_smaa"},
+    {kGraphicsTab, kAmbientOcclusion, "Ambient Occlusion", "Soft shade where surfaces meet: in corners, under ledges and around objects. SSAO is the lighter of the two, GTAO the more exact.", "r_ambientOcclusion"},
+    {kGraphicsTab, kAdsDof, "Depth of Field When Aiming", "While you aim down the sights, what is in the sight picture stays sharp and everything around it goes out of focus.", "r_dof"},
+    {kGraphicsTab, kGunBlur, "Blur Gun Sight", "While you aim down the sights, the part of the gun nearest your eye goes softly out of focus.", "r_blurGunSight"},
+    {kGraphicsTab, kShadows, "Shadows", "Low is the game's own: a dark patch straight down under each soldier. High: shadows fall away from the sun, tanks and trucks cast them too, and they reach six times as far.", "r_sunShadows"},
+    {kGraphicsTab, kReflections, "Water", "The sea, rivers and ponds. Reflections: the game's water mirrors the sky, the shore and what stands over it. New: a new water in its place, with moving waves, deeper colour, reflections and the sun's glint.", "r_water"},
+    {kGraphicsTab, kViewDistance, "Level of Detail", "How far away soldiers and objects keep their detailed models.", "cg_viewDistance"},
+    {kGraphicsTab, kKeepBodies, "Bodies Stay", "The fallen stay where they fell and are not cleared away.", "cg_bodiesStay"},
+    {kGraphicsTab, kSection, "Textures", "", ""},
+    {kGraphicsTab, kTextureReplacement, "Texture Replacement", "Pictures in textures\\replacement beside the game take the place of the game's own.", "r_customTextures"},
+    {kGraphicsTab, kTextureDumping, "Texture Dumping", "Writes each texture the game uses into textures\\dumps beside the game, once.", "r_dumpTextures"},
+    {kGraphicsTab, kDumpFormat, "Dump Format", "The kind of file the dumped textures are written as.", ""},
+    {kGameplayTab, kSection, "Play", "", ""},
+    {kGameplayTab, kAimAssist, "Controller Aim Assist", "The game's pull towards an enemy under the sight, on a controller.", "cg_aimAssist"},
+    {kGameplayTab, kHints, "Tutorial Hints", "The lines that tell you how to crouch, lean, throw and the like.", "cg_hints"},
+    {kGameplayTab, kHideHud, "Hide the HUD", "Takes the compass, the health and the ammunition off the screen.", "cg_drawHud"},
+    {kGameplayTab, kGCrosshair, "Crosshair", "The crosshair in the middle of the screen when you fire from the hip.", ""},
+    {kGameplayTab, kGTags, "Friendly Tags", "The names over the men of your own side.", ""},
+    {kGameplayTab, kGSubtitles, "Subtitles", "What is said, written at the foot of the screen.", ""},
+    {kGameplayTab, kGTank, "Alternate Tank Control", "The tank's other way of steering, with the turret on the right stick alone.", ""},
+    {kGameplayTab, kAimToggle, "Aim Down Sights", "Hold: you aim while the key is down. Toggle: a press brings the gun up and the next one lowers it. For the keyboard and mouse.", "cg_aimToggle"},
+    {kGameplayTab, kLeanToggle, "Leaning", "Hold: you lean while the key is down. Toggle: a press leans and the next one straightens you.", "cg_leanToggle"},
+    {kGameplayTab, kSection, "Menus", "", ""},
+    {kGameplayTab, kQwerty, "Profile Name Keys", "The order of the letters on the screen where a profile is named.", "cg_qwertyNames"},
+    {kGameplayTab, kPrompts, "Button Prompts", "Whether the game shows keys or a controller's buttons. Automatic follows what you last used.", "cg_buttonPrompts"},
+    {kAudioTab, kSection, "Volume", "", ""},
+    {kAudioTab, kGVolume, "Master Volume", "How loud the whole game is.", ""},
+    {kAudioTab, kMusicVolume, "Music", "How loud the music is in a mission.", "snd_musicVolume"},
+    {kAudioTab, kMenuMusicVolume, "Main Menu Music", "How loud the music is in the menus.", "snd_menuMusicVolume"},
+    {kAudioTab, kEffectsVolume, "Sound Effects", "Gunfire, explosions, vehicles and the menus' own sounds.", "snd_effectsVolume"},
+    {kAudioTab, kVoiceVolume, "Dialogue", "The voices of your squad and the enemy.", "snd_voiceVolume"},
+    {kControlsTab, kSection, "Mouse", "", ""},
+    {kControlsTab, kMouseX, "Horizontal Sensitivity", "How far a move of the mouse turns you left and right.", "m_sensitivityX"},
+    {kControlsTab, kMouseY, "Vertical Sensitivity", "How far a move of the mouse looks up and down.", "m_sensitivityY"},
+    {kControlsTab, kInvertY, "Invert Vertical Look", "Pushing the mouse away looks down.", "m_invertMouse"},
+    {kControlsTab, kInvertX, "Invert Horizontal Look", "Moving the mouse left looks right.", "m_invertMouseX"},
+    // the Controller tab is the game's Controller screen: these in two columns of three, the picture under them
+    {kControllerTab, kGInvert, "Invert Aim", "Pushing the right stick away looks down.", ""},
+    {kControllerTab, kGVibration, "Vibration", "The controller shakes with gunfire and explosions.", ""},
+    {kControllerTab, kGAdsToggle, "Aim Down Sights", "Hold the button to aim, or press it once to bring the gun up.", ""},
+    {kControllerTab, kGSensX, "Horizontal Sensitivity", "How fast the right stick turns you left and right.", ""},
+    {kControllerTab, kGSensY, "Vertical Sensitivity", "How fast the right stick looks up and down.", ""},
+    {kControllerTab, kGLayout, "Controller Configuration", "Which button does what. A to D are the game's, Modern is this port's.", ""},
+};
+
+constexpr struct {
+    game::cheats::Toggle toggle;
+    const char* label;
+    const char* note;
+} kCheatRows[] = {
+    {game::cheats::kGod, "God Mode", "Nothing hurts you."},
+    {game::cheats::kNoTarget, "Enemies Ignore You", "The enemy does not see you."},
+    {game::cheats::kLowGravity, "Low Gravity", "You fall slowly. The world keeps its own."},
+    {game::cheats::kFastRun, "Run Fast", "Twice your speed."},
+    {game::cheats::kBackwards, "sdrawkcaB", "Moving, looking and the HUD are turned round."},
+};
+
+// what each line of the menu's page is
+struct ModernRow {
+    enum Kind { kNone, kSetting, kBind, kResetKeys, kCheat, kAmmo, kHeal, kPassword } kind = kNone;
+    RowId row = kSection;
+    size_t action = 0;
+    int cheat = 0;
+    const char* note = "";
+    const char* variable = "";
+};
+
+struct ModernState {
+    int tab = 0;
+    int selected = -1;
+    float scroll = 0;
+    bool follow = true;
+    ImVec2 mouse{-1, -1};
+    uint32_t pad_prev = 0;
+    double pad_repeat = 0;
+    bool controller = false;  // the controller was the last thing used: the bottom line shows its buttons
+    std::string code;         // the cheats password as typed so far
+    int drag = -1;            // the slider line the mouse holds, while its button is down
+    bool held = false;        // the left button, as Windows had it last frame
+    bool confirm = false;     // leaving with changes waiting: the slip that asks about them is up
+    int confirm_choice = 0;
+    int editing = -1;         // the line picked with A or Enter: left and right change it until it is let go
+    bool pointer = false;     // the mouse was the last thing used: its lines change at a click, without the pick
+    bool mouse_seen = false;  // where the pointer rests as the menu opens is not a move of it
+    double settle = 0;        // until then the controller's buttons held as the menu opened are not presses
+    ui::modern::Hits hits;
+} g_modern;
+
+// A slider row's range and step, and its value in a set of settings; false for a row that is not one. Every one
+// steps by one. The mouse's sensitivities are in hundredths.
+struct SliderRange {
+    float lo, hi, step;
+};
+bool Slider(RowId id, SliderRange& r) {
+    switch (id) {
+        case kFov: r = {float(game::kMinFov), float(game::kMaxFov), 1}; return true;
+        case kBrightness: r = {50, 200, 1}; return true;
+        case kRenderResolution: r = {20, 200, 1}; return true;
+        case kMouseX:
+        case kMouseY: r = {10, 500, 1}; return true;
+        case kMusicVolume:
+        case kMenuMusicVolume:
+        case kEffectsVolume:
+        case kVoiceVolume: r = {0, 100, 1}; return true;
+        case kGVolume: r = {0, 100, 1}; return true;
+        case kGSensX:
+        case kGSensY: r = {0, float(game::kLookSensitivityMax), 1}; return true;
+        default: return false;
+    }
+}
+float SliderValue(RowId id, const Settings& s, const game::Options& o) {
+    switch (id) {
+        case kFov: return float(o.fov);
+        case kBrightness: return float(o.brightness);
+        case kRenderResolution: return float(s.render_percent);
+        case kMouseX: return o.mouse_sensitivity * 100.0f;
+        case kMouseY: return o.mouse_vertical_sensitivity * 100.0f;
+        case kMusicVolume: return float(o.music_volume);
+        case kMenuMusicVolume: return float(o.menu_music_volume);
+        case kEffectsVolume: return float(o.effects_volume);
+        case kVoiceVolume: return float(o.voice_volume);
+        case kGVolume: return float(o.MasterPercent());
+        case kGSensX: return float(o.look_sensitivity_x < 0 ? game::kLookSensitivityDefault : o.look_sensitivity_x);
+        case kGSensY: return float(o.look_sensitivity_y < 0 ? game::kLookSensitivityDefault : o.look_sensitivity_y);
+        default: return 0;
+    }
+}
+// a slider's place, 0 to 1; under 0 for a row that is not one
+float RowFill(RowId id, const Settings& s, const game::Options& o) {
+    SliderRange r;
+    if (!Slider(id, r)) return -1.0f;
+    return std::clamp((SliderValue(id, s, o) - r.lo) / (r.hi - r.lo), 0.0f, 1.0f);
+}
+// a slider dragged to a place, 0 to 1: the nearest of its steps, held like any other change
+void DragSlider(RowId id, float place) {
+    SliderRange r;
+    if (!Slider(id, r)) return;
+    float value = r.lo + std::round(std::clamp(place, 0.0f, 1.0f) * (r.hi - r.lo) / r.step) * r.step;
+    HoldPanel();
+    Settings& s = g_panel_settings;
+    game::Options& o = g_panel_options;
+    uint32_t whole = uint32_t(value + 0.5f);
+    switch (id) {
+        case kFov: o.fov = whole; break;
+        case kBrightness: o.brightness = whole; break;
+        case kRenderResolution: s.render_percent = whole; break;
+        case kMouseX: o.mouse_sensitivity = float(whole) / 100.0f; break;
+        case kMouseY: o.mouse_vertical_sensitivity = float(whole) / 100.0f; break;
+        case kMusicVolume: o.music_volume = whole; break;
+        case kMenuMusicVolume: o.menu_music_volume = whole; break;
+        case kEffectsVolume: o.effects_volume = whole; break;
+        case kVoiceVolume: o.voice_volume = whole; break;
+        case kGVolume:
+            o.master_volume = int32_t(whole);
+            o.game_options[game::kGoVolume] = (int32_t(whole) + 1) / 2;
+            break;
+        case kGSensX: o.look_sensitivity_x = int32_t(whole); break;
+        case kGSensY: o.look_sensitivity_y = int32_t(whole); break;
+        default: break;
+    }
+}
+
+// a row's words with what is in use, whatever is held
+std::string LiveText(RowId id) {
+    game::Options* held = g_row_options;
+    g_row_options = nullptr;
+    std::string text = RowText(id, 0, Get());
+    g_row_options = held;
+    return text;
+}
+
+// what each button does in a controller configuration (the game's style_h/e/f/g.cfg for A to D, pad_layout.cpp's
+// binds for Modern), in the order of ui::modern::PadLabel: RT, RB, X, Y, B, A, LT, LB, the left stick, its click, the
+// pad's up, left and down, its right, Back, Start, the right stick's click, the right stick. "ADS" is the aim button
+constexpr const char* kPadWords[5][ui::modern::kPadLabels] = {
+    {"Attack", "Activate", "Grenade", "Up/Jump", "Lower Stance", "Melee", "ADS", "Reload", "Move", "Sprint",
+     "Next Weapon", "Lean Left", "Next Weapon", "Lean Right", "Objectives", "Pause", "N/A", "Look"},
+    {"Attack", "Raise Stance", "Activate/Reload", "Next Weapon", "Melee", "Up/Jump", "Grenade", "Lower Stance", "Move",
+     "Sprint", "Raise Stance", "Lean Left", "Lower Stance", "Lean Right", "Objectives", "Pause", "ADS", "Look"},
+    {"Attack", "Activate", "Reload", "Up/Jump", "Lower Stance", "Melee", "Grenade", "Next Weapon", "Move", "Sprint",
+     "Next Weapon", "Lean Left", "Prev Weapon", "Lean Right", "Objectives", "Pause", "ADS", "Look"},
+    {"Attack", "Reload", "Melee", "Activate", "Sprint", "Up/Jump", "Grenade", "Next Weapon", "Move", "Lower Stance",
+     "Raise Stance", "Lean Left", "Lower Stance", "Lean Right", "Objectives", "Pause", "ADS", "Look"},
+    {"Attack", "Grenade", "Activate/Reload", "Next Weapon", "Crouch/Prone", "Up/Jump", "ADS", "Grenade", "Move",
+     "Sprint", "Objectives", "Lean Left", "Prev Weapon", "Lean Right", "Objectives", "Pause", "Melee", "Look"},
+};
+
+// the Controller tab's picture for the configuration picked on the page (waiting for Apply or not)
+void BuildPad(ui::modern::Page& page) {
+    std::string picked = PanelText(kGLayout, 0);
+    int layout = 0;
+    for (int i = 0; i < 5; i++)
+        if (picked == kLayoutNames[i]) layout = i;
+    bool toggle = PanelText(kGAdsToggle, 0) == "TOGGLE";
+    page.pad = true;
+    page.pad_modern = layout == 4;
+    for (int i = 0; i < ui::modern::kPadLabels; i++) {
+        std::string word = kPadWords[layout][i];
+        if (word == "ADS" && toggle) word = "Toggle ADS";
+        if (i == ui::modern::kPadL3 || i == ui::modern::kPadR3) word = "(Click) " + word;
+        page.pad_labels[i] = word;
+    }
+}
+
+// the lines waiting for Apply, over every tab
+int ModernChanges() {
+    int n = 0;
+    if (g_panel_pending)
+        for (const TabRow& r : kTabRows)
+            if (r.id != kSection && r.id != kPreset && PanelText(r.id, 0) != LiveText(r.id)) n++;  // (the preset is the settings it stands for)
+    const HeldCheats& h = g_held_cheats;
+    if (h.pending) {
+        for (int t = 0; t < game::cheats::kToggles; t++)
+            if (h.on[t] != game::cheats::On(game::cheats::Toggle(t))) n++;
+        if (h.ammo != game::cheats::UnlimitedAmmo()) n++;
+        if (h.heal) n++;
+    }
+    return n;
+}
+
+void BuildModern(ui::modern::Page& page, std::vector<ModernRow>& rows) {
+    using ui::modern::Row;
+    namespace cheats = game::cheats;
+    page.rows.clear();
+    rows.clear();
+    auto add = [&](Row r, ModernRow m) {
+        page.rows.push_back(std::move(r));
+        rows.push_back(m);
+    };
+    auto heading = [&](const char* label) {
+        Row r;
+        r.kind = Row::kHeading;
+        r.label = label;
+        add(r, {});
+    };
+    auto words = [&](const char* text) {
+        Row r;
+        r.kind = Row::kText;
+        r.label = text;
+        add(r, {});
+    };
+    int tab = g_modern.tab;
+    for (const TabRow& t : kTabRows) {
+        if (t.tab != tab) continue;
+        if (t.id == kSection) {
+            heading(t.label);
+            continue;
+        }
+        Row r;
+        r.label = t.label;
+        std::string text = PanelText(t.id, 0);
+        r.changed = g_panel_pending && text != LiveText(t.id);
+        float fill = RowFill(t.id, g_panel_pending ? g_panel_settings : Get(), g_panel_pending ? g_panel_options : game::Opt());
+        if (fill >= 0) {
+            r.kind = Row::kSlider;
+            r.fill = fill;
+            r.value = text.substr(0, text.find(" ("));
+        } else if (t.id != kMsaa && t.id != kAmbientOcclusion && (text == "ON" || text == "OFF")) {  // MSAA and Ambient Occlusion have Off among their choices
+            r.kind = Row::kToggle;
+            r.on = text == "ON";
+        } else {
+            r.kind = Row::kChoice;
+            r.value = Sentence(text);
+            r.fixed = t.id == kResolution &&
+                      (g_panel_pending ? g_panel_settings : Get()).display_mode == DisplayMode::Borderless;
+        }
+        ModernRow m;
+        m.kind = ModernRow::kSetting;
+        m.row = t.id;
+        m.note = t.note;
+        m.variable = t.variable;
+        add(r, m);
+    }
+    if (tab == kControlsTab) {
+        heading("Key Bindings");
+        size_t count = 0;
+        input::Actions(&count);
+        for (size_t i = 0; i < count; i++) {
+            Row r;
+            r.kind = Row::kBinding;
+            r.label = TitleCase(input::Label(i));
+            r.value = input::Binding(i, 0);
+            r.value2 = input::Binding(i, 1);
+            ModernRow m;
+            m.kind = ModernRow::kBind;
+            m.action = i;
+            m.note = "Click a box or press Enter, then press the new key. Delete or a right click empties a box. The keys do "
+                     "the same whichever controller layout is picked in the game's options.";
+            add(r, m);
+        }
+        Row r;
+        r.kind = Row::kAction;
+        r.label = "Reset Controls";
+        ModernRow m;
+        m.kind = ModernRow::kResetKeys;
+        m.note = "Every key back to the one it came with, at once.";
+        add(r, m);
+    }
+    if (tab == kCheatsTab) {
+        const char* risk = "Cheats are on until the game is closed. They can break missions: use them at your own risk.";
+        if (!cheats::Unlocked()) {
+            words("Cheats are locked. Type the password.");
+            Row r;
+            r.kind = Row::kEntry;
+            r.label = "Password";
+            r.value = g_modern.code;
+            ModernRow m;
+            m.kind = ModernRow::kPassword;
+            m.note = risk;
+            add(r, m);
+            return;
+        }
+        const HeldCheats& held = g_held_cheats;
+        heading("Cheats");
+        for (int i = 0; i < int(std::size(kCheatRows)); i++) {
+            Row r;
+            r.kind = Row::kToggle;
+            r.label = kCheatRows[i].label;
+            bool live = cheats::On(kCheatRows[i].toggle);
+            r.on = held.pending ? held.on[kCheatRows[i].toggle] : live;
+            r.changed = r.on != live;
+            ModernRow m;
+            m.kind = ModernRow::kCheat;
+            m.cheat = i;
+            m.note = kCheatRows[i].note;
+            add(r, m);
+        }
+        Row ammo;
+        ammo.kind = Row::kToggle;
+        ammo.label = "Unlimited Ammo";
+        ammo.on = held.pending ? held.ammo : cheats::UnlimitedAmmo();
+        ammo.changed = ammo.on != cheats::UnlimitedAmmo();
+        ModernRow m;
+        m.kind = ModernRow::kAmmo;
+        m.note = "Your rounds never go down.";
+        add(ammo, m);
+        Row heal;
+        heal.kind = Row::kToggle;
+        heal.label = "Full Health";
+        heal.on = held.pending && held.heal;
+        heal.changed = heal.on;
+        m.kind = ModernRow::kHeal;
+        m.note = "Your health back to full, once, when you pick Apply Changes.";
+        add(heal, m);
+        words(risk);
+    }
+}
+
+bool ModernStop(const ui::modern::Row& r) {
+    return r.kind != ui::modern::Row::kHeading && r.kind != ui::modern::Row::kText;
+}
+
+int ModernNext(const ui::modern::Page& page, int from, int dir) {
+    int n = int(page.rows.size());
+    for (int k = 1; k <= n; k++) {
+        int i = ((from + dir * k) % n + n) % n;
+        if (ModernStop(page.rows[size_t(i)])) return i;
+    }
+    return from;
+}
+
+// a line's job. step: -1 or 1 from the arrows, 0 from Enter or A; want: for an On and Off line, 1 On, 0 Off, -1 the
+// other one
+void ModernActivate(const ModernRow& r, const ui::modern::Row& shown, int step, int want = -1) {
+    namespace cheats = game::cheats;
+    bool flip = want < 0 || (want == 1) != shown.on;
+    switch (r.kind) {
+        case ModernRow::kSetting:
+            if (shown.kind == ui::modern::Row::kToggle) {
+                if (flip) PanelText(r.row, 1);
+            } else if (shown.kind == ui::modern::Row::kSlider) {
+                // a slider stops at its ends
+                if (step == 0 || (step < 0 && shown.fill <= 0.0f) || (step > 0 && shown.fill >= 1.0f)) break;
+                PanelText(r.row, step);
+            } else {
+                PanelText(r.row, step ? step : 1);
+            }
+            break;
+        case ModernRow::kBind:
+            if (step == 0) g_capture = {int(r.action), g_slot, false};
+            break;
+        case ModernRow::kResetKeys:
+            if (step == 0) {
+                g_capture = {};
+                input::ResetBindings();
+            }
+            break;
+        case ModernRow::kCheat:
+            if (flip) {
+                HoldCheats();
+                bool& on = g_held_cheats.on[kCheatRows[r.cheat].toggle];
+                on = !on;
+            }
+            break;
+        case ModernRow::kAmmo:
+            if (flip) {
+                HoldCheats();
+                g_held_cheats.ammo = !g_held_cheats.ammo;
+            }
+            break;
+        case ModernRow::kHeal:
+            if (flip) {
+                HoldCheats();
+                g_held_cheats.heal = !g_held_cheats.heal;
+            }
+            break;
+        default:
+            break;
+    }
+}
+
+// F10 or Escape over the settings menu (the window's messages): it leaves as Backspace does, asking first
+std::atomic<bool> g_close_request{false};
+
+void DrawModern() {
+    ModernState& p = g_modern;
+    ui::modern::Page page;
+    std::vector<ModernRow> rows;
+    auto build = [&] {
+        BuildModern(page, rows);
+        if (p.selected < 0 || p.selected >= int(page.rows.size()) || !ModernStop(page.rows[size_t(p.selected)]))
+            p.selected = ModernNext(page, -1, 1), p.follow = true;
+    };
+    build();
+
+    bool was_capturing = g_capture.action >= 0;
+    UpdateCapture();
+    bool capturing = g_capture.action >= 0;
+
+    // the controller: edges, and the dpad repeating while held
+    uint32_t pad = g_paper_pad.load(std::memory_order_relaxed);
+    uint32_t pressed = pad & ~p.pad_prev;
+    double now = ImGui::GetTime();
+    constexpr uint32_t kDirs = kPadUp | kPadDown | kPadLeft | kPadRight;
+    if (pressed & kDirs) p.pad_repeat = now + 0.4;
+    else if ((pad & kDirs) && now >= p.pad_repeat) {
+        pressed |= pad & kDirs;
+        // a slider held left or right runs: its steps are single ones
+        bool slider = p.selected >= 0 && p.selected < int(page.rows.size()) &&
+                      page.rows[size_t(p.selected)].kind == ui::modern::Row::kSlider && (pad & (kPadLeft | kPadRight));
+        p.pad_repeat = now + (slider ? 0.03 : 0.12);
+    }
+    p.pad_prev = pad;
+    // the A that picked PC Options in the game's menu is still down as this opens, and the game thread's word of it
+    // can come a frame or two late: nothing held in the first moments is a press, or it would pick the first setting
+    if (p.settle == 0) p.settle = now + 0.3;
+    if (now < p.settle) p.pad_prev |= ~kDirs, pressed &= kDirs;
+    if (pressed) p.controller = true;
+
+    ImGuiIO& io = ImGui::GetIO();
+    // the console over the menu has the keys, the mouse and the controller until it is put away
+    bool console_up = console::Open();
+    if (console_up) pressed = 0;
+    // leaving: at once with nothing waiting, else the slip asks (Apply, Discard, Cancel)
+    bool close = g_close_request.exchange(false, std::memory_order_relaxed);
+    if (p.editing != p.selected) p.editing = -1;
+    if (close && p.editing >= 0 && !console_up) {  // Escape lets go of the line first
+        p.editing = -1;
+        close = false;
+    }
+    auto leave = [&] {
+        if (ModernChanges() > 0) {
+            g_capture = {};
+            p.confirm = true;
+            p.confirm_choice = 0;
+            p.drag = -1;
+            p.editing = -1;
+            return false;
+        }
+        ToggleMenu();
+        return true;
+    };
+    constexpr const char* kConfirmChoices[] = {"Apply", "Discard", "Cancel"};
+    if (p.confirm && console_up) {
+        if (close) p.confirm = false;
+    } else if (p.confirm) {
+        auto once = [](ImGuiKey k) { return ImGui::IsKeyPressed(k, false); };
+        int n = int(std::size(kConfirmChoices));
+        if (once(ImGuiKey_LeftArrow) || once(ImGuiKey_UpArrow) || (pressed & (kPadLeft | kPadUp)))
+            p.confirm_choice = (p.confirm_choice + n - 1) % n;
+        if (once(ImGuiKey_RightArrow) || once(ImGuiKey_DownArrow) || once(ImGuiKey_Tab) || (pressed & (kPadRight | kPadDown)))
+            p.confirm_choice = (p.confirm_choice + 1) % n;
+        int pick = -1;
+        if (once(ImGuiKey_Enter) || once(ImGuiKey_KeypadEnter) || (pressed & kPadA)) pick = p.confirm_choice;
+        if (close || once(ImGuiKey_Backspace) || (pressed & kPadB)) pick = 2;
+        ImVec2 m = io.MousePos;
+        bool moved = m.x != p.mouse.x || m.y != p.mouse.y;
+        p.mouse = m;
+        bool click = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+        if (moved || click) p.controller = false;
+        for (size_t i = 0; i < p.hits.confirm.size() && i < size_t(n); i++)
+            if (p.hits.confirm[i].Has(m)) {
+                if (moved || click) p.confirm_choice = int(i);
+                if (click) pick = int(i);
+            }
+        p.held = true;  // a click on the slip is not one on the page under it
+        if (pick == 0) ApplyPanel();
+        if (pick == 0 || pick == 1) {
+            ToggleMenu();
+            return;
+        }
+        if (pick == 2) p.confirm = false;
+    } else if (close && leave()) {
+        return;
+    }
+    bool typing = rows[size_t(p.selected)].kind == ModernRow::kPassword;
+    auto to_tab = [&](int tab) {
+        p.tab = ((tab % kTabs) + kTabs) % kTabs;
+        p.selected = -1;
+        p.scroll = 0;
+        p.drag = -1;
+        p.editing = -1;
+        build();
+    };
+    // capture takes every key until it ends; a key that ended it does nothing else this frame
+    if (!capturing && !was_capturing && !p.confirm && !console_up) {
+        auto key = [](ImGuiKey k) { return ImGui::IsKeyPressed(k, true); };
+        auto once = [](ImGuiKey k) { return ImGui::IsKeyPressed(k, false); };
+        int move = 0, step = 0, turn = 0;
+        if (key(ImGuiKey_UpArrow) || (pressed & kPadUp)) move = -1;
+        if (key(ImGuiKey_DownArrow) || (pressed & kPadDown)) move = 1;
+        if (key(ImGuiKey_LeftArrow) || (pressed & kPadLeft)) step = -1;
+        if (key(ImGuiKey_RightArrow) || (pressed & kPadRight)) step = 1;
+        // the letters are the password's while it is being typed
+        if (once(ImGuiKey_PageUp) || (!typing && once(ImGuiKey_Q)) || (pressed & kPadPrev)) turn = -1;
+        if (once(ImGuiKey_PageDown) || once(ImGuiKey_Tab) || (!typing && once(ImGuiKey_E)) || (pressed & kPadNext)) turn = 1;
+        bool enter = once(ImGuiKey_Enter) || once(ImGuiKey_KeypadEnter) || (pressed & kPadA);
+        bool back = (!typing && once(ImGuiKey_Backspace)) || (pressed & kPadB);
+        bool clear = once(ImGuiKey_Delete) || (pressed & kPadX);
+        bool defaults = (!typing && once(ImGuiKey_R)) || ((pressed & kPadX) && rows[size_t(p.selected)].kind != ModernRow::kBind);
+        bool apply = (!typing && once(ImGuiKey_F)) || (pressed & kPadY);
+        if (typing) {
+            for (int i = 0; i < io.InputQueueCharacters.Size; i++) {
+                ImWchar ch = io.InputQueueCharacters[i];
+                if (ch > 32 && ch < 127 && p.code.size() < 15) p.code += char(ch);
+            }
+            if (key(ImGuiKey_Backspace) && !p.code.empty()) p.code.pop_back();
+            if (game::cheats::TryUnlock(p.code.c_str())) {
+                p.code.clear();
+                p.selected = -1;
+                build();
+            }
+        }
+        // the Controller tab's lines are in two columns of three: left and right on a line not picked go across
+        if (p.tab == kControllerTab && p.editing < 0 && step) {
+            std::vector<int> stops;
+            for (int i = 0; i < int(page.rows.size()); i++)
+                if (ModernStop(page.rows[size_t(i)])) stops.push_back(i);
+            auto at = std::find(stops.begin(), stops.end(), p.selected);
+            if (at != stops.end()) {
+                constexpr int kColumn = 3;
+                int k = int(at - stops.begin()), across = k < kColumn ? k + kColumn : k - kColumn;
+                if (across >= 0 && across < int(stops.size())) p.selected = stops[size_t(across)], p.follow = true;
+            }
+            step = 0;
+            p.pointer = false;
+        }
+        // a setting is picked with A or Enter before left and right change it, and let go with A, Enter or back
+        {
+            ui::modern::Row::Kind shown = page.rows[size_t(p.selected)].kind;
+            bool editable = rows[size_t(p.selected)].kind != ModernRow::kBind &&
+                            (shown == ui::modern::Row::kChoice || shown == ui::modern::Row::kSlider ||
+                             shown == ui::modern::Row::kToggle);
+            if (p.editing >= 0) {
+                if (enter || back) p.editing = -1;
+                enter = back = clear = defaults = false;
+                move = turn = 0;
+            } else if (editable) {
+                if (enter) p.editing = p.selected;
+                if (enter || step) p.pointer = false;
+                enter = false;
+                step = 0;
+            }
+        }
+        if (back) {
+            if (leave()) return;
+            turn = move = step = 0;
+            enter = clear = defaults = apply = false;
+        }
+        if (turn) to_tab(p.tab + turn);
+        if (move) {
+            p.selected = ModernNext(page, p.selected, move);
+            p.follow = true;
+        }
+        if (step) {
+            if (rows[size_t(p.selected)].kind == ModernRow::kBind) g_slot = step < 0 ? 0 : 1;
+            else if (page.rows[size_t(p.selected)].kind == ui::modern::Row::kToggle)  // On is the left box
+                ModernActivate(rows[size_t(p.selected)], page.rows[size_t(p.selected)], 0, step < 0 ? 1 : 0);
+            else ModernActivate(rows[size_t(p.selected)], page.rows[size_t(p.selected)], step);
+        }
+        if (enter) ModernActivate(rows[size_t(p.selected)], page.rows[size_t(p.selected)], 0);
+        if (clear && rows[size_t(p.selected)].kind == ModernRow::kBind) input::Bind(rows[size_t(p.selected)].action, 0, g_slot);
+        if (defaults) Defaults();
+        if (apply) ApplyPanel();
+        if (!pressed && (move || step || turn || enter || io.InputQueueCharacters.Size)) p.controller = false;
+        if (move || step || turn || enter) p.pointer = false;
+
+        // the mouse: hovering selects, a click does the line's job, the wheel scrolls
+        // the pointer and its left button are read from Windows each frame, as the game's own pointer is drawn: a
+        // slider held and slid is followed whatever becomes of the window's mouse messages
+        ImVec2 m = io.MousePos;
+        bool held = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+        {
+            HWND hwnd = static_cast<HWND>(ImGui::GetMainViewport()->PlatformHandleRaw);
+            POINT point;
+            RECT client;
+            if (hwnd && GetForegroundWindow() == hwnd && GetCursorPos(&point) && ScreenToClient(hwnd, &point) &&
+                GetClientRect(hwnd, &client) && client.right > 0 && client.bottom > 0) {
+                m = ImVec2(float(point.x) * io.DisplaySize.x / float(client.right),
+                           float(point.y) * io.DisplaySize.y / float(client.bottom));
+                held = GetAsyncKeyState(GetSystemMetrics(SM_SWAPBUTTON) ? VK_RBUTTON : VK_LBUTTON) < 0;
+            }
+        }
+        bool moved = p.mouse_seen && (m.x != p.mouse.x || m.y != p.mouse.y);
+        p.mouse = m;
+        p.mouse_seen = true;
+        bool left = (held && !p.held) || ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+        if (left && p.held) left = false;  // one press, once
+        bool right = ImGui::IsMouseClicked(ImGuiMouseButton_Right);
+        if (moved || left || right) p.controller = false, p.pointer = true, p.editing = -1;
+        const ui::modern::Hits& h = p.hits;
+        if (left) {
+            int tab = p.tab;
+            bool picked = false;
+            for (size_t i = 0; i < h.tabs.size(); i++)
+                if (h.tabs[i].Has(m)) tab = int(i), picked = true;
+            if (h.tab_prev.Has(m)) tab = p.tab - 1, picked = true;
+            if (h.tab_next.Has(m)) tab = p.tab + 1, picked = true;
+            if (picked) to_tab(tab);
+            else if (h.defaults.Has(m)) Defaults();
+            else if (h.apply.Has(m)) ApplyPanel();
+        }
+        int over = -1;
+        for (size_t i = 0; i < h.rows.size() && i < rows.size(); i++)
+            if (h.rows[i].row.Has(m)) over = int(i);
+        if (over >= 0 && (moved || left || right)) {
+            const ui::modern::Hits::Line& l = h.rows[size_t(over)];
+            const ModernRow& o = rows[size_t(over)];
+            const ui::modern::Row& shown = page.rows[size_t(over)];
+            p.selected = over;
+            bool in_left = l.left.Has(m), in_right = l.right.Has(m);
+            if (o.kind == ModernRow::kBind) {
+                if (in_left) g_slot = 0;
+                if (in_right) g_slot = 1;
+                if (left && (in_left || in_right)) ModernActivate(o, shown, 0);
+                if (right && (in_left || in_right)) input::Bind(o.action, 0, g_slot);
+            } else if (shown.kind == ui::modern::Row::kToggle) {
+                if (left && (in_left || in_right)) ModernActivate(o, shown, 0, in_left ? 1 : 0);
+            } else if (shown.kind == ui::modern::Row::kAction) {
+                if (left) ModernActivate(o, shown, 0);
+            } else if (shown.kind != ui::modern::Row::kSlider && left && (in_left || in_right)) {
+                ModernActivate(o, shown, in_left ? -1 : 1);
+            }
+        }
+        // a slider's bar is held and slid: the handle follows the pointer until the button is let go
+        if (left && over >= 0 && h.rows[size_t(over)].bar.Has(m) && rows[size_t(over)].kind == ModernRow::kSetting) p.drag = over;
+        if (!held) p.drag = -1;
+        p.held = held;
+        if (p.drag >= 0 && p.drag < int(rows.size()) && size_t(p.drag) < h.rows.size()) {
+            const ui::modern::Rect& bar = h.rows[size_t(p.drag)].bar;
+            if (bar.max.x > bar.min.x) {
+                p.selected = p.drag;
+                DragSlider(rows[size_t(p.drag)].row, (m.x - bar.min.x) / (bar.max.x - bar.min.x));
+            }
+        }
+        if (io.MouseWheel != 0) {
+            p.scroll = std::max(0.0f, p.scroll - io.MouseWheel * 2.0f);
+            p.follow = false;
+        }
+        build();  // the values as they are now
+    }
+
+    ui::modern::Row& sel = page.rows[size_t(p.selected)];
+    const ModernRow& row = rows[size_t(p.selected)];
+    sel.slot = g_slot;
+    sel.waiting = capturing;
+    sel.editing = p.editing == p.selected;
+    sel.locked = !sel.editing && !p.pointer;
+    page.title = "Options";
+    const std::string& profile = game::Opt().settings_profile;
+    if (!profile.empty() && profile != "*") page.profile = profile;
+    page.tabs.assign(std::begin(kTabNames), std::end(kTabNames));
+    page.tab = p.tab;
+    page.selected = p.selected;
+    page.follow = p.follow;
+    page.controller = p.controller;
+    page.buttons_modern = game::Opt().modern_layout;
+    page.buttons_playstation = game::PlayStationPrompts();
+    page.changes = ModernChanges();
+    {
+        // the settings as the menu shows them, against their defaults
+        Settings s = g_panel_pending ? g_panel_settings : Get();
+        game::Options o = g_panel_pending ? g_panel_options : game::Opt();
+        Settings ds = s;
+        game::Options d = o;
+        SetDefaults(ds, d, kEveryPart);
+        page.not_defaults = RowsDiffer(s, o, ds, d);
+    }
+    page.note_title = row.kind == ModernRow::kBind ? "Key Bindings" : sel.label;
+    page.note_text = row.note;
+    page.note_command = row.variable;
+    if (row.kind == ModernRow::kSetting && sel.changed)
+        page.note_change = "Now " + Sentence(LiveText(row.row)) + ", after Apply " + Sentence(PanelText(row.row, 0));
+    if (p.tab == kControllerTab) {
+        BuildPad(page);
+        page.hint = row.note;  // no slip on this tab: its words go over the foot
+    }
+    if (capturing) page.hint = "Press a key for it. Escape keeps the old one.";
+    else if (sel.editing)
+        page.hint = p.controller ? "Left and right change it. Press A when done." : "Left and right change it. Press Enter when done.";
+    page.confirm = p.confirm;
+    page.confirm_choices.assign(std::begin(kConfirmChoices), std::end(kConfirmChoices));
+    page.confirm_selected = p.confirm_choice;
+    ui::modern::Draw(page, p.scroll, p.hits);
+    p.follow = false;
+}
+
+// top right, over the game, in Hack as the console is
 void DrawFpsCounter(double fps) {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
-    float em = ImGui::GetFontSize();
+    ImFont* font = ::ui::paper::Mono();
+    float em = font ? ::ui::paper::MonoSize() : ImGui::GetFontSize();
+    if (!font) font = ImGui::GetFont();
     char text[32];
     std::snprintf(text, sizeof(text), "%.0f FPS", fps);
-    ImVec2 size = ImGui::CalcTextSize(text);
-    ImVec2 pos(vp->Pos.x + vp->Size.x - size.x - em, vp->Pos.y + em * 0.6f);
+    ImVec2 size = font->CalcTextSizeA(em, FLT_MAX, 0.0f, text);
+    ImVec2 pos(std::floor(vp->Pos.x + vp->Size.x - size.x - em), std::floor(vp->Pos.y + em * 0.6f));
+    float shadow = std::max(1.0f, std::round(em / 16.0f));
     ImDrawList* list = ImGui::GetForegroundDrawList();
-    list->AddText(ImVec2(pos.x + 1, pos.y + 1), IM_COL32(0, 0, 0, 200), text);
-    list->AddText(pos, ImGui::GetColorU32(kHeading), text);
+    list->AddText(font, em, ImVec2(pos.x + shadow, pos.y + shadow), IM_COL32(0, 0, 0, 200), text);
+    list->AddText(font, em, pos, ImGui::GetColorU32(kHeading), text);
 }
 
 // a message from the cheats (src/game/cheats.cpp), such as the thereisacow1337 profile's: a line at the top of the screen for two seconds, then fading
@@ -974,12 +1731,12 @@ const PageSpec& Spec(int page) {
     static const PageSpec specs[] = {
         {"PC Options", kEveryPart, {}, false},
         {"Display", kDisplayPart, {kDisplayMode, kResolution, kRenderResolution, kBrightness, kFov, kMaxFps, kVsync,
-          kFpsCounter},
+          kFpsCounter, kCutsceneBars},
          false},
-        {"Graphics", kGraphicsPart, {kAniso, kViewDistance, kTextureReplacement, kTextureDumping, kDumpFormat}, false},
+        {"Graphics", kGraphicsPart, {kAniso, kViewDistance, kKeepBodies, kTextureReplacement, kTextureDumping, kDumpFormat}, false},
         {"Mouse", kMousePart, {kMouseX, kMouseY, kInvertY, kInvertX}, false},
         {"Keyboard", kKeysPart, {kPrompts, kQwerty}, true},
-        {"Gameplay", kGameplayPart, {kAimAssist, kHints, kHideHud}, false},
+        {"Gameplay", kGameplayPart, {kAimAssist, kHints, kHideHud, kLeanToggle}, false},
     };
     return specs[page];
 }
@@ -1230,12 +1987,17 @@ void Leave(bool applied) {
 
 }  // namespace pc
 
-bool MenuOpen() { return g_open.load(std::memory_order_relaxed); }
+// the panel, the PC Options page or the console (console.h): any of them has the keys, the mouse and the controller
+bool MenuOpen() { return g_open.load(std::memory_order_relaxed) || console::Open(); }
+bool PanelOpen() { return g_open.load(std::memory_order_relaxed); }
+// the settings menu is up and the controller was the last thing used on it (the frame's thread)
+bool PanelOnController() { return PanelOpen() && g_modern.controller && !console::Open(); }
 
 bool Capturing() { return g_capture.action >= 0; }
 
 void ToggleMenu() {
-    bool open = !MenuOpen();
+    bool open = !PanelOpen();
+    if (open && console::Open()) console::Toggle();
     g_open.store(open, std::memory_order_relaxed);
     if (!open) {
         g_bindings_only.store(false, std::memory_order_relaxed);
@@ -1245,8 +2007,26 @@ void ToggleMenu() {
     g_panel_pending = false;
     g_held_cheats = {};
     g_capture = {};
-    if (open) input::ReleaseCursor();
+    if (open) {
+        g_modern = {};
+        g_close_request.store(false, std::memory_order_relaxed);
+        g_modern.pad_prev = ~0u;  // a button held as it opens (the A that picked PC Options) is let go of first
+        // opened with a controller it is a controller's menu from the first frame: its buttons along the bottom, no
+        // pointer, and no button to press first
+        g_modern.controller = !input::KeyboardActive();
+        g_modern.pointer = !g_modern.controller;
+        if (g_bindings_only.load(std::memory_order_relaxed)) g_modern.tab = kControlsTab;
+        input::ReleaseCursor();
+    }
 }
+
+void CloseSettings() {
+    if (PanelOpen() && !g_paper.load(std::memory_order_relaxed)) g_close_request.store(true, std::memory_order_relaxed);
+    else ToggleMenu();
+}
+
+std::atomic<bool> g_open_request{false};
+void OpenSettings() { g_open_request.store(true, std::memory_order_relaxed); }
 
 void OpenBindings() {
     if (MenuOpen()) return;
@@ -1261,7 +2041,11 @@ void OpenPcOptions() {
     ToggleMenu();
 }
 
-bool PcOptionsOpen() { return MenuOpen() && g_paper.load(std::memory_order_relaxed); }
+bool PcOptionsOpen() { return PanelOpen() && g_paper.load(std::memory_order_relaxed); }
+
+void ExitToDesktop() {
+    if (HWND window = static_cast<HWND>(Window())) PostMessageW(window, WM_CLOSE, 0, 0);
+}
 
 void PcOptionsPad(const input::Pad& pad) {
     uint32_t bits = pad.buttons & 0xF;  // dpad up, down, left, right
@@ -1273,6 +2057,9 @@ void PcOptionsPad(const input::Pad& pad) {
     if (pad.analog[0] > 0x40) bits |= kPadA;
     if (pad.analog[1] > 0x40) bits |= kPadB;
     if (pad.analog[2] > 0x40) bits |= kPadX;
+    if (pad.analog[3] > 0x40) bits |= kPadY;
+    if (pad.analog[5] > 0x40 || pad.analog[6] > 0x40) bits |= kPadPrev;  // LB (white), the left trigger
+    if (pad.analog[4] > 0x40 || pad.analog[7] > 0x40) bits |= kPadNext;  // RB (black), the right trigger
     g_paper_pad.store(pad.connected ? bits : 0, std::memory_order_relaxed);
 }
 
@@ -1280,14 +2067,15 @@ void DrawUi(double fps) {
     ImGuiIO& io = ImGui::GetIO();
     // the arrow is ImGui's own, drawn only while the panel is open; Windows' stays hidden
     io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange | ImGuiConfigFlags_NavEnableKeyboard;
+    if (g_open_request.exchange(false, std::memory_order_relaxed) && !MenuOpen()) ToggleMenu();
     bool paper = PcOptionsOpen();
-    io.MouseDrawCursor = MenuOpen() && !paper;  // the PC Options page has the game's own pointer
+    io.MouseDrawCursor = console::Open() && !PanelOpen();  // the settings menu has the game's own pointer
     io.KeyRepeatRate = 0.1f;
     io.FontGlobalScale = std::max(1.0f, io.DisplaySize.y / 720.0f);
     if (game::Opt().fps_counter) DrawFpsCounter(fps);
     DrawProfileMessage();
-    // the port's version, in the menus
-    if (game::cheats::InMenus() && !paper && !MenuOpen()) {
+    // the port's version, in the menus (the front end also plays the logos and cinematics: not over those)
+    if (game::cheats::InMenus() && !game::cheats::MoviePlaying() && !paper && !MenuOpen()) {
         static const std::string version = std::string("Recomp Version: ") + update::kVersion;
         update::State state = update::Check();
         bool newer = state == update::State::kAvailable;
@@ -1296,10 +2084,10 @@ void DrawUi(double fps) {
     }
     if (paper) {
         DrawPaper();
-    } else if (MenuOpen()) {
-        UpdateCapture();
-        DrawPanel();
+    } else if (PanelOpen()) {
+        DrawModern();
     }
+    console::Draw();
 }
 
 }  // namespace app
@@ -1429,7 +2217,9 @@ void Leave(bool applied) {
 namespace app {
 void OpenBindings() {}
 void OpenPcOptions() {}
+void ExitToDesktop() {}
 bool PcOptionsOpen() { return false; }
+void CloseSettings() {}
 void PcOptionsPad(const input::Pad&) {}
 }  // namespace app
 #endif

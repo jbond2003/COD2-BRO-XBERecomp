@@ -8,7 +8,6 @@ An unofficial native PC port of the original Xbox version of Call of Duty 2: Big
 - **Modern controls.** The awful original Xbox controller scheme isn't the default anymore. A new Modern layout is:
   right trigger fires, left trigger aims down the sights, A jumps, B crouches (hold it to go prone), click the left
   stick to sprint and the right stick to melee. The game's four old layouts are still there if you want them.
-- **Q and E leaning**, like the PC Call of Duty games, to peek around corners and over cover.
 - **Full keyboard and mouse.** Mouse look, rebindable keys, the mouse in every menu, and
   button prompts that switch between keyboard and controller the moment you do.
 - **High refresh rate gameplay.** Play at 60, 120, 144 or 240 fps, or with no limit at all, with VSync if you want
@@ -35,12 +34,14 @@ Direct3D 12, and adds a few things of its own:
 - Tutorial hints for sprinting, leaning and hiding the HUD, and the others reworded for the keyboard.
 - H hides the HUD and brings it back (the key can be changed).
 - The M1 Garand can be reloaded before its clip is empty.
-- A built in, dedicated PC Options menu in the game's own style, with pages for display (with brightness), graphics (with view distance),
-  mouse, and keyboard with key bindings; F10 opens the full settings panel.
+- A PC settings menu on the game's own paper, opened by PC Options in the game's menus or by F10, with a tab each
+  for display (with brightness, and cutscenes without black bars), graphics (with MSAA and SMAA anti-aliasing, depth of field when aiming, level of detail, and bodies that
+  stay), gameplay, audio (music, main menu music, sound effects and dialogue volumes), controls (mouse and key
+  bindings) and cheats.
 - More lines in the game's Gameplay menu, and in the pause menu's options: controller aim assist, tutorial hints,
   and hiding the HUD.
-- No title screen: the game starts at the profile menu, and the title's picture is the splash shown while the game
-  loads (made from your own game the first time you start it).
+- The title screen's prompt follows your device ("Click anywhere to start", or "Press", the A button's picture, "to start") and fades in and
+  out; its picture is also the splash shown while the game loads (made from your own game the first time you start it).
 - A Modern controller layout beside the game's four.
 - Typing your profile name on the keyboard, on a QWERTY typewriter.
 - A frame rate limit of 30, 60, 120, 144 or 240, or none, and VSync, with the cinematics at their own 30, and
@@ -48,7 +49,7 @@ Direct3D 12, and adds a few things of its own:
 - Texture packs: replace a texture with your own image, or dump the game's.
 - The port's version in the corner of the menus.
 
-Like the loader, it has 60 fps play, higher resolutions, a field of view setting, mouse look, Q and E to lean, the
+Like the loader, it has 60 fps play, higher resolutions, a field of view setting, mouse look, the
 mouse in the menus, sharp text, and button prompts that switch between keyboard and controller as you do.
 
 ## Known issues
@@ -57,7 +58,8 @@ mouse in the menus, sharp text, and button prompts that switch between keyboard 
   to 60 for that mission is the thing to try until it is fixed.
 - The first time you play, there can be a microstutter or two at the start while the game compiles its shaders
   for your GPU. They are saved after that, so it only happens once.
-- PlayStation controllers are not supported: there are no PlayStation button prompts, and none has been tested.
+- PlayStation controllers get their own button prompts on the Modern layout (Options and Share in place of Start and
+  Back); they are untested on real hardware.
 
 See [ISSUES.md](ISSUES.md) for the problems found so far and how they were fixed.
 
@@ -83,13 +85,18 @@ regional release has its code at other addresses and is not supported.
 - [CoD2 BRO Native Loader](https://github.com/SmokeDoggy044/CoD2-BRO-Native-Loader) by SmokeDoggy044, the guide for this
   port's features and a reference for parts of it.
 - jojo8479, who drew the controller picture for the Modern layout.
+- The controller button prompts (original Xbox, Xbox One and PlayStation 4 buttons) are by Nicolae Xelu Berbece
+  (@xelubest), released under Creative Commons 0 (CC0).
 - Made with the help of [Claude](https://claude.ai).
 
 <details>
 <summary>Secrets (spoilers)</summary>
 
-- **Cheats:** press F10, go to the end of the panel and enter the password `brooklyn`. The cheats stay unlocked until
+- **Cheats:** press F10, open the Cheats tab and type the password `brooklyn`. The cheats stay unlocked until
   the game is closed, and they can break missions, so use them at your own risk.
-- **Every mission unlocked:** create a profile named `thereisacow1337`.
+- **Console:** the key under Escape (`~`) opens the engine's developer console. `help` explains it, `cmdlist` and
+  `cvarlist` show what the game has, Tab completes a name. Cheat commands such as `god` and `noclip` need
+  `sv_cheats 1` typed first.
+- **Every mission unlocked:** create a profile named `thereisacow1337`, or type that word in the console.
 
 </details>

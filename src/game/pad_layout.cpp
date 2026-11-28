@@ -6,8 +6,9 @@
 //
 // Here the choice goes to 4 = Modern: its letter reads "Modern", and whenever the game execs a style while Modern is
 // picked (Options().modern_layout, kept in the settings file) the binds below follow it. Modern: RT fire, LT aim
-// down the sights, A jump, X use and reload, Y and the dpad's right next weapon, dpad left the one before, RB a
-// grenade, R3 melee, LB nothing, L3 sprint, dpad up and Back objectives, Start the pause menu. B crouches and
+// down the sights, A jump, X use and reload, Y next weapon, dpad down the weapon before, dpad left and right lean (as the game's own A has
+// them; they were the weapon before and after until his ask of 2026-11-20), RB and LB a
+// grenade, R3 melee, L3 sprint, dpad up and Back objectives, Start the pause menu. B crouches and
 // stands, held it goes prone (ModernPad: B is bound to nothing and sends the commands).
 //
 // Also the console commands the keyboard sends (crouch, prone, controls the layout has no button for) run here, each
@@ -46,13 +47,13 @@ constexpr const char* kModernBinds =
     "bind TRIANGLE \"weapnext\"\n"
     "bind CIRCLE \"\"\n"
     "bind R2 \"+grenadeattack\"\n"
-    "bind L2 \"\"\n"
+    "bind L2 \"+grenadeattack\"\n"
     "bind R3 \"+melee\"\n"
     "bind L3 \"+sprint\"\n"
     "bind UPARROW \"+scores\"\n"
-    "bind DOWNARROW \"\"\n"
-    "bind LEFTARROW \"weapprev\"\n"
-    "bind RIGHTARROW \"weapnext\"\n"
+    "bind DOWNARROW \"weapprev\"\n"
+    "bind LEFTARROW \"+leanleft\"\n"
+    "bind RIGHTARROW \"+leanright\"\n"
     "bind TAB \"+scores\"\n";
 
 uint32_t g_text = 0;  // a guest buffer for our text
@@ -177,13 +178,14 @@ void ControllerChoiceDefault(X86Context& ctx, uint8_t*) { W32(ctx.edi + 0xC0, kM
 // settings file, and put in the profile whenever the game applies a profile (0x332E20, edi the profile).
 constexpr uint32_t kLookX = 0x8DCE74, kLookY = 0x8DCE78;
 
-void KeepLookSensitivity() {
-    int32_t x = int32_t(R32(kLookX)), y = int32_t(R32(kLookY));
-    game::Options& o = game::Opt();
-    if (x == o.look_sensitivity_x && y == o.look_sensitivity_y) return;
-    o.look_sensitivity_x = x, o.look_sensitivity_y = y;
-    app::Save();
-    LOGR("look sensitivity kept: %d, %d", x, y);
+namespace game {
+void KeepGameOptions();               // src/game/game_options.cpp: these and the game's other options
+void PutGameOptions(uint32_t profile);
+}
+void KeepLookSensitivity() { game::KeepGameOptions(); }
+
+namespace game {
+void ProfileSettings(const std::string& profile);  // src/game/profile_settings.cpp
 }
 
 X86_EXTERN_FUNC(__imp__sub_003361C0);
@@ -205,11 +207,12 @@ X86_FUNC(sub_00331340) {
 
 // a profile applied (edi the profile: its look sensitivities at +0x44, +0x48)
 X86_FUNC(sub_00332E20) {
-    const game::Options& o = game::Opt();
-    if (ctx.edi && o.look_sensitivity_x >= 0 && o.look_sensitivity_y >= 0) {
-        W32(ctx.edi + 0x44, uint32_t(o.look_sensitivity_x));
-        W32(ctx.edi + 0x48, uint32_t(o.look_sensitivity_y));
+    // first the profile's own settings (src/game/profile_settings.cpp): its name is the profile's first field
+    if (ctx.edi) {
+        const char* name = static_cast<const char*>(kernel::HostPtr(ctx.edi));
+        game::ProfileSettings(std::string(name, strnlen(name, 32)));
     }
+    game::PutGameOptions(ctx.edi);
     __imp__sub_00332E20(ctx, base);
 }
 
@@ -238,9 +241,15 @@ void ModernPad(input::Pad& pad) {
     down = now;
 }
 
-// each client frame: the queued console commands
+void RunConsole(X86Context& ctx);  // src/game/console.cpp
+void ApplyVolumes();               // src/game/audio.cpp
+
+// each client frame: the queued console commands, and the console's typed lines
 void RunCommands(X86Context& ctx) {
     cheats::Tick(ctx);
+    cheats::CutsceneBars(ctx);
+    RunConsole(ctx);
+    ApplyVolumes();
     std::string command;
     while (input::TakeCommand(command)) {
         if (kernel::R32(0x95F8F8)) continue;  // the front end: no player

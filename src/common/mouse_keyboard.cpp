@@ -92,9 +92,7 @@ constexpr Target kActions[] = {
     {{"melee", "V,MMB"}, 4},              // black
     {{"grenade", "G"}, 5},                // white
     {{"sprint", "Shift"}, 14},            // left stick click
-    {{"right_stick", "X"}, 15},           // right stick click
     {{"next_weapon", "1,Wheel Up,Wheel Down"}, 8},  // dpad up
-    {{"dpad_down", "2"}, 9},
     {{"lean_left", "Q"}, 10},             // dpad left
     {{"lean_right", "E"}, 11},            // dpad right
     {{"objectives", "Tab"}, 13},          // back
@@ -241,21 +239,39 @@ struct Held {
     int stick[8] = {};  // move forward back left right, look up down left right
 };
 
+// Escape backs out of a menu as Backspace does, and in play does what it is bound to (pause). One press is one or
+// the other: held from play into the pause menu it does not back out of it, held from a menu into play it does not
+// pause again. 0 not down, 1 pressed in play, 2 pressed in a menu
+int g_escape_from = 0;
+
+// Aim Down Sights as a toggle (the Gameplay tab): a press of its key brings the gun up and the next one lowers it.
+// Out of play (a menu, a cutscene's pause) the gun is let down.
+bool AimToggled(bool down, bool play) {
+    static bool was_down = false, aiming = false;
+    if (!play) aiming = false;
+    else if (down && !was_down) aiming = !aiming;
+    was_down = down;
+    return aiming;
+}
+
 Held PressActions(const Binds& binds, bool play, Pad& p) {
     Held held;
-    // in a menu the wheel and the mouse buttons do nothing, a bound key presses its button, and Enter and Backspace
-    // are the menu's own (A and B) whatever they are bound to
+    // in a menu the wheel and the mouse buttons do nothing, a bound key presses its button, and Enter, Backspace and
+    // Escape are the menu's own (A, B and B) whatever they are bound to
     auto pressed = [&](size_t action, int vk) {
         constexpr int buttons[] = {VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2};
         uint32_t mask = 0;
         for (int i = 0; i < 5; i++) if (buttons[i] == vk) mask = 1u << i;
         bool mouse = Wheel(vk) || mask;
-        bool menu_own = vk == VK_RETURN || vk == VK_BACK;
+        bool menu_own = vk == VK_RETURN || vk == VK_BACK || vk == VK_ESCAPE;
+        if (vk == VK_ESCAPE && g_escape_from != 1) return false;
         return Down(vk) && (play || !(mouse || menu_own)) && !(mask & g_block_mouse.load());
     };
     for (size_t i = 0; i < kCount; i++) {
         int b = kActions[i].button;
-        if (!std::any_of(binds[i].begin(), binds[i].end(), [&](int vk) { return pressed(i, vk); })) continue;
+        bool down = std::any_of(binds[i].begin(), binds[i].end(), [&](int vk) { return pressed(i, vk); });
+        if (game::Opt().aim_toggle && std::strcmp(kActions[i].action.id, "aim") == 0) down = AimToggled(down, play);
+        if (!down) continue;
         held.used = true;
         if (b == kWalk) {
             held.walk = true;
@@ -365,6 +381,8 @@ void Keyboard(Pad& p) {
     }
     bool play = Playing();
     bool fixed_down = std::any_of(std::begin(kFixed), std::end(kFixed), Down);
+    if (!Down(VK_ESCAPE)) g_escape_from = 0;
+    else if (!g_escape_from) g_escape_from = play ? 1 : 2;
     Held held = PressActions(binds, play, p);
     g_game_actions = held.game;
     static uint32_t commands_held = 0;
@@ -378,7 +396,7 @@ void Keyboard(Pad& p) {
         if (NowMs() < g_accept_until) p.analog[0] = 0xFF;
     } else {
         if (!play && Down(VK_RETURN)) p.analog[0] = 0xFF;
-        if (!play && Down(VK_BACK)) p.analog[1] = 0xFF;
+        if (!play && (Down(VK_BACK) || g_escape_from == 2)) p.analog[1] = 0xFF;
         // and Delete X, the profile screen's delete
         if (!play && Down(VK_DELETE)) {
             p.analog[2] = 0xFF;
@@ -400,14 +418,26 @@ void Keyboard(Pad& p) {
     if (fixed_down || held.used) SetKeyboard(true);
 }
 
+// The controller takes over on a fresh push only: a button going down, or a trigger or stick going well over having
+// been near rest. A stick or trigger that does not rest at nothing (a worn pad on the desk) hovers about the line, and
+// counting it each time it went over took the input back from a moving mouse many times a second, so the menus'
+// pointer hid.
 void SeenPad(const Pad& p) {
-    constexpr int16_t kStickPushed = 16000;
-    constexpr uint8_t kAnalogPushed = 0x20;
-    auto pushed = [](int16_t v) { return v > kStickPushed || v < -kStickPushed; };
-    auto pressed = [](uint8_t a) { return a > kAnalogPushed; };
-    bool analog = std::any_of(std::begin(p.analog), std::end(p.analog), pressed);
-    bool sticks = pushed(p.lx) || pushed(p.ly) || pushed(p.rx) || pushed(p.ry);
-    if (p.buttons || analog || sticks) SetKeyboard(false);
+    constexpr int kStickPushed = 16000, kStickRest = 8000;
+    constexpr int kAnalogPushed = 0x20, kAnalogRest = 0x10;
+    static uint16_t last_buttons = 0;
+    static bool armed[8 + 4] = {true, true, true, true, true, true, true, true, true, true, true, true};
+    bool fresh = (p.buttons & ~last_buttons) != 0;
+    last_buttons = p.buttons;
+    auto check = [&](int i, int v, int pushed, int rest) {
+        v = std::abs(v);
+        if (v < rest) armed[i] = true;
+        else if (v > pushed && armed[i]) armed[i] = false, fresh = true;
+    };
+    for (int i = 0; i < 8; i++) check(i, p.analog[i], kAnalogPushed, kAnalogRest);
+    const int16_t axes[4] = {p.lx, p.ly, p.rx, p.ry};
+    for (int i = 0; i < 4; i++) check(8 + i, axes[i], kStickPushed, kStickRest);
+    if (fresh) SetKeyboard(false);
 }
 
 bool KeyboardActive() { return g_keyboard; }
@@ -503,8 +533,8 @@ namespace {
 // the F10 panel's names for the actions, in kActions' order
 constexpr const char* kLabels[] = {
     "MOVE FORWARD", "MOVE BACK", "STRAFE LEFT", "STRAFE RIGHT", "WALK", "FIRE", "AIM DOWN SIGHTS", "USE",
-    "CROUCH", "PRONE", "RELOAD", "JUMP / STAND", "MELEE", "THROW GRENADE", "SPRINT", "RIGHT STICK CLICK",
-    "NEXT WEAPON", "D-PAD DOWN", "LEAN LEFT", "LEAN RIGHT", "OBJECTIVES", "PAUSE", "HIDE HUD", "LOOK UP",
+    "CROUCH", "PRONE", "RELOAD", "JUMP / STAND", "MELEE", "THROW GRENADE", "SPRINT",
+    "NEXT WEAPON", "LEAN LEFT", "LEAN RIGHT", "OBJECTIVES", "PAUSE", "HIDE HUD", "LOOK UP",
     "LOOK DOWN",
     "LOOK LEFT", "LOOK RIGHT",
 };

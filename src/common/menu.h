@@ -11,12 +11,17 @@ struct Pad;
 namespace app {
 
 extern float g_zoom;  // the gameplay camera's zoom as a tangent ratio: 1 unzoomed, under 1 aiming down sights
-bool MenuOpen();
+bool MenuOpen();   // the panel, the PC Options page or the console is up: the game gets no input
+bool PanelOpen();  // the panel or the PC Options page
+bool PanelOnController();  // it is up and the controller was used last: no pointer is shown
 void ToggleMenu();
+void OpenSettings();
+void CloseSettings();  // the settings menu leaves, asking first about changes not applied  // any thread: the settings menu opens at the next frame, if nothing of ours is up
 void OpenBindings();  // the panel with the key bindings alone
 // PC OPTIONS in the game's Options menu: the same settings and the key bindings on a page like the game's own
 // option pages (paper_page.h), mouse, keys and controller
 void OpenPcOptions();
+void ExitToDesktop();  // Exit to Desktop in the game's menus: the window closes, as by its close button
 bool PcOptionsOpen();
 void PcOptionsPad(const input::Pad& pad);  // the controller's report each poll, before the game's is blanked
 bool Capturing();  // a controls box is waiting for a key: Escape is the box's, not the panel's

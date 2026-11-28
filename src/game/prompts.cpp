@@ -3,7 +3,9 @@
 // start and back) and four footer icons (Xbox_A/B/X/YButton.dds), all in sp/global.cod. While the keyboard and mouse
 // are in use the renderer draws keycaps and mouse pictures in their place (gpu/texture_override.h), labelled with the
 // keys that give each button in the controller layout picked in the game's options; the controller's icons come back
-// the moment a controller is used, with LB and RB in place of the original's white and black buttons. After
+// the moment a controller is used; with the Modern layout picked a controller's buttons are pictures of an Xbox One
+// or PlayStation pad's instead (button_images.cpp), the other layouts keep the game's own, white and black buttons
+// too. After
 // CoD2-BRO-Native-Loader's text/key_prompts.cpp (GPL-2.0-or-later, THIRD_PARTY_NOTICES.md).
 
 #include <algorithm>
@@ -32,6 +34,7 @@
 #include "common/mouse_keyboard.h"
 #include "common/menu_state.h"
 #include "common/options.h"
+#include "core/input.h"
 #include "core/log.h"
 #include "gpu/texture.h"
 #include "gpu/texture_override.h"
@@ -41,8 +44,24 @@
 
 namespace game {
 int PadTarget(size_t i);  // src/game/mouse_look.cpp
+bool PadSameBinding(size_t a, size_t b);
 void HintKeys(const char* (&actions)[2]);  // src/game/hints.cpp
+std::vector<uint8_t> BoldGaramond();       // src/game/sharp_text.cpp: the menus' bold Garamond, empty for none
+struct ButtonPicture {  // src/game/button_images.cpp
+    uint32_t width = 0, height = 0;
+    std::vector<uint32_t> argb;
+};
+enum ButtonImage { kXboxA, kXboxB, kXboxX, kXboxY, kXboxBack, kXboxStart, kXboxDpad, kXboxLB, kXboxRB, kXboxLT, kXboxRT,
+                   kXboxDpadUp, kXboxDpadDown, kXboxDpadLeft, kXboxDpadRight, kXboxDpadLeftRight, kXboxDpadUpDown,
+                   kPsCross, kPsCircle, kPsSquare, kPsTriangle, kPsL1, kPsR1, kPsL2, kPsR2, kPsDpad,
+                   kPsDpadUp, kPsDpadDown, kPsDpadLeft, kPsDpadRight, kPsDpadLeftRight, kPsDpadUpDown,
+                   kPsOptions, kPsShare,
+                   kOgA, kOgB, kOgX, kOgY, kOgBack, kOgStart, kOgDpad, kOgWhite, kOgBlack, kOgLT, kOgRT,
+                   kOgDpadUp, kOgDpadDown, kOgDpadLeft, kOgDpadRight, kOgDpadLeftRight, kOgDpadUpDown,
+                   kButtonImageCount };
+const ButtonPicture* PadButton(int which);
 // src/game/sharp_text.cpp: a game font sheet drawn again sharp, null for any other texture
+std::shared_ptr<const gpu::texture_override::Picture> SmoothSky(const gpu::TextureDesc& d, const uint8_t* guest);
 std::shared_ptr<const gpu::texture_override::Picture> SharpText(const gpu::TextureDesc& d, const uint8_t* guest,
                                                                 float render_scale);
 }
@@ -60,9 +79,18 @@ enum Icon {
 // a key's name ("F", "Space", "Esc"), or a picture: "@lmb" "@rmb" "@mmb" a mouse with that button lit, "@up" "@down"
 // "@left" "@right" "@leftright" "@updown" "@arrows" arrow keys. Empty: an empty keycap.
 using Labels = std::array<std::string, kIconCount>;
-// labels[kA] saying this: a controller is in use, its pictures stay but for those labelled ("@lb" "@rb": the white
-// and black buttons, a pad's LB and RB)
+// labels[kA] saying this: a controller is in use, the game's own pictures stay
 constexpr const char* kControllerSet = "@controller";
+// labels[kStart] saying this with kControllerSet: the Modern layout's controller, every icon a picture from
+// button_images.cpp
+constexpr const char* kXboxSet = "@xbox";
+// the same with a PlayStation pad in use: its buttons' pictures
+constexpr const char* kPsSet = "@ps";
+// the same on the game's own four layouts: the original Xbox controller's pictures
+constexpr const char* kOgSet = "@og";
+bool Pictured(const Labels& l) {
+    return l[kA] == kControllerSet && (l[kStart] == kXboxSet || l[kStart] == kPsSet || l[kStart] == kOgSet);
+}
 
 constexpr const char* kPack = "D:\\sp\\global.cod";
 constexpr const char* kIconFonts[] = {"i_button_icons_xb_en", "i_button_icons_xb_fr", "i_button_icons_xb_it",
@@ -86,12 +114,14 @@ struct IconTexture {
 
 std::once_flag g_loaded;
 std::vector<IconTexture> g_textures;  // written once, under g_loaded
-// the main menu's paper (Single_Front_menu.dds in sp/frontend.cod) has four boxes printed on it, one a line: with
-// Multiplayer gone there are three lines, so the fourth box is painted over with the paper beside it
-std::vector<uint8_t> g_menu_paper;  // its level 0, written once under g_loaded
 // the Controller screen's picture (xboxlineA.dds in sp/frontend.cod): the Modern one in its place (pad_picture.cpp)
 std::vector<uint8_t> g_pad_picture;  // its level 0, written once under g_loaded
-std::shared_ptr<const Picture> g_menu_paper_picture;  // under g_lock
+// the crosshair's three pictures (center_dot 8 x 8, side_skinny 8 x 8, side_small_arc 16 x 16, the same in every
+// mission's weapons.cod): a few texels each, drawn again smooth at the output's size. Level 0 of each, written once
+// under g_loaded
+constexpr const char* kReticleNames[] = {"center_dot.dds", "side_skinny.dds", "side_small_arc.dds"};
+constexpr uint32_t kReticleSizes[] = {8, 8, 16};
+std::vector<uint8_t> g_reticle[3];
 std::vector<uint8_t> g_ttf;
 stbtt_fontinfo g_font;
 bool g_have_font = false;
@@ -214,7 +244,9 @@ uint32_t Level0Size(const std::vector<uint8_t>& dds, uint32_t width, uint32_t he
 }
 
 bool ReadFont() {
-    // the game's own Garamond, the face its typewriter keys are lettered in
+    // the bold Garamond of the settings menu's keys, else the game's own regular one
+    g_ttf = game::BoldGaramond();
+    if (!g_ttf.empty() && stbtt_InitFont(&g_font, g_ttf.data(), stbtt_GetFontOffsetForIndex(g_ttf.data(), 0))) return true;
     if (kernel::ReadGameFile("D:\\media\\GARA.TTF", g_ttf) && !g_ttf.empty() &&
         stbtt_InitFont(&g_font, g_ttf.data(), stbtt_GetFontOffsetForIndex(g_ttf.data(), 0)))
         return true;
@@ -267,14 +299,25 @@ void Load() {
             add(name, dds, {{icon, 0, 0, int(U32(dds, 16)), int(U32(dds, 12))}});
     LOGR("button prompts: %zu icon textures", g_textures.size());
     std::map<std::string, Entry> front = ReadDirectory("D:\\sp\\frontend.cod");
-    if (auto it = front.find("Single_Front_menu.dds"); it != front.end() &&
-        kernel::ReadGameFile("D:\\sp\\frontend.cod", it->second.offset, it->second.size, dds) &&
-        dds.size() == 128 + 256 * 512 && U32(dds, 16) == 256 && U32(dds, 12) == 512)
-        g_menu_paper.assign(dds.begin() + 128, dds.end());
     if (auto it = front.find("xboxlineA.dds"); it != front.end() &&
         kernel::ReadGameFile("D:\\sp\\frontend.cod", it->second.offset, it->second.size, dds) &&
         dds.size() >= 128 + 512 * 512 && U32(dds, 16) == 512 && U32(dds, 12) == 512)
         g_pad_picture.assign(dds.begin() + 128, dds.begin() + 128 + 512 * 512);
+    const char* weapons = "D:\\sp\\prologue\\weapons.cod";
+    std::map<std::string, Entry> pack = ReadDirectory(weapons);
+    int reticles = 0;
+    for (int i = 0; i < 3; i++) {
+        auto it = pack.find(kReticleNames[i]);
+        if (it == pack.end() || !kernel::ReadGameFile(weapons, it->second.offset, it->second.size, dds)) continue;
+        if (dds.size() <= 128 || std::memcmp(dds.data(), "DDS ", 4) != 0 || U32(dds, 16) != kReticleSizes[i] ||
+            U32(dds, 12) != kReticleSizes[i])
+            continue;
+        uint32_t size = Level0Size(dds, kReticleSizes[i], kReticleSizes[i]);
+        if (!size || 128 + size > dds.size()) continue;
+        g_reticle[i].assign(dds.begin() + 128, dds.begin() + 128 + size);
+        reticles++;
+    }
+    LOGR("crosshair: %d of its 3 pictures found to draw smooth", reticles);
 }
 
 // --- Drawing: straight alpha RGBA floats; shapes are signed distance fields in output pixels, anti-aliased over one.
@@ -412,30 +455,11 @@ void Text(Canvas& canvas, float cx, float cy, float max_w, float max_h, const st
     }
 }
 
-// The look of the profile name typewriter's keys: round, a bright metal ring around a near black face, the name in
-// off-white in the game's own Garamond (d:\media\GARA.TTF), a soft shadow below.
-constexpr Color kInk{0.95f, 0.93f, 0.88f, 1.0f};
-constexpr Color kShadow{0.0f, 0.0f, 0.0f, 0.55f};
-constexpr Color kRingTop{0.88f, 0.87f, 0.84f, 1.0f};
-constexpr Color kRingBottom{0.36f, 0.35f, 0.33f, 1.0f};
-constexpr Color kFaceTop{0.27f, 0.26f, 0.25f, 1.0f};
-constexpr Color kFaceBottom{0.07f, 0.07f, 0.07f, 1.0f};
-constexpr Color kLit{0.80f, 0.16f, 0.15f, 1.0f};
-
-Color Mix(Color a, Color b, float t) {
-    return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t};
-}
-
-// a shape filled top to bottom from one colour to another
-template <typename Shape>
-void Shade(Canvas& canvas, float top, float bottom, float left, float right, Color from, Color to, Shape shape) {
-    for (int y = int(top) - 1; y <= int(bottom) + 1; y++) {
-        Color c = Mix(from, to, std::clamp((float(y) + 0.5f - top) / std::max(1.0f, bottom - top), 0.0f, 1.0f));
-        canvas.Fill(left, float(y), right, float(y), c, [&](float px, float py) {
-            return std::max(shape(px, py), std::abs(py - (float(y) + 0.5f)) - 0.5f);
-        });
-    }
-}
+// The settings menu's own key (Cap in common/modern_menu.cpp), the same one: a flat cream cap, its corners rounded by
+// 0.14 of its height, the key's name on it in dark ink in the bold Garamond at 0.62 of its height. No edge, no shadow.
+constexpr Color kInk{0.14f, 0.11f, 0.08f, 1.0f};
+constexpr Color kCream{0.92f, 0.88f, 0.78f, 1.0f};
+constexpr Color kLit{0.66f, 0.13f, 0.10f, 1.0f};
 
 // a small mouse in ink with one button lit: 0 left, 1 right, 2 middle
 void Mouse(Canvas& canvas, float cx, float cy, float size, int button) {
@@ -460,20 +484,16 @@ void Mouse(Canvas& canvas, float cx, float cy, float size, int button) {
 
 void Keycap(Canvas& canvas, float left, float top, float w, float h, const std::string& label) {
     float size = std::min(w, h);
+    bool name = label.size() > 1 && label[0] != '@';  // a name's cap is as wide as its place, a letter's square
     float cx = left + w / 2, cy = top + h / 2 - size * 0.02f;
-    float r = size * 0.46f, ring = std::max(1.0f, size * 0.085f), drop = size * 0.04f;
-    auto disc = [&](float rr) { return [&, rr](float px, float py) { return std::hypot(px - cx, py - cy) - rr; }; };
-    // the shadow, the metal ring lit from the top, the face dark below
-    canvas.Fill(cx - r, cy - r + drop, cx + r, cy + r + drop, kShadow,
-                [&](float px, float py) { return std::hypot(px - cx, py - cy - drop) - r; });
-    Shade(canvas, cy - r, cy + r, cx - r, cx + r, kRingTop, kRingBottom, disc(r));
-    float face = r - ring;
-    Shade(canvas, cy - face, cy + face, cx - face, cx + face, kFaceTop, kFaceBottom, disc(face));
-    // a thin dark line inside the ring, as the game's keys have
-    canvas.Fill(cx - face, cy - face, cx + face, cy + face, Color{0, 0, 0, 0.7f},
-                [&](float px, float py) { return std::abs(std::hypot(px - cx, py - cy) - face) - std::max(0.5f, size * 0.012f); });
+    float hh = size * 0.42f, hw = name ? std::max(hh, w * 0.5f - std::max(0.5f, size * 0.02f)) : hh;
+    float radius = hh * 0.28f;  // 0.14 of the cap's height
+    canvas.Fill(cx - hw, cy - hh, cx + hw, cy + hh, kCream,
+                [&](float px, float py) { return RoundedRect(px, py, cx, cy, hw, hh, radius); });
+    const float edge = 0.0f;
+    float face = hh;
     float inner = face * 2 * 0.80f;  // the text's width inside the face
-    float a = face * 0.95f;          // arrow size
+    float a = face * 0.8f;           // arrow size
     if (label == "@lmb" || label == "@rmb" || label == "@mmb") {
         Mouse(canvas, cx, cy, face * 1.25f, label == "@lmb" ? 0 : label == "@rmb" ? 1 : 2);
     } else if (label == "@up" || label == "@down" || label == "@left" || label == "@right") {
@@ -492,11 +512,8 @@ void Keycap(Canvas& canvas, float left, float top, float w, float h, const std::
         Arrow(canvas, cx - o, cy, s, -1, 0, kInk);
         Arrow(canvas, cx + o, cy, s, 1, 0, kInk);
     } else {
-        // a letter as big as the typewriter's, a capital as on a keyboard; longer names as wide as fits
-        std::string text = label;
-        // names fill the face edge to edge, a few letters still read at icon size
-        Text(canvas, cx, cy, text.size() == 1 ? inner : face * 1.92f, text.size() == 1 ? face * 0.95f : face * 0.9f,
-             text, kInk);
+        // at the menu's size (a capital 0.4 of the cap high); a name shrinks to fit its cap
+        Text(canvas, cx, cy, name ? (hw - edge) * 2 * 0.86f : inner, face * 0.8f, label, kInk);
     }
 }
 
@@ -527,59 +544,90 @@ std::vector<Color> DecodeDxt3(const std::vector<uint8_t>& data, uint32_t width, 
     return out;
 }
 
-// a pad's shoulder button: a dark rounded bar lit along its top, LB or RB on it in white
-void Bumper(Canvas& canvas, float left, float top, float w, float h, const std::string& name) {
-    float size = std::min(w, h);
-    float cx = left + w / 2, cy = top + h / 2;
-    float hw = std::min(w * 0.47f, size * 0.62f), hh = size * 0.30f, radius = hh * 0.9f;
-    auto bar = [&](float grow) {
-        return [&, grow](float px, float py) { return RoundedRect(px, py, cx, cy, hw + grow, hh + grow, radius + grow); };
+// a picture fitted into a box (its shape kept, centred), each pixel the average of the picture's under it
+void FitPicture(Canvas& canvas, const game::ButtonPicture& p, float left, float top, float w, float h) {
+    float fit = std::min(w / float(p.width), h / float(p.height));
+    float dw = float(p.width) * fit, dh = float(p.height) * fit;
+    float x0 = left + (w - dw) / 2, y0 = top + (h - dh) / 2;
+    // the source pixels under each output column (row) and how much of each
+    auto spans = [](float start, float length, uint32_t source, int& first, int& count) {
+        first = int(std::floor(start));
+        count = int(std::ceil(start + length)) - first;
+        std::vector<std::vector<std::pair<int, float>>> out(size_t(std::max(0, count)));
+        float per = float(source) / length;
+        for (int i = 0; i < count; i++) {
+            float a = std::max(float(first + i), start), b = std::min(float(first + i + 1), start + length);
+            if (b <= a) continue;
+            float s0 = (a - start) * per, s1 = (b - start) * per;
+            for (int k = int(std::floor(s0)); k < int(std::ceil(s1)) && k < int(source); k++) {
+                float o = std::min(s1, float(k + 1)) - std::max(s0, float(k));
+                if (o > 0 && k >= 0) out[size_t(i)].emplace_back(k, o / per);
+            }
+        }
+        return out;
     };
-    float rim = std::max(1.0f, size * 0.05f), drop = size * 0.04f;
-    canvas.Fill(cx - hw, cy - hh + drop, cx + hw, cy + hh + drop, kShadow, [&](float px, float py) {
-        return RoundedRect(px, py, cx, cy + drop, hw, hh, radius);
-    });
-    Shade(canvas, cy - hh, cy + hh, cx - hw, cx + hw, Color{0.78f, 0.78f, 0.80f, 1}, Color{0.32f, 0.32f, 0.35f, 1},
-          bar(0));
-    Shade(canvas, cy - hh + rim, cy + hh - rim, cx - hw + rim, cx + hw - rim, Color{0.22f, 0.22f, 0.24f, 1},
-          Color{0.08f, 0.08f, 0.09f, 1}, bar(-rim));
-    Text(canvas, cx, cy, (hw - rim) * 1.7f, (hh - rim) * 1.5f, name, Color{0.97f, 0.97f, 0.97f, 1});
+    int fx, nx, fy, ny;
+    auto cols = spans(x0, dw, p.width, fx, nx);
+    auto rows = spans(y0, dh, p.height, fy, ny);
+    for (int j = 0; j < ny; j++)
+        for (int i = 0; i < nx; i++) {
+            float r = 0, g = 0, b = 0, a = 0, area = 0;
+            for (auto [sy, wy] : rows[size_t(j)])
+                for (auto [sx, wx] : cols[size_t(i)]) {
+                    uint32_t c = p.argb[size_t(sy) * p.width + size_t(sx)];
+                    float wgt = wx * wy, al = float(c >> 24) / 255.0f * wgt;  // premultiplied
+                    r += float((c >> 16) & 255) / 255.0f * al, g += float((c >> 8) & 255) / 255.0f * al;
+                    b += float(c & 255) / 255.0f * al, a += al, area += wgt;
+                }
+            if (a <= 0) continue;
+            canvas.Blend(fx + i, fy + j, Color{r / a, g / a, b / a, 1.0f}, a);  // a: covered part of the pixel
+        }
+}
+
+// a controller: each icon the picture of its button (button_images.cpp). The Modern layout's are an Xbox One pad's or
+// with one in use a PlayStation pad's (Options and Share in Start's and Back's places); the game's own layouts', the
+// original Xbox controller's (offset: kOg* follow kXbox*'s order, but for white and black in LB's and RB's places)
+void DrawPad(Canvas& canvas, const IconTexture& t, float s, const char* set) {
+    using namespace game;
+    bool playstation = set == kPsSet, original = set == kOgSet;
+    for (const Box& b : t.boxes) {
+        auto pick = [&](int xbox, int ps) { return playstation ? ps : original ? xbox - kXboxA + kOgA : xbox; };
+        int which;
+        switch (b.icon) {
+        case kA: which = pick(kXboxA, kPsCross); break;
+        case kB: which = pick(kXboxB, kPsCircle); break;
+        case kX: which = pick(kXboxX, kPsSquare); break;
+        case kY: which = pick(kXboxY, kPsTriangle); break;
+        case kRightTrigger: which = pick(kXboxRT, kPsR2); break;
+        case kLeftTrigger: which = pick(kXboxLT, kPsL2); break;
+        case kWhite: which = pick(kXboxLB, kPsL1); break;  // the layout's LB and RB are the original's white and black
+        case kBlack: which = pick(kXboxRB, kPsR1); break;
+        case kStart: which = pick(kXboxStart, kPsOptions); break;
+        case kBack: which = pick(kXboxBack, kPsShare); break;
+        case kDpadUp: which = pick(kXboxDpadUp, kPsDpadUp); break;
+        case kDpadDown: which = pick(kXboxDpadDown, kPsDpadDown); break;
+        case kDpadLeft: which = pick(kXboxDpadLeft, kPsDpadLeft); break;
+        case kDpadRight: which = pick(kXboxDpadRight, kPsDpadRight); break;
+        case kDpadLeftRight: which = pick(kXboxDpadLeftRight, kPsDpadLeftRight); break;
+        case kDpadUpDown: which = pick(kXboxDpadUpDown, kPsDpadUpDown); break;
+        default: which = pick(kXboxDpad, kPsDpad); break;
+        }
+        const ButtonPicture* p = PadButton(which);
+        if (!p) continue;
+        float left = float(b.x) * s, top = float(b.y) * s, w = float(b.width) * s, h = float(b.height) * s;
+        // a small margin, none for the wide shoulder buttons, which are short enough already
+        float pad = which == kXboxLB || which == kXboxRB ? 0.0f : std::max(0.5f, w * 0.02f);
+        if (original) pad = 0;  // round buttons drawn to their edge, as the game's are
+        FitPicture(canvas, *p, left + pad, top + pad, w - 2 * pad, h - 2 * pad);
+    }
 }
 
 std::shared_ptr<const Picture> Draw(const IconTexture& t, const Labels& labels, int scale) {
     Canvas canvas(t.width * uint32_t(scale), t.height * uint32_t(scale));
     float s = float(scale);
-    if (labels[kA] == kControllerSet) {
-        // the game's own pictures, bilinear to the new size, then the shoulder buttons over the white and black
-        std::vector<Color> texels = DecodeDxt3(t.level0, t.width, t.height);
-        auto at = [&](int x, int y) {
-            x = std::clamp(x, 0, int(t.width) - 1), y = std::clamp(y, 0, int(t.height) - 1);
-            return texels[size_t(y) * t.width + size_t(x)];
-        };
-        for (uint32_t y = 0; y < t.height * uint32_t(scale); y++)
-            for (uint32_t x = 0; x < t.width * uint32_t(scale); x++) {
-                float fx = (float(x) + 0.5f) / s - 0.5f, fy = (float(y) + 0.5f) / s - 0.5f;
-                int x0 = int(std::floor(fx)), y0 = int(std::floor(fy));
-                float ax = fx - float(x0), ay = fy - float(y0);
-                Color c{0, 0, 0, 0};
-                float wsum = 0;
-                for (int k = 0; k < 4; k++) {
-                    Color p = at(x0 + (k & 1), y0 + (k >> 1));
-                    float wgt = ((k & 1) ? ax : 1 - ax) * ((k >> 1) ? ay : 1 - ay) * p.a;  // alpha weighted
-                    c.r += p.r * wgt, c.g += p.g * wgt, c.b += p.b * wgt, wsum += wgt;
-                    c.a += p.a * ((k & 1) ? ax : 1 - ax) * ((k >> 1) ? ay : 1 - ay);
-                }
-                if (wsum > 0) c.r /= wsum, c.g /= wsum, c.b /= wsum;
-                canvas.Set(int(x), int(y), c);
-            }
-        for (const Box& b : t.boxes) {
-            const std::string& l = labels[b.icon];
-            if (l != "@lb" && l != "@rb") continue;
-            for (int y = int(float(b.y) * s); y < int(float(b.y + b.height) * s); y++)
-                for (int x = int(float(b.x) * s); x < int(float(b.x + b.width) * s); x++) canvas.Set(x, y, Color{1, 1, 1, 0});
-            Bumper(canvas, float(b.x) * s, float(b.y) * s, float(b.width) * s, float(b.height) * s,
-                   l == "@lb" ? "LB" : "RB");
-        }
+    if (Pictured(labels)) {
+        const std::string& set = labels[kStart];
+        DrawPad(canvas, t, s, set == kPsSet ? kPsSet : set == kOgSet ? kOgSet : kXboxSet);
         return canvas.Finish();
     }
     for (const Box& b : t.boxes)
@@ -587,22 +635,33 @@ std::shared_ptr<const Picture> Draw(const IconTexture& t, const Labels& labels, 
     return canvas.Finish();
 }
 
-// the main menu's paper without its fourth box (rows 346-363, columns 28-48): the paper 24 texels right of it
-std::shared_ptr<const Picture> MenuPaper() {
-    constexpr uint32_t w = 256, h = 512;
-    std::vector<Color> texels = DecodeDxt3(g_menu_paper, w, h);
-    for (uint32_t y = 342; y < 368; y++)
-        for (uint32_t x = 24; x < 52; x++) texels[y * w + x] = texels[y * w + x + 26];
-    auto pic = std::make_shared<Picture>();
-    pic->width = w;
-    pic->height = h;
-    pic->argb.resize(texels.size());
-    auto channel = [](float v) { return uint32_t(std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f)); };
-    for (size_t i = 0; i < texels.size(); i++) {
-        const Color& c = texels[i];
-        pic->argb[i] = channel(c.a) << 24 | channel(c.r) << 16 | channel(c.g) << 8 | channel(c.b);
+// The crosshair's pictures drawn again, scale times their size, where the game's texels are: the dot a disc of 3
+// texels about (4, 4); the thin mark a bar from (3, 3) to (4, 8); the side mark an arc of a circle of 9.7 texels about
+// (8, 12), 42 degrees each way from straight up, 1.5 thick and as faint as the game's (0.42)
+std::shared_ptr<const Picture> DrawReticle(int which, int scale) {
+    float s = float(scale);
+    Canvas canvas(kReticleSizes[which] * uint32_t(scale), kReticleSizes[which] * uint32_t(scale));
+    const Color white{1.0f, 0.985f, 1.0f, 1.0f};
+    float size = float(kReticleSizes[which]) * s;
+    if (which == 0) {
+        canvas.Fill(0, 0, size, size, white, [&](float px, float py) { return std::hypot(px - 4.0f * s, py - 4.0f * s) - 3.0f * s; });
+    } else if (which == 1) {
+        canvas.Fill(0, 0, size, size, white, [&](float px, float py) {
+            return std::max(std::abs(px - 3.5f * s) - 0.5f * s, std::abs(py - 5.5f * s) - 2.5f * s);
+        });
+    } else {
+        const float cx = 8.0f * s, cy = 12.0f * s, radius = 9.7f * s, half = 0.75f * s, reach = 0.733f;  // 42 degrees
+        Color faint = white;
+        faint.a = 0.42f;
+        canvas.Fill(0, 0, size, size, faint, [&](float px, float py) {
+            float angle = std::atan2(px - cx, cy - py);  // 0 straight up
+            if (std::abs(angle) <= reach) return std::abs(std::hypot(px - cx, py - cy) - radius) - half;
+            float side = angle < 0 ? -1.0f : 1.0f;
+            float ex = cx + side * std::sin(reach) * radius, ey = cy - std::cos(reach) * radius;
+            return std::hypot(px - ex, py - ey) - half;  // a round end
+        });
     }
-    return pic;
+    return canvas.Finish();
 }
 
 // render thread: keycaps for the icon textures while labels are set
@@ -616,22 +675,27 @@ std::shared_ptr<const Picture> Provide(const gpu::TextureDesc& d, const uint8_t*
     if (!found && !g_pad_picture.empty() && d.width == 512 && d.height == 512 &&
         gpu::LevelSize(d, 0) == g_pad_picture.size() && std::memcmp(guest, g_pad_picture.data(), g_pad_picture.size()) == 0)
         if (auto modern = game::ModernPadPicture()) return modern;
-    if (!found) {
-        if (g_menu_paper.empty() || d.width != 256 || d.height != 512 || gpu::LevelSize(d, 0) != g_menu_paper.size() ||
-            std::memcmp(guest, g_menu_paper.data(), g_menu_paper.size()) != 0)
-            return game::SharpText(d, guest, render_scale);
-        std::lock_guard lock(g_lock);
-        if (!g_menu_paper_picture) g_menu_paper_picture = MenuPaper();
-        return g_menu_paper_picture;
+    if (!found && d.width == d.height && (d.width == 8 || d.width == 16)) {
+        for (int i = 0; i < 3; i++) {
+            if (g_reticle[i].empty() || d.width != kReticleSizes[i] || gpu::LevelSize(d, 0) != g_reticle[i].size() ||
+                std::memcmp(guest, g_reticle[i].data(), g_reticle[i].size()) != 0)
+                continue;
+            // (a texel of these is about a pixel of the game's 480 lines)
+            int scale = std::clamp(int(std::ceil(render_scale - 0.01f)), 2, 8);
+            static std::map<std::pair<int, int>, std::shared_ptr<const Picture>> drawn;
+            std::lock_guard lock(g_lock);
+            auto& cached = drawn[{i, scale}];
+            if (!cached) cached = DrawReticle(i, scale);
+            return cached;
+        }
     }
+    if (!found)
+        if (auto sky = game::SmoothSky(d, guest)) return sky;
+    if (!found) return game::SharpText(d, guest, render_scale);
     std::lock_guard lock(g_lock);
     if (!g_labels) return nullptr;
-    // a controller's pictures change only in the icon font (DXT3), where the white and black buttons are
-    if ((*g_labels)[kA] == kControllerSet && (found->level0.size() != size_t(found->width) * found->height ||
-                                              std::none_of(found->boxes.begin(), found->boxes.end(), [](const Box& b) {
-                                                  return b.icon == kWhite || b.icon == kBlack;
-                                              })))
-        return nullptr;
+    // a controller's pictures are the game's own but with the Modern layout
+    if ((*g_labels)[kA] == kControllerSet && !Pictured(*g_labels)) return nullptr;
     // drawn at the output's resolution: at least 2, at most 8 times the original
     int scale = std::clamp(int(std::ceil(render_scale - 0.01f)), 2, 8);
     auto& cached = g_cache[{found, scale}];
@@ -679,11 +743,14 @@ void Update() {
     uint32_t mode = game::Opt().button_prompts;
     bool keyboard = mode == 1 || (mode != 2 && input::KeyboardActive());
     if (!keyboard) {
-        // a pad's LB and RB for the original's white and black buttons
         Labels pad;
         pad[kA] = kControllerSet;
-        pad[kWhite] = "@lb";
-        pad[kBlack] = "@rb";
+        // the Modern layout's pictures, a PlayStation pad's with one in use
+        if (game::Opt().modern_layout && game::PadButton(game::kXboxA))
+            pad[kStart] = game::PlayStationPrompts() && game::PadButton(game::kPsCross) ? kPsSet : kXboxSet;
+        // the game's own layouts: the original Xbox controller's
+        else if (!game::Opt().modern_layout && game::PadButton(game::kOgA))
+            pad[kStart] = kOgSet;
         SetLabels(pad);
         return;
     }
@@ -695,6 +762,14 @@ void Update() {
         Icon icon = kControlIcons[to];
         if (icon != kIconCount && labels[icon].empty()) labels[icon] = CapLabel(key);
     }
+    // two buttons with one command (the Modern layout's LB and RB both throw a grenade): the key on both, whichever
+    // of them a hint draws
+    for (size_t i = 0; i < std::size(kControlIcons); i++)
+        for (size_t j = 0; j < std::size(kControlIcons); j++) {
+            Icon from = kControlIcons[i], to = kControlIcons[j];
+            if (from == kIconCount || to == kIconCount || labels[from].empty() || !labels[to].empty()) continue;
+            if (game::PadSameBinding(i, j)) labels[to] = labels[from];
+        }
     // a control that runs its command itself is on no button: the lean keys are the dpad's left and right, and use's
     // key the X of "Press X to pick up" where the layout joins use and reload
     auto own = [&](Icon icon, const char* action) {
@@ -717,7 +792,7 @@ void Update() {
         labels[kDpadLeft] = "@left";
         labels[kDpadRight] = "@right";
         labels[kA] = "Enter";
-        labels[kB] = input::TextEntry() ? "Esc" : "Bksp";  // a name entry screen's Backspace deletes
+        labels[kB] = "Esc";  // Escape and Backspace both back out; a name entry screen's Backspace deletes
         labels[kX] = "Del";
     }
     bool arrows = labels[kDpadLeft] == "@left" && labels[kDpadRight] == "@right";
@@ -746,6 +821,12 @@ void Update() {
 
 namespace game {
 
+// the console's playstation 1: a PlayStation pad's prompts whatever pad is in use (not saved), for a look without one
+std::atomic<bool> g_playstation_prompts{false};
+
+// the Modern layout's prompts are a PlayStation pad's: one is in use, or the console asked for them
+bool PlayStationPrompts() { return g_playstation_prompts.load() || input::PlayStationPadInUse(); }
+
 void InitPrompts() { gpu::texture_override::SetProvider(Provide); }
 
 // a file of a pack by its name
@@ -753,6 +834,23 @@ bool ReadPackFile(const char* pack, const std::string& name, std::vector<uint8_t
     std::map<std::string, Entry> files = ReadDirectory(pack);
     auto it = files.find(name);
     return it != files.end() && ReadAny(pack, it->second.offset, it->second.size, out);
+}
+
+// every file of a pack whose name starts in one of the ways given
+std::vector<std::pair<std::string, std::vector<uint8_t>>> ReadPackFiles(const char* pack,
+                                                                        const std::vector<std::string>& starts) {
+    std::vector<std::pair<std::string, std::vector<uint8_t>>> out;
+    for (const auto& [name, entry] : ReadDirectory(pack)) {
+        bool wanted = false;
+        for (const std::string& start : starts) wanted = wanted || name.compare(0, start.size(), start) == 0;
+        std::vector<uint8_t> data;
+        if (wanted && ReadAny(pack, entry.offset, entry.size, data)) out.emplace_back(name, std::move(data));
+    }
+    return out;
+}
+
+std::vector<std::pair<std::string, std::vector<uint8_t>>> ReadPackFiles(const char* pack, const std::string& start) {
+    return ReadPackFiles(pack, std::vector<std::string>{start});
 }
 
 // a game file, also before boot
@@ -781,6 +879,67 @@ bool ReadFrontEndPicture(const std::string& name, std::vector<uint8_t>& rgba, ui
         rgba[i * 4 + 2] = byte(texels[i].b);
         rgba[i * 4 + 3] = byte(texels[i].a);
     }
+    return true;
+}
+
+// A controller button for the settings menu's own lines (0 A, 1 B, 2 X, 3 Y, 4 LB, 5 RB), as the game shows it
+// everywhere else: set 0 the game's own layouts' (the original Xbox controller's pictures, else the game's own icon;
+// the white button is LB, the black RB), 1 the Modern layout's (button_images.cpp), 2 the Modern layout's with a
+// PlayStation pad.
+// Straight RGBA with a clear texel all round, so it can sit among other pictures.
+bool MenuButtonPixels(int button, int set, std::vector<uint8_t>& rgba, uint32_t& width, uint32_t& height) {
+    std::vector<uint32_t> argb;  // without the border
+    uint32_t w = 0, h = 0;
+    constexpr int kXbox[] = {kXboxA, kXboxB, kXboxX, kXboxY, kXboxLB, kXboxRB, kXboxLT, kXboxRT};
+    constexpr int kPs[] = {kPsCross, kPsCircle, kPsSquare, kPsTriangle, kPsL1, kPsR1, kPsL2, kPsR2};
+    constexpr int kOg[] = {kOgA, kOgB, kOgX, kOgY, kOgWhite, kOgBlack, kOgLT, kOgRT};
+    if (button < 0 || button >= int(std::size(kXbox))) return false;
+    // set 0: the original Xbox controller's pictures, else the game's own icon
+    const ButtonPicture* p = PadButton(set == 2 ? kPs[button] : set == 1 ? kXbox[button] : kOg[button]);
+    if (set && (!p || !p->width || !p->height)) return false;
+    if (p && p->width && p->height) {
+        h = 96;
+        w = std::clamp(uint32_t(std::lround(float(h) * float(p->width) / float(p->height))), 16u, 320u);
+        Canvas canvas(w, h);
+        FitPicture(canvas, *p, 0, 0, float(w), float(h));
+        argb = canvas.Finish()->argb;
+    } else {
+        constexpr Icon kIcons[] = {kA, kB, kX, kY, kWhite, kBlack, kLeftTrigger, kRightTrigger};
+        if (button < 0 || button >= int(std::size(kIcons))) return false;
+        std::map<std::string, Entry> files = ReadDirectory();
+        std::vector<uint8_t> dds, table;
+        auto read = [&](const char* name, std::vector<uint8_t>& out) {
+            auto it = files.find(name);
+            return it != files.end() && ReadAny(kPack, it->second.offset, it->second.size, out);
+        };
+        if (!read("i_button_icons_xb_en.dds", dds) || !read("i_button_icons_xb_en.fdf", table)) return false;
+        if (dds.size() <= 128 || std::memcmp(dds.data(), "DDS ", 4) != 0 || std::memcmp(dds.data() + 84, "DXT3", 4) != 0)
+            return false;
+        uint32_t th = U32(dds, 12), tw = U32(dds, 16), size = Level0Size(dds, tw, th);
+        if (!tw || !th || tw > 1024 || th > 1024 || !size || 128 + size > dds.size()) return false;
+        std::vector<Color> texels = DecodeDxt3(std::vector<uint8_t>(dds.begin() + 128, dds.begin() + 128 + size), tw, th);
+        const Box* box = nullptr;
+        std::vector<Box> boxes = IconTable(table);
+        for (const Box& b : boxes)
+            if (b.icon == kIcons[button]) box = &b;
+        if (!box || box->x < 0 || box->y < 0 || box->x + box->width > int(tw) || box->y + box->height > int(th)) return false;
+        w = uint32_t(box->width), h = uint32_t(box->height);
+        argb.resize(size_t(w) * h);
+        auto byte = [](float v) { return uint32_t(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f); };
+        for (uint32_t y = 0; y < h; y++)
+            for (uint32_t x = 0; x < w; x++) {
+                const Color& c = texels[size_t(uint32_t(box->y) + y) * tw + uint32_t(box->x) + x];
+                argb[size_t(y) * w + x] = byte(c.a) << 24 | byte(c.r) << 16 | byte(c.g) << 8 | byte(c.b);
+            }
+    }
+    width = w + 2, height = h + 2;
+    rgba.assign(size_t(width) * height * 4, 0);
+    for (uint32_t y = 0; y < h; y++)
+        for (uint32_t x = 0; x < w; x++) {
+            uint32_t c = argb[size_t(y) * w + x];
+            uint8_t* d = &rgba[(size_t(y + 1) * width + x + 1) * 4];
+            d[0] = uint8_t(c >> 16), d[1] = uint8_t(c >> 8), d[2] = uint8_t(c), d[3] = uint8_t(c >> 24);
+        }
     return true;
 }
 

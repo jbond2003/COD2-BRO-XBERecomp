@@ -364,6 +364,45 @@ call = "MeshLodDistance"
 at = 0x0024448E
 call = "BodyLodLimit"
 
+# src/game/bodies.cpp: the level scripts' cutscene bars, about to be placed (the top one, then the bottom one)
+# The Profile Manager's delete, confirmed: the slot's name (esi) about to be emptied. Its kept settings go too
+# (src/game/profile_settings.cpp)
+[[hook]]
+at = 0x003349E0
+call = "ProfileDeleted"
+
+# The console (src/game/console.cpp): the print functions whose text is still formatted and then dropped, just after
+# their vsprintf (the game's, the client game's, the renderer's)
+[[hook]]
+at = 0x00248B0D
+call = "ConsolePrinted"
+
+[[hook]]
+at = 0x0027767D
+call = "ConsolePrinted"
+
+[[hook]]
+at = 0x002AB784
+call = "ConsolePrinted"
+
+# Ragdoll_Alloc for the entity in edi: with every ragdoll out, a body is freed first
+[[hook]]
+at = 0x00234930
+call = "RagdollWanted"
+
+# G_FreeEntity (entity, 0): a body freed while Bodies Stay is on is said in the log, with who freed it
+[[hook]]
+at = 0x002BE420
+call = "BodyFreed"
+
+[[hook]]
+at = 0x00141A03
+call = "CutsceneBarTop"
+
+[[hook]]
+at = 0x00141BBA
+call = "CutsceneBarBottom"
+
 # ClientThink: the player's gravity and run speed as the cheats have them (src/game/cheats.cpp)
 [[hook]]
 at = 0x00271D8D
@@ -390,3 +429,50 @@ call = "MirrorBeginText"
 [[hook]]
 at = 0x0007A380
 call = "MirrorEndText"
+
+# src/game/reflections.cpp: nglRenderSceneTree, a scene's opaque list about to be drawn (its arguments being pushed)
+[[hook]]
+at = 0x000743E4
+call = "WaterReflections"
+
+# the game has made an effect (the function round 0x23C1DE, both ways into apsEffect's making at 0x95670): new
+# water spreads rings from the ones that are splashes (src/game/reflections.cpp)
+[[hook]]
+at = 0x0023C1DE
+call = "WaterSplash"
+
+# src/game/ambient_occlusion.cpp: nglRenderSceneTree, a scene's opaque list just drawn and its translucent list
+# (smoke, glass, the glow) not yet
+[[hook]]
+at = 0x000743FB
+call = "AmbientOcclusion"
+
+# src/game/shadows.cpp: R_AddDObjSurfaces, a rigid part's copy for the shadow picture about to be added, its matrix
+# just pushed
+[[hook]]
+at = 0x0024558E
+call = "RigidShadowMatrix"
+
+# game/shadows.cpp: R_RenderTestShadow, the shadow picture's camera just worked out (looking straight down), before
+# the picture's scene and its projector take it
+[[hook]]
+at = 0x00241636
+call = "SunShadowCamera"
+
+# game/shadows.cpp: a vehicle about to be added to the scene (R_AddDObjSurfaces), its arguments pushed: casts no
+# shadow as the game has it
+[[hook]]
+at = 0x00246F67
+call = "VehicleShadow"
+
+# game/shadows.cpp: a thing that is not a vehicle about to be added to the scene (R_AddDObjSurfaces), its arguments
+# pushed: one its level marks as casting no shadow
+[[hook]]
+at = 0x00245BFD
+call = "MarkedShadow"
+
+# game/shadows.cpp: R_AddDObjSurfaces, a thing that is not animated is about to cast a shadow: not when it lies under
+# the ground
+[[hook]]
+at = 0x00244415
+call = "BuriedShadow"

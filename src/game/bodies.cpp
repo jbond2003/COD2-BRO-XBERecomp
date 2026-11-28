@@ -1,0 +1,267 @@
+// Bodies that stay, and cutscenes without their black bars (PC Options: Graphics, Display).
+//
+// Bodies. A soldier who dies becomes a corpse entity (Actor_BecomeCorpse 0x2133A0, entity type 13) and takes a slot
+// of g_actorCorpses (0x9881C8, 16 of 0x1C bytes: the entity's handle, then its lean on the ground), of which
+// ai_corpseCount ([0x985418], 10) are in use. With no slot free, Actor_FreeFarthestCorpse (0x204C70) frees the body
+// farthest from the player and hands its slot out: the eleventh body makes one disappear. With the setting on the
+// farthest body only gives up its slot and stays in the world. The game finds a corpse's slot by its handle and
+// takes slot 0 when there is none (0x200300, 0x211DC4, 0x2EDC49), so a body without a slot is nothing new to it: a
+// loaded checkpoint brings one back as it would any entity. The entities are few (0x540 handles), so at most kKept
+// bodies stay beyond the game's own, and past that the farthest of them is freed as the game would have.
+//
+// Ragdolls. Every soldier is given a ragdoll as it spawns (Ragdoll_Alloc 0x234930, kept at entity +0x238) from a
+// pool of 48 ([0x8F0464] are out), and a body keeps its own until it is freed. The game counts on at most 32
+// soldiers and 16 bodies; with more bodies kept the pool ran dry and the next spawn wrote through a null ragdoll (a
+// player's prologue crashed at the 23rd kept body). So bodies are kept only while kRagdollsSpare ragdolls are left,
+// past that the kept ones go two a death; and a spawn that still finds the pool dry frees the farthest body first
+// (RagdollWanted).
+//
+// Drones. The soldiers a level's script runs across a battlefield are not actors but script models (entity type 7,
+// BroScr_DroneMain 0x169E50). One that is shot falls, and BroScr_DroneDeleteLater (0x1250A0) deletes it some seconds
+// later with the script's delete (GScr_Delete 0x2FD520, called at 0x12525E). With the setting on that one delete is
+// left out and the body lies where it fell; at most kDrones of them, and past that the farthest goes, and at most
+// kHeap at one place (his report: they run to the same spot and die there, in a clump). (A drone that
+// reaches the end of its run alive is deleted elsewhere, 0x169F3D, and still is.)
+//
+// Bars. The level scripts' cutscenes call BroScr_LetterboxFade (0x141890): letterbox_enabled 1, no gun, no HUD, and
+// two "black" HUD elements 640 wide and 70 high, the top one placed at y 0 (0x141A03) and the bottom one at 410
+// (0x141BBA). With the setting off they are placed off the picture: the cutscene is the same but for the bars.
+// A change of the setting moves the bars of a cutscene that is playing.
+
+#include <algorithm>
+#include <vector>
+
+#include "common/cheats.h"
+#include "common/options.h"
+#include "core/log.h"
+#include "cpu/x86_ops.h"
+#include "kernel/kernel.h"
+
+X86_EXTERN_FUNC(__imp__sub_00204C70);
+X86_EXTERN_FUNC(__imp__sub_002FD520);
+
+namespace {
+
+constexpr uint32_t kCorpses = 0x9881C8, kCorpseBytes = 0x1C, kCorpseSlots = 16, kCorpsesInUse = 0x985418;
+constexpr uint32_t kEntities = 0x97A968, kEntityCount = 0x540;  // {entity, generation} each
+constexpr uint32_t kFreeEntity = 0x2BE420;                      // G_FreeEntity (entity, 0), cdecl
+constexpr uint8_t kCorpseType = 13;
+constexpr size_t kKept = 64;
+constexpr uint32_t kRagdollsOut = 0x8F0464, kRagdolls = 0x30, kRagdollsSpare = 10, kEntityRagdoll = 0x238;
+constexpr uint32_t kScriptDelete = 0x2FD520;       // GScr_Delete (entity handle), cdecl
+constexpr uint32_t kDroneDeleteReturn = 0x125264;  // where BroScr_DroneDeleteLater's delete returns to
+constexpr size_t kDrones = 32;
+constexpr size_t kHeap = 3;          // fallen drones kept at one place
+constexpr float kHeapApart = 96.0f;  // ... which is this many units across (about 2.4 m)
+std::vector<uint32_t> g_drones;  // the handles of the fallen drones that were kept
+
+using kernel::R32;
+using kernel::W32;
+
+// the entity of a handle (index in the low 12 bits, generation above), 0 when it is gone
+uint32_t Entity(uint32_t handle) {
+    uint32_t index = handle & 0xFFF;
+    if (!handle || index >= kEntityCount || R32(kEntities + index * 8 + 4) != handle >> 12) return 0;
+    uint32_t ent = R32(kEntities + index * 8);
+    return ent && R32(ent + 0x224) == handle ? ent : 0;
+}
+
+struct Place {
+    float x = 0, y = 0, z = 0;
+};
+Place Origin(uint32_t ent) { return {kernel::G<float>(ent + 0x140), kernel::G<float>(ent + 0x144), kernel::G<float>(ent + 0x148)}; }
+float Apart(const Place& a, const Place& b) {
+    float x = a.x - b.x, y = a.y - b.y, z = a.z - b.z;
+    return x * x + y * y + z * z;
+}
+
+// the player: the first entity with a player's state (as the game's command dispatcher 0x2507D0 tests)
+Place Player() {
+    for (uint32_t i = 0; i < kEntityCount; i++) {
+        uint32_t ent = R32(kEntities + i * 8);
+        if (ent && R32(ent + 0x23C)) return Origin(ent);
+    }
+    return {};
+}
+
+bool HasSlot(uint32_t handle) {
+    for (uint32_t i = 0; i < kCorpseSlots; i++)
+        if (R32(kCorpses + i * kCorpseBytes) == handle) return true;
+    return false;
+}
+
+// frees a body; a body without a slot clears slot 0 as it goes (0x2EDC49): slot 0 is kept
+void FreeBody(X86Context& ctx, uint32_t ent) {
+    uint32_t first = R32(kCorpses);
+    bool own = R32(ent + 0x224) == first;
+    kernel::CallGuest(ctx, kFreeEntity, {ent, 0});
+    if (!own) W32(kCorpses, first);
+}
+
+bool RagdollsLeft() { return R32(kRagdollsOut) + kRagdollsSpare <= kRagdolls; }
+
+// no more than `most` bodies without a slot, less two when `shed`: the farthest go. (The soldier becoming a body now
+// has no slot yet.)
+void Prune(X86Context& ctx, const Place& player, uint32_t dying, bool shed) {
+    struct Body {
+        uint32_t ent;
+        float apart;
+    };
+    std::vector<Body> bodies;
+    for (uint32_t i = 0; i < kEntityCount; i++) {
+        uint32_t ent = R32(kEntities + i * 8);
+        if (!ent || ent == dying) continue;
+        uint32_t handle = R32(ent + 0x224);
+        if (Entity(handle) != ent || (handle & 0xFFF) != i || kernel::G<uint8_t>(ent) != kCorpseType) continue;
+        if (!HasSlot(handle)) bodies.push_back({ent, Apart(Origin(ent), player)});
+    }
+    size_t most = shed ? bodies.size() - std::min<size_t>(bodies.size(), 2) : kKept;
+    while (bodies.size() > most) {
+        size_t far = 0;
+        for (size_t i = 1; i < bodies.size(); i++)
+            if (bodies[i].apart > bodies[far].apart) far = i;
+        FreeBody(ctx, bodies[far].ent);
+        bodies.erase(bodies.begin() + far);
+    }
+}
+
+}  // namespace
+
+// GScr_Delete (handle), cdecl: the script's delete. A fallen drone's is left out while the setting is on.
+X86_FUNC(sub_002FD520) {
+    uint32_t handle = R32(ctx.esp + 4);
+    if (!game::Opt().keep_bodies || R32(ctx.esp) != kDroneDeleteReturn || !Entity(handle))
+        return __imp__sub_002FD520(ctx, base);
+    std::erase_if(g_drones, [handle](uint32_t h) { return h == handle || !Entity(h); });
+    g_drones.push_back(handle);
+    // Drones run the same path and many fall at the same place, where the game had cleared each before the next:
+    // kept, they made a heap. A heap is kept to kHeap bodies, the one that has lain longest going first.
+    Place here = Origin(Entity(handle));
+    for (;;) {
+        size_t near = 0, oldest = 0;
+        for (size_t i = g_drones.size() - 1; i-- > 0;)
+            if (Apart(Origin(Entity(g_drones[i])), here) < kHeapApart * kHeapApart) near++, oldest = i;
+        if (near < kHeap) break;
+        uint32_t gone = g_drones[oldest];
+        g_drones.erase(g_drones.begin() + oldest);
+        kernel::CallGuest(ctx, kScriptDelete, {gone});
+        static int said = 0;
+        if (said++ < 100) LOGR("bodies stay: a fallen drone removed from a heap of %zu", near + 1);
+    }
+    Place player = Player();
+    while (g_drones.size() > kDrones) {
+        size_t far = 0;
+        float most = -1.0f;
+        for (size_t i = 0; i + 1 < g_drones.size(); i++) {  // (not the one that has just fallen)
+            float apart = Apart(Origin(Entity(g_drones[i])), player);
+            if (apart > most) most = apart, far = i;
+        }
+        uint32_t gone = g_drones[far];
+        g_drones.erase(g_drones.begin() + far);
+        kernel::CallGuest(ctx, kScriptDelete, {gone});  // (not from the drone's script: the game's own delete)
+    }
+    static int kept = 0;
+    if (kept++ < 300) LOGR("bodies stay: fallen drone %d kept, %zu lying", kept, g_drones.size());
+    kernel::Return(ctx, 0, 0);
+}
+
+// Actor_FreeFarthestCorpse: () -> eax, a free slot of g_actorCorpses. Its one caller, Actor_BecomeCorpse, has the
+// soldier in esi (0x213515).
+X86_FUNC(sub_00204C70) {
+    if (!game::Opt().keep_bodies) return __imp__sub_00204C70(ctx, base);
+    if (!RagdollsLeft()) {
+        // few ragdolls left for the soldiers still to spawn: no more bodies are kept, and those kept go two a death,
+        // so their entities (and the ragdolls in them) are spawned in again
+        static bool said = false;
+        if (!said) LOGR("bodies stay: %u of %u ragdolls are out, no more bodies are kept", R32(kRagdollsOut), kRagdolls);
+        said = true;
+        Prune(ctx, Player(), ctx.esi, true);
+        return __imp__sub_00204C70(ctx, base);
+    }
+    uint32_t in_use = std::min(std::max(R32(kCorpsesInUse), 1u), kCorpseSlots);
+    Place player = Player();
+    uint32_t far = 0;
+    float most = -1.0f;
+    for (uint32_t i = 0; i < in_use; i++) {
+        uint32_t ent = Entity(R32(kCorpses + i * kCorpseBytes));
+        if (!ent) return kernel::Return(ctx, i, 0);  // free
+        float apart = Apart(Origin(ent), player);
+        if (apart > most) most = apart, far = i;
+    }
+    static int kept = 0;
+    if (kept++ < 300) LOGR("bodies stay: body %d kept after the game's own %u", kept, in_use);
+    W32(kCorpses + far * kCorpseBytes, 0);  // the body stays, without a slot
+    Prune(ctx, player, ctx.esi, false);
+    kernel::Return(ctx, far, 0);
+}
+
+// Ragdoll_Alloc's first instruction, for the soldier spawning in entity edi: with every ragdoll out, the farthest
+// body is freed first (one the setting kept before one of the game's own), which hands its ragdoll back.
+void RagdollWanted(X86Context& ctx, uint8_t*) {
+    if (R32(kRagdollsOut) < kRagdolls || R32(ctx.edi + kEntityRagdoll)) return;
+    Place player = Player();
+    uint32_t far = 0;
+    float most = -1.0f;
+    for (uint32_t i = 0; i < kEntityCount; i++) {
+        uint32_t ent = R32(kEntities + i * 8);
+        if (!ent || ent == ctx.edi || kernel::G<uint8_t>(ent) != kCorpseType || !R32(ent + kEntityRagdoll)) continue;
+        uint32_t handle = R32(ent + 0x224);
+        if (Entity(handle) != ent || (handle & 0xFFF) != i) continue;
+        float apart = Apart(Origin(ent), player) + (HasSlot(handle) ? 0.0f : 1e12f);
+        if (apart > most) most = apart, far = ent;
+    }
+    static int said = 0;
+    if (!far) {
+        if (said++ < 50) LOGR("bodies stay: no ragdoll for a soldier and no body to take one from");
+        return;
+    }
+    FreeBody(ctx, far);
+    if (said++ < 50) LOGR("bodies stay: body %08x freed for its ragdoll, %u are out", far, R32(kRagdollsOut));
+}
+
+// BroScr_LetterboxFade, at its calls that place a bar: (element, y) on the stack. Off the picture, the bars are
+// not seen (a bar of no height is drawn 16 high). Each bar is remembered, so a change of the setting moves the bars
+// of a cutscene that is already playing (CutsceneBars, each frame).
+namespace {
+constexpr uint32_t kLevel = 0x922EE0;          // the level scripts' object: the bars' elements at +0x79C and +0x270
+constexpr uint32_t kSetElementY = 0x922A50;    // the script interface's (element, y), cdecl
+constexpr uint32_t kNoElement = 0xFFFFFFFF;
+struct Bar {
+    uint32_t field, hidden_y;
+    uint32_t element = kNoElement, y = 0;
+    bool shown = true;
+};
+Bar g_top{0x79C, uint32_t(-400)}, g_bottom{0x270, 880};
+
+void Place(X86Context& ctx, Bar& bar) {
+    bar.element = R32(ctx.esp);
+    bar.y = R32(ctx.esp + 4);
+    bar.shown = game::Opt().cutscene_bars;
+    if (!bar.shown) W32(ctx.esp + 4, bar.hidden_y);
+}
+}  // namespace
+
+// G_FreeEntity's first instruction: the return address, then the entity. With Bodies Stay on, each body freed is
+// written to the log with its caller (the first 300), so a player's log shows what took a body away.
+void BodyFreed(X86Context& ctx, uint8_t*) {
+    if (!game::Opt().keep_bodies) return;
+    uint32_t ent = R32(ctx.esp + 4);
+    if (!ent || kernel::G<uint8_t>(ent) != kCorpseType) return;
+    static int said = 0;
+    if (said++ < 300)
+        LOGR("bodies stay: body %08x freed by %08x, %s a slot", ent, R32(ctx.esp), HasSlot(R32(ent + 0x224)) ? "with" : "without");
+}
+
+void CutsceneBarTop(X86Context& ctx, uint8_t*) { Place(ctx, g_top); }
+void CutsceneBarBottom(X86Context& ctx, uint8_t*) { Place(ctx, g_bottom); }
+
+void game::cheats::CutsceneBars(X86Context& ctx) {
+    uint32_t level = R32(kLevel);
+    bool show = game::Opt().cutscene_bars;
+    for (Bar* bar : {&g_top, &g_bottom}) {
+        if (bar->shown == show || bar->element == kNoElement) continue;
+        if (!level || R32(level + bar->field) != bar->element) continue;  // another cutscene's, gone
+        kernel::CallGuest(ctx, R32(kSetElementY), {bar->element, show ? bar->y : bar->hidden_y});
+        bar->shown = show;
+    }
+}

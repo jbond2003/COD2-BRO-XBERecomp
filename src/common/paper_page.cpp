@@ -7,19 +7,32 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
 #ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+
 #include "core/log.h"
 
 namespace game {
 bool ReadFrontEndPicture(const std::string& name, std::vector<uint8_t>& rgba, uint32_t& width,
                          uint32_t& height);  // src/game/prompts.cpp
 bool ReadEarlyGameFile(const std::string& xbox_path, std::vector<uint8_t>& out);  // src/game/prompts.cpp
+bool ModernPadPixels(std::vector<uint8_t>& rgba, uint32_t& width, uint32_t& height);  // src/game/pad_picture.cpp
+bool MenuButtonPixels(int button, int set, std::vector<uint8_t>& rgba, uint32_t& width,
+                      uint32_t& height);  // src/game/prompts.cpp
 }
 #endif
 
@@ -28,11 +41,31 @@ namespace ui::paper {
 namespace {
 
 ImFont* g_serif = nullptr;
+// Hack (fonts/Hack-Regular.ttf, built into the exe): the FPS counter and the console, baked at the size it has on
+// the main monitor and scaled from there for other window sizes
+ImFont* g_mono = nullptr;
+constexpr float kMonoPx = 16.0f;  // at 720 lines
 bool g_bold = false;  // a bold face, else drawn twice for weight
 // the game's own option page (single_options_misc.dds of sp/frontend.cod, the Sound page's), in the font atlas
 int g_paper_rect = -1;
 std::vector<uint8_t> g_paper_pixels;
 uint32_t g_paper_w = 0, g_paper_h = 0;
+// the controller pictures of the Controller tab, in the atlas too: the game's Xbox controller (xboxlineA.dds of
+// sp/frontend.cod) and the Modern configuration's (modern_controller.png); 512 square each
+struct PadPicture {
+    int rect = -1;
+    std::vector<uint8_t> pixels;
+};
+PadPicture g_pads[2];
+// a controller's buttons for the settings menu's lines (A B X Y LB RB), in the atlas too: the game's own icons, the
+// Modern configuration's pictures, and its pictures for a PlayStation pad
+struct ButtonPicture {
+    int rect = -1;
+    std::vector<uint8_t> pixels;
+    uint32_t w = 0, h = 0;
+};
+ButtonPicture g_buttons[3][kButtons];
+constexpr uint32_t kPadSize = 512;
 // the sheet in that picture (alpha over half), its printed frame's top and bottom lines and the rule under the title
 constexpr float kSheetLeft = 12, kSheetTop = 81, kSheetRight = 499, kSheetBottom = 430;
 constexpr float kRuleY = 143;
@@ -49,6 +82,25 @@ ImU32 Ink(float alpha) { return ImGui::GetColorU32(ImVec4(kInk.x, kInk.y, kInk.z
 ImU32 Col(const ImVec4& c, float alpha = 1.0f) { return ImGui::GetColorU32(ImVec4(c.x, c.y, c.z, c.w * alpha)); }
 
 ImFont* Serif() { return g_serif ? g_serif : ImGui::GetFont(); }
+
+#ifdef _WIN32
+void LoadMono(ImGuiIO& io) {
+    HMODULE module = GetModuleHandleW(nullptr);
+    HRSRC resource = FindResourceA(module, "COD2BRO_FONT_HACK", MAKEINTRESOURCEA(10));  // RT_RCDATA
+    DWORD bytes = resource ? SizeofResource(module, resource) : 0;
+    const void* ttf = resource ? LockResource(LoadResource(module, resource)) : nullptr;
+    if (ttf && bytes) {
+        void* data = IM_ALLOC(bytes);  // the atlas owns it
+        std::memcpy(data, ttf, bytes);
+        float lines = float(GetSystemMetrics(SM_CYSCREEN));
+        ImFontConfig cfg;
+        cfg.OversampleH = 2;
+        cfg.OversampleV = 1;
+        g_mono = io.Fonts->AddFontFromMemoryTTF(data, int(bytes), std::round(kMonoPx * std::max(1.0f, lines / 720.0f)), &cfg);
+    }
+    if (!g_mono) LOGW("Console: no Hack font in the exe, ImGui's own");
+}
+#endif
 
 ImVec2 Measure(float size, const char* text) {
     return Serif()->CalcTextSizeA(size, 1e9f, 0.0f, text);
@@ -119,10 +171,27 @@ void LoadFonts() {
     ImGuiIO& io = ImGui::GetIO();
     if (io.Fonts->Fonts.empty()) io.Fonts->AddFontDefault();
 #ifdef _WIN32
+    LoadMono(io);
     // the game's paper, and its typeface from the disc (media/GARA.TTF)
     if (game::ReadFrontEndPicture("single_options_misc.dds", g_paper_pixels, g_paper_w, g_paper_h))
         g_paper_rect = io.Fonts->AddCustomRectRegular(int(g_paper_w), int(g_paper_h));
     LOGR("PC Options: %s", g_paper_rect >= 0 ? "the game's paper" : "no paper from the game files, a drawn one");
+    for (int i = 0; i < 2; i++) {
+        uint32_t w = 0, h = 0;
+        bool read = i ? game::ModernPadPixels(g_pads[i].pixels, w, h)
+                      : game::ReadFrontEndPicture("xboxlineA.dds", g_pads[i].pixels, w, h);
+        if (read && w == kPadSize && h == kPadSize) g_pads[i].rect = io.Fonts->AddCustomRectRegular(int(w), int(h));
+        else LOGW("PC Options: no %s controller picture", i ? "Modern" : "Xbox");
+    }
+    int buttons = 0;
+    for (int set = 0; set < 3; set++)
+        for (int i = 0; i < kButtons; i++) {
+            ButtonPicture& b = g_buttons[set][i];
+            if (!game::MenuButtonPixels(i, set, b.pixels, b.w, b.h)) continue;
+            b.rect = io.Fonts->AddCustomRectRegular(int(b.w), int(b.h));
+            buttons++;
+        }
+    LOGR("PC Options: %d of its %d controller button pictures", buttons, 3 * kButtons);
     std::vector<uint8_t> ttf;
     const char* windir = std::getenv("WINDIR");
     std::string bold = std::string(windir ? windir : "C:\\Windows") + "\\Fonts\\GARABD.TTF";
@@ -146,6 +215,43 @@ void LoadFonts() {
         if (g_serif) return;
     }
 #endif
+#ifdef PAPER_PREVIEW
+    if (const char* raw = std::getenv("PAPER_RGBA")) {
+        std::ifstream f(raw, std::ios::binary);
+        g_paper_pixels.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+        if (g_paper_pixels.size() == 512 * 512 * 4) {
+            g_paper_w = g_paper_h = 512;
+            g_paper_rect = io.Fonts->AddCustomRectRegular(512, 512);
+        }
+    }
+    for (int i = 0; i < 2; i++)
+        if (const char* raw = std::getenv(i ? "PAD_MODERN_RGBA" : "PAD_XBOX_RGBA")) {
+            std::ifstream f(raw, std::ios::binary);
+            g_pads[i].pixels.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+            if (g_pads[i].pixels.size() == kPadSize * kPadSize * 4)
+                g_pads[i].rect = io.Fonts->AddCustomRectRegular(int(kPadSize), int(kPadSize));
+        }
+    // BUTTONS_RGBA: a folder of <set><button>.rgba files, each two u32 (width, height) and the pixels
+    if (const char* dir = std::getenv("BUTTONS_RGBA"))
+        for (int set = 0; set < 2; set++)
+            for (int i = 0; i < kButtons; i++) {
+                std::ifstream f(std::string(dir) + "/" + std::to_string(set) + std::to_string(i) + ".rgba", std::ios::binary);
+                ButtonPicture& b = g_buttons[set][i];
+                if (!f.read(reinterpret_cast<char*>(&b.w), 4) || !f.read(reinterpret_cast<char*>(&b.h), 4)) continue;
+                b.pixels.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+                if (b.pixels.size() == size_t(b.w) * b.h * 4) b.rect = io.Fonts->AddCustomRectRegular(int(b.w), int(b.h));
+            }
+    if (const char* face = std::getenv("PAPER_FACE")) {
+        ImFontConfig cfg;
+        cfg.OversampleH = 2;
+        cfg.OversampleV = 2;
+        g_serif = io.Fonts->AddFontFromFileTTF(face, 72.0f, &cfg);
+        if (g_serif) {
+            g_bold = true;
+            return;
+        }
+    }
+#endif
     std::vector<std::string> candidates;
 #ifdef _WIN32
     std::string fonts = std::string(windir ? windir : "C:\\Windows") + "\\Fonts\\";
@@ -164,25 +270,69 @@ void LoadFonts() {
 }
 
 void Upload() {
-    if (g_paper_rect < 0) return;
     ImFontAtlas* atlas = ImGui::GetIO().Fonts;
     unsigned char* texture = nullptr;
     int tw = 0, th = 0;
     atlas->GetTexDataAsRGBA32(&texture, &tw, &th);
-    const ImFontAtlasCustomRect* rect = atlas->GetCustomRectByIndex(g_paper_rect);
-    if (!texture || !rect->IsPacked()) {
-        g_paper_rect = -1;
-        return;
-    }
-    for (uint32_t y = 0; y < g_paper_h; y++)
-        std::memcpy(texture + (size_t(rect->Y + y) * size_t(tw) + rect->X) * 4,
-                    g_paper_pixels.data() + size_t(y) * g_paper_w * 4, size_t(g_paper_w) * 4);
-    atlas->TexPixelsUseColors = true;
-    g_paper_pixels.clear();
-    g_paper_pixels.shrink_to_fit();
+    auto put = [&](int& index, std::vector<uint8_t>& pixels, uint32_t w, uint32_t h) {
+        if (index < 0) return;
+        const ImFontAtlasCustomRect* rect = atlas->GetCustomRectByIndex(index);
+        if (!texture || !rect->IsPacked()) {
+            index = -1;
+            return;
+        }
+        for (uint32_t y = 0; y < h; y++)
+            std::memcpy(texture + (size_t(rect->Y + y) * size_t(tw) + rect->X) * 4, pixels.data() + size_t(y) * w * 4,
+                        size_t(w) * 4);
+        atlas->TexPixelsUseColors = true;
+        pixels.clear();
+        pixels.shrink_to_fit();
+    };
+    put(g_paper_rect, g_paper_pixels, g_paper_w, g_paper_h);
+    for (PadPicture& pad : g_pads) put(pad.rect, pad.pixels, kPadSize, kPadSize);
+    for (auto& set : g_buttons)
+        for (ButtonPicture& b : set) put(b.rect, b.pixels, b.w, b.h);
 }
 
 int VisibleRows() { return g_rows; }
+
+ImFont* Mono() {
+    // what PushFont makes ImGui's font size: the font's size times this times the global scale
+    if (g_mono) g_mono->Scale = MonoSize() / (g_mono->FontSize * ImGui::GetIO().FontGlobalScale);
+    return g_mono;
+}
+
+float MonoSize() { return kMonoPx * ImGui::GetIO().FontGlobalScale; }
+
+ImFont* Face() { return Serif(); }
+bool FaceBold() { return g_bold; }
+bool Sheet(ImTextureID& texture, ImVec2& uv0, ImVec2& uv1) {
+    if (g_paper_rect < 0) return false;
+    ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+    atlas->CalcCustomRectUV(atlas->GetCustomRectByIndex(g_paper_rect), &uv0, &uv1);
+    texture = atlas->TexID;
+    return true;
+}
+
+bool Pad(bool modern, ImTextureID& texture, ImVec2& uv0, ImVec2& uv1) {
+    int rect = g_pads[modern ? 1 : 0].rect;
+    if (rect < 0) return false;
+    ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+    atlas->CalcCustomRectUV(atlas->GetCustomRectByIndex(rect), &uv0, &uv1);
+    texture = atlas->TexID;
+    return true;
+}
+
+bool Button(int button, int set, ImTextureID& texture, ImVec2& uv0, ImVec2& uv1, float& aspect) {
+    if (button < 0 || button >= kButtons || set < 0 || set > 2) return false;
+    const ButtonPicture& b = g_buttons[set][button];
+    if (b.rect < 0 || !b.h) return false;
+    ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+    atlas->CalcCustomRectUV(atlas->GetCustomRectByIndex(b.rect), &uv0, &uv1);
+    texture = atlas->TexID;
+    aspect = float(b.w) / float(b.h);
+    return true;
+}
 
 void Draw(const char* title, const std::vector<Line>& lines, int selected, float& scroll, bool follow,
           const char* note, std::vector<Hit>& hits) {

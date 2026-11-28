@@ -6,6 +6,8 @@
 // The cheats themselves write the player's own fields: the console's "give" hands out every weapon.
 // (The game notes what its own commands turned on: god [0x95F678], noclip [0x95F679], notarget [0x95F67A], bytes.)
 
+#include <cstdio>
+#include <string>
 #include <algorithm>
 #include <atomic>
 #include <cctype>
@@ -86,25 +88,48 @@ void FullHealth() {
 bool UnlimitedAmmo() { return g_ammo.load(std::memory_order_relaxed); }
 void SetUnlimitedAmmo(bool on) { g_ammo.store(on, std::memory_order_relaxed); }
 
-// A profile named "thereisacow1337" (any case) has every mission, and gets a message on the screen the once, when it is
-// made and unlocked. The profile in use is the block at 0x8DCE30, its name first, the chapters done at
+// A profile named "thereisacow1337" (any case) has every mission. The profile in use is the block at 0x8DCE30, its name first, the chapters done at
 // +0x14 ([0x8DCE44], -1 none, 14 all) and the everything-unlocked byte at +0x24 ([0x8DCE54]); the game's own unlock
 // at 0x30CC44 sets the same two. They are kept set while that profile is the one in use, so it is saved with it
-// too. The panel's thread draws the message (menu.cpp).
+// too.
+// The same word typed in the console does it for the profile signed in then (UnlockMissions): that profile's name is
+// kept here, and it is treated as the named one is until the game closes (by when the game has saved it unlocked).
+constexpr uint32_t kProfile = 0x8DCE30;
+constexpr char kCowName[] = "thereisacow1337";
+char g_typed_for[32];  // the game's thread
+
+std::string ProfileName() {
+    std::string name;
+    for (uint32_t i = 0; i < sizeof(g_typed_for) - 1; i++) {
+        char c = char(kernel::G<uint8_t>(kProfile + i));
+        if (!c) break;
+        name += c;
+    }
+    return name;
+}
+
 void NamedUnlock() {
-    constexpr uint32_t kProfile = 0x8DCE30, kChapters = 0x8DCE44, kEverything = 0x8DCE54;
-    constexpr char kName[] = "thereisacow1337";
-    for (uint32_t i = 0; i < sizeof(kName); i++)
-        if (std::tolower(kernel::G<uint8_t>(kProfile + i)) != uint8_t(kName[i])) return;
+    constexpr uint32_t kChapters = 0x8DCE44, kEverything = 0x8DCE54;
+    std::string name = ProfileName();
+    if (name.empty()) return;
+    bool typed = name == g_typed_for;
+    for (char& c : name) c = char(std::tolower(uint8_t(c)));
+    if (!typed && name != kCowName) return;
     if (int32_t(kernel::R32(kChapters)) == 14 && kernel::G<uint8_t>(kEverything) == 1) return;
     kernel::W32(kChapters, 14);
     kernel::G<uint8_t>(kEverything) = 1;
-    // once: the profile is saved unlocked. (The game puts the two back a few times while the profile is being
-    // made, so the message is also only ever shown once in a run.)
-    static bool said = false;
-    if (!said) Say("Moo.");
-    said = true;
     LOGR("profile thereisacow1337: every mission unlocked");
+}
+
+bool UnlockMissions(const char* word) {
+    std::string typed = word;
+    for (char& c : typed) c = char(std::tolower(uint8_t(c)));
+    if (typed != kCowName) return false;
+    std::string name = ProfileName();
+    if (name.empty()) return false;
+    std::snprintf(g_typed_for, sizeof(g_typed_for), "%s", name.c_str());
+    NamedUnlock();
+    return true;
 }
 
 // Unlimited ammo: the player's counts never fall. ("give ammo" is not it: on this build it hands out weapons too.)

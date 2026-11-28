@@ -11,6 +11,7 @@
 
 #include "common/options.h"
 #include "cpu/x86_ops.h"
+#include "gpu/backend.h"
 #include "kernel/kernel.h"
 
 namespace {
@@ -50,6 +51,8 @@ void UpdatePrompts();  // src/game/prompts.cpp
 void UpdateHints(X86Context& ctx);  // src/game/hints.cpp
 void RunCommands(X86Context& ctx);  // src/game/pad_layout.cpp
 void UpdatePcSettings(X86Context& ctx);  // src/game/pc_settings.cpp
+void UpdateGameOptions(X86Context& ctx);  // src/game/game_options.cpp
+float GunBlurEnd();  // src/game/sights.cpp
 }
 
 // the client frame, once a frame from the main loop, in menus and in play
@@ -57,9 +60,19 @@ X86_FUNC(sub_002F1E60) {
     __imp__sub_002F1E60(ctx, base);
     X86HostFp host_fp;
     ApplyFov(ctx);
+    // the renderer puts what is around the sight picture out of focus by how far the player aims down the sights
+    // (gpu::g_dof), and the gun nearest the eye by the same (gpu::g_gun_blur)
+    float aim = std::clamp(F(kZoom), 0.0f, 1.0f);
+    if (!std::isfinite(aim)) aim = 0.0f;
+    gpu::g_dof.store(game::Opt().ads_dof ? aim : 0.0f, std::memory_order_relaxed);
+    gpu::g_gun_blur.store(game::Opt().gun_blur ? aim : 0.0f, std::memory_order_relaxed);
+    gpu::g_gun_reach.store(game::GunBlurEnd(), std::memory_order_relaxed);
+    // no SMAA over the front end ([0x95F8F8], null in a level): it softened the menus' sharp text
+    gpu::g_smaa_off.store(kernel::R32(0x95F8F8) != 0, std::memory_order_relaxed);
     game::UpdatePrompts();
     game::UpdateHints(ctx);
     game::UpdatePcSettings(ctx);
+    game::UpdateGameOptions(ctx);
     game::RunCommands(ctx);
 }
 
